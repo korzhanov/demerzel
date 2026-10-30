@@ -5,6 +5,7 @@ pub mod logs;
 pub mod alerts;
 pub mod ports;
 pub mod process;
+pub mod registry;
 pub mod scanner;
 pub mod storage;
 pub mod summary;

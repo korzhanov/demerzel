@@ -13,13 +13,14 @@ pub const DEFAULT_CAPACITY: usize = 5000;
 /// Интервал батча для событий в UI.
 pub const BATCH_INTERVAL: Duration = Duration::from_millis(100);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Stream {
     Stdout,
     Stderr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct LogLine {
     pub stream: Stream,
     pub text: String,

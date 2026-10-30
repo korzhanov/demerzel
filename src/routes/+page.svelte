@@ -1,156 +1,166 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { onDestroy, onMount } from "svelte";
+  import {
+    isRunning,
+    statusLabel,
+    type LogLine,
+    type Project,
+    type ProcessRow,
+  } from "$lib/types";
 
-  let name = $state("");
-  let greetMsg = $state("");
+  let roots = $state("");
+  let projects = $state<Project[]>([]);
+  let processes = $state<ProcessRow[]>([]);
+  let selectedId = $state<number | null>(null);
+  let logs = $state<LogLine[]>([]);
+  let command = $state("bun run dev");
+  let error = $state("");
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  let poll: ReturnType<typeof setInterval> | undefined;
+
+  async function scan() {
+    error = "";
+    const list = roots
+      .split("\n")
+      .map((r) => r.trim())
+      .filter(Boolean);
+    try {
+      projects = await invoke<Project[]>("scan_projects", { roots: list });
+    } catch (e) {
+      error = String(e);
+    }
   }
+
+  async function refresh() {
+    try {
+      processes = await invoke<ProcessRow[]>("list_processes");
+      if (selectedId !== null) {
+        const l = await invoke<LogLine[] | null>("process_logs", { id: selectedId });
+        logs = l ?? [];
+      }
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function start(p: Project) {
+    error = "";
+    try {
+      const id = await invoke<number>("start_process", {
+        project: p.name,
+        path: p.path,
+        command,
+      });
+      selectedId = id;
+      await refresh();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function stop(id: number) {
+    try {
+      await invoke("stop_process", { id });
+      await refresh();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  function select(id: number) {
+    selectedId = id;
+    refresh();
+  }
+
+  onMount(() => {
+    refresh();
+    poll = setInterval(refresh, 1000);
+  });
+
+  onDestroy(() => {
+    if (poll) clearInterval(poll);
+  });
 </script>
 
-<main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
+{#snippet tree(list: Project[], depth: number)}
+  {#each list as p (p.path)}
+    <li style="padding-left: {depth * 16}px">
+      <span>{p.name}</span>
+      <button onclick={() => start(p)}>запустить</button>
+    </li>
+    {#if p.children.length}
+      {@render tree(p.children, depth + 1)}
+    {/if}
+  {/each}
+{/snippet}
 
-  <div class="row">
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
-  </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
+<main>
+  <header>
+    <h1>Demerzel</h1>
+  </header>
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
+
+  <section>
+    <h2>Корневые папки</h2>
+    <textarea bind:value={roots} rows="2" placeholder="/Users/you/code"></textarea>
+    <div class="row">
+      <button onclick={scan}>Сканировать</button>
+      <label>команда: <input bind:value={command} /></label>
+    </div>
+    <ul class="tree">
+      {@render tree(projects, 0)}
+    </ul>
+  </section>
+
+  <section>
+    <h2>Процессы</h2>
+    {#if processes.length === 0}
+      <p>Нет запущенных процессов.</p>
+    {:else}
+      <table>
+        <thead>
+          <tr><th>проект</th><th>команда</th><th>статус</th><th></th></tr>
+        </thead>
+        <tbody>
+          {#each processes as row (row.id)}
+            <tr class:selected={row.id === selectedId} onclick={() => select(row.id)}>
+              <td>{row.project}</td>
+              <td>{row.command}</td>
+              <td>{statusLabel(row.status)}</td>
+              <td>
+                {#if isRunning(row.status)}
+                  <button onclick={(e) => { e.stopPropagation(); stop(row.id); }}>стоп</button>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </section>
+
+  <section>
+    <h2>Логи {selectedId !== null ? `#${selectedId}` : ""}</h2>
+    <pre class="logs">{#each logs as line}<span class:err={line.stream === "stderr"}>{line.text}
+</span>{/each}</pre>
+  </section>
 </main>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
+  main { font-family: system-ui, sans-serif; padding: 16px; max-width: 960px; margin: 0 auto; }
+  section { margin-bottom: 24px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  textarea, input { width: 100%; font: inherit; }
+  .tree { list-style: none; padding: 0; }
+  .tree li { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #ddd; }
+  tr.selected { background: #f0f0ff; }
+  .logs { background: #0d0d12; color: #ddd; padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; }
+  .err { color: #ff7b72; }
+  .error { color: #b00020; }
 </style>

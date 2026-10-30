@@ -9,11 +9,16 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// Проект или подпроект, найденный в корневой папке.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Project {
     pub name: String,
+    #[serde(serialize_with = "ser_path")]
     pub path: PathBuf,
     pub children: Vec<Project>,
+}
+
+fn ser_path<S: serde::Serializer>(p: &PathBuf, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&p.to_string_lossy())
 }
 
 /// Маркеры, по которым папка считается проектом.
