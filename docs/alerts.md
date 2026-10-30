@@ -1,6 +1,6 @@
-# Алерты: движок правил и политика доставки
+# Алерты: движок правил, политика доставки и системные уведомления
 
-Phase-4, issues #20–#21. Правила и политика живут в **конфиге приложения** (`settings.json` → `alerts`), не в `demerzel.yaml` / `orchestrator.json`.
+Phase-4, issues #20–#22. Правила и политика живут в **конфиге приложения** (`settings.json` → `alerts`), не в `demerzel.yaml` / `orchestrator.json`.
 
 ## Уровни важности
 
@@ -12,7 +12,18 @@ Phase-4, issues #20–#21. Правила и политика живут в **к
 
 \* С учётом политики доставки (#21): дедуп, троттлинг голоса, тихие часы.
 
-Доставка `notify` / `say` — отдельные issues (#22–#23). Модуль **матчит** событие → `AlertCandidate`, затем `DeliveryGate` решает `emit` / `speak` / `notify`.
+Модуль **матчит** событие → `AlertCandidate`, затем `DeliveryGate` решает `emit` / `speak` / `notify`. При `notify=true` слой #22 показывает OS-уведомление (`tauri-plugin-notification`). Голос `say` — #23.
+
+## Системные уведомления (#22)
+
+| Шаг | Поведение |
+|-----|-----------|
+| Gate | Показ только если `DeliveryDecision.notify` (тихие часы → только `critical`) |
+| Текст | Заголовок `Demerzel · Критично/Важно`, тело = короткий `message` кандидата |
+| Клик | Фокус окна + событие `alerts:open-project` с `project` (для `process_exited`) |
+| Focus/DND | Публичного API статуса Focus для non-communication apps нет — см. [ADR-002](./decisions/002-focus-mode.md); опираемся на quiet hours + фильтр macOS |
+
+Команда Tauri: `ingest_alert_event(event)` → `{ matched, decision, notified, project }`.
 
 ## Правила по умолчанию
 
@@ -50,6 +61,8 @@ Phase-4, issues #20–#21. Правила и политика живут в **к
 - `should_speak` / `should_notify` — базовые подсказки по severity
 - `DeliveryGate::decide(candidate, now) -> DeliveryDecision { emit, speak, notify }`
 - `QuietHoursConfig { enabled, start, end }` + `timezone`
+- `notify::maybe_notify(candidate, decision) -> Option<NotifyPayload>`
+- `notify::project_hint` / `project_from_extra` — deep-link проекта при клике
 
 Пример фрагмента `settings.json`:
 
@@ -82,6 +95,9 @@ Phase-4, issues #20–#21. Правила и политика живут в **к
 
 ## Код
 
-- Rust: `src-tauri/src/backend/alerts.rs`
+- Rust: `src-tauri/src/backend/alerts.rs`, `backend/notify.rs`
+- Tauri: `ingest_alert_event`, plugin `tauri-plugin-notification`, capability `notification:default`
 - Настройки: `backend/settings.rs` → `Settings.alerts`
 - Зеркало UI-хелперов: `src/lib/alerts.ts`
+- ADR Focus Mode: `docs/decisions/002-focus-mode.md`
+- Wireframe: `references/alerts-notify-wireframe.md`

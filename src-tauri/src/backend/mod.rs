@@ -3,6 +3,7 @@ pub mod agents;
 pub mod config;
 pub mod logs;
 pub mod alerts;
+pub mod notify;
 pub mod ports;
 pub mod process;
 pub mod registry;

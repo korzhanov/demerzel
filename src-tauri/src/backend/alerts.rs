@@ -2,7 +2,8 @@
 //!
 //! Оценивает события → `AlertCandidate`, затем `DeliveryGate` решает
 //! emit / speak / notify (дедуп, троттлинг голоса, тихие часы).
-//! Системные уведомления (#22) и голос `say` (#23) — отдельные задачи.
+//! Системные уведомления (#22): `backend::notify` + Tauri plugin.
+//! Голос `say` (#23) — отдельная задача.
 
 use chrono::{DateTime, NaiveTime, Utc};
 use chrono_tz::Tz;
@@ -135,7 +136,8 @@ impl Default for AlertsConfig {
 }
 
 /// Входящее событие рантайма (ещё не алерт).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AlertEvent {
     ProcessExited { project: String, code: i32 },
     PortConflict { port: u16 },
@@ -165,8 +167,8 @@ impl AlertEvent {
     }
 }
 
-/// Кандидат алерта после матчинга правила. Без доставки (#21–#23).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Кандидат алерта после матчинга правила. Доставка: gate (#21), notify (#22), say (#23).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlertCandidate {
     pub rule_id: String,
     pub severity: Severity,

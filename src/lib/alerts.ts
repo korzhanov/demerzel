@@ -1,4 +1,7 @@
-/** Зеркало severity + delivery-хелперов бэкенда (#20–#21). Notify/say — #22–#23. */
+/** Зеркало severity + delivery-хелперов бэкенда (#20–#22). Голос say — #23. */
+
+/** Имя события Tauri после клика по системному уведомлению. */
+export const OPEN_PROJECT_EVENT = "alerts:open-project";
 
 export type AlertSeverity = "info" | "important" | "critical";
 
@@ -95,4 +98,33 @@ export function deliveryFlags(
   }
   if (opts.voiceThrottled) speak = false;
   return { speak, notify };
+}
+
+/** Короткий заголовок OS-уведомления (зеркало `notify::notify_title`). */
+export function notifyTitle(severity: AlertSeverity): string {
+  switch (severity) {
+    case "critical":
+      return "Demerzel · Критично";
+    case "important":
+      return "Demerzel · Важно";
+    case "info":
+      return "Demerzel";
+  }
+}
+
+/**
+ * Нужно ли слать OS-notify: только если gate сказал `notify`
+ * (severity + тихие часы уже учтены в `deliveryFlags` / DeliveryGate).
+ */
+export function shouldDeliverNotify(decision: Pick<DeliveryDecision, "notify">): boolean {
+  return decision.notify;
+}
+
+/** Выбор процесса по имени проекта из уведомления. */
+export function processIdForProject(
+  processes: ReadonlyArray<{ id: number; project: string }>,
+  project: string,
+): number | null {
+  const hit = processes.find((p) => p.project === project);
+  return hit ? hit.id : null;
 }
