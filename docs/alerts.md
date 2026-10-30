@@ -102,9 +102,11 @@ Phase-4, issues #20–#23. Правила и политика живут в **к
     },
     "voice": {
       "name": "Milena",
+      "user_name": "Олег",
+      "user_pronunciation": "",
       "phrases": {
-        "process_exited": "Олег, внимание. {project} упал, код {code}.",
-        "port_conflict": "Олег, внимание. Порт {port} занят."
+        "process_exited": "{user}, внимание. {project} упал, код {code}.",
+        "port_conflict": "{user}, внимание. Порт {port} занят."
       }
     },
     "rules": [
