@@ -108,9 +108,15 @@ impl Supervisor {
                 if svc.kind.as_deref() == Some("docker-compose") {
                     if req.action == "up" || req.action == "down" { docker::command(svc, &req.action)?; }
                     let mut containers = docker::parse_status(&docker::command(svc, "status")?)?;
-                    if req.action == "sync" && (containers.is_empty() || containers.iter().any(|c| c.state != "running")) {
+                    if req.action == "sync" && !docker::containers_ready(&containers) {
                         docker::command(svc, "up")?;
                         containers = docker::parse_status(&docker::command(svc, "status")?)?;
+                    }
+                    if matches!(req.action.as_str(), "up" | "sync") {
+                        if let Some(check) = &svc.healthcheck {
+                            run_command(check, &svc.path, &BTreeMap::new())?;
+                        }
+                        docker::require_ready(&containers)?;
                     }
                     return Ok(format!("{name}: {}", serde_json::to_string(&containers).map_err(|e| e.to_string())?));
                 }

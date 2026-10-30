@@ -24,4 +24,4 @@
 ## Зависимости
 
 - Менеджер процессов / реестр (#8) и логи (#9).
-- Манифест экосистемы [`demerzel.yaml`](demerzel-yaml.md) и docker-compose (#42) используются, если сервисы так описаны; для одного проекта достаточно `orchestrator.json`.
+- Манифест экосистемы [`demerzel.yaml`](demerzel-yaml.md): process и `type: docker-compose` (рантайм Compose — #42 / `docker.rs`). Для одного проекта достаточно `orchestrator.json`.

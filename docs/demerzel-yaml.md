@@ -40,8 +40,22 @@
 Правила:
 
 - `type: process` (или без `type`) — поля `file` / `service` запрещены.
-- `type: docker-compose` — обязательны непустые `file` и `service`. Рантайм Compose — отдельный контракт (#42).
+- `type: docker-compose` — обязательны непустые `file` и `service`. Рантайм: `src-tauri/src/backend/docker.rs` (#42).
 - Пустые `cmd` / `healthcheck` (только пробелы) — ошибка.
+
+## Рантайм Docker Compose (#42)
+
+CLI (`dem up` / `down` / `status` / `sync`) для сервисов `type: docker-compose`:
+
+| Действие | Compose |
+|---|---|
+| `up` | `docker compose -f <file> up -d <service>` |
+| `down` | `docker compose -f <file> stop <service>` |
+| `status` / после up | `docker compose ps --all --format json <service>` |
+
+- Если Docker недоступен — понятная ошибка («Install/start Docker Desktop»), без падения процесса.
+- Поле `Health` из `ps` учитывается: пустое/`none` = healthcheck в Compose не задан; иначе нужен `healthy`.
+- YAML `healthcheck` после `up`/`sync` выполняется так же, как у process-сервисов.
 
 ## Пример
 
