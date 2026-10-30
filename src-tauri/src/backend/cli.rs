@@ -1,4 +1,6 @@
-//! A per-user Unix socket supervisor owns child handles across CLI invocations.
+//! CLI `dem` / `demerzel`: status, up, down, sync, watch (#40).
+//!
+//! Per-user Unix socket supervisor owns child handles across CLI invocations.
 use super::{config, docker, ecosystem, process::Status, registry::Registry};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -9,14 +11,22 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+const USAGE: &str = "usage: dem <status|up|down|sync|watch> [ROOT]\nReads demerzel.yaml or orchestrator.json in ROOT (default: current directory).\nwatch refreshes logs and CPU/RSS every second; Ctrl-C exits the viewer.";
+
+const ACTIONS: &[&str] = &["up", "down", "sync", "status", "watch"];
+
 #[derive(Serialize, Deserialize)]
 struct Request { action: String, root: PathBuf }
 #[derive(Serialize, Deserialize)]
 struct Response { output: String, error: Option<String> }
 
 fn runtime_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-    let dir = PathBuf::from(home).join(".orchestrator/runtime");
+    let dir = if let Some(override_dir) = std::env::var_os("DEMERZEL_RUNTIME_DIR") {
+        PathBuf::from(override_dir)
+    } else {
+        let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
+        PathBuf::from(home).join(".orchestrator/runtime")
+    };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     Ok(dir)
@@ -43,7 +53,8 @@ fn connect(start: bool) -> Result<UnixStream, String> {
 }
 
 fn request(action: &str, root: &Path) -> Result<String, String> {
-    let mut stream = connect(matches!(action, "up" | "sync"))?;
+    // status/watch also start the supervisor so queries work without a prior `dem up`.
+    let mut stream = connect(matches!(action, "up" | "sync" | "status" | "watch"))?;
     stream.set_read_timeout(Some(Duration::from_secs(180))).map_err(|e| e.to_string())?;
     let req = Request { action: action.into(), root: root.canonicalize().map_err(|e| e.to_string())? };
     let text = serde_json::to_string(&req).map_err(|e| e.to_string())?;
@@ -177,13 +188,13 @@ fn serve() -> Result<(), String> {
 pub fn run(args: &[String]) -> std::process::ExitCode {
     let action = args.first().map(String::as_str).unwrap_or("help");
     if ["help", "--help", "-h"].contains(&action) {
-        println!("usage: dem <status|up|down|sync|watch> [ROOT]\nReads demerzel.yaml or orchestrator.json in ROOT (default: current directory).\nwatch refreshes logs and CPU/RSS every second; Ctrl-C exits the viewer.");
+        println!("{USAGE}");
         return std::process::ExitCode::SUCCESS;
     }
     let result = if action == "__serve" { serve() } else {
         let root = args.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-        if args.len() > 2 || !["up", "down", "sync", "status", "watch"].contains(&action) {
-            Err("usage: dem <status|up|down|sync|watch> [ROOT]".into())
+        if args.len() > 2 || !ACTIONS.contains(&action) {
+            Err(USAGE.lines().next().unwrap_or(USAGE).into())
         } else if action == "watch" {
             loop {
                 match request("watch", &root) {
@@ -197,4 +208,41 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
         }
     };
     match result { Ok(()) => std::process::ExitCode::SUCCESS, Err(e) => { eprintln!("dem: {e}"); std::process::ExitCode::FAILURE } }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::ExitCode;
+
+    fn code_u8(code: ExitCode) -> u8 {
+        // ExitCode has no public as_u8; SUCCESS/FAILURE are the only values we assert.
+        if code == ExitCode::SUCCESS {
+            0
+        } else if code == ExitCode::FAILURE {
+            1
+        } else {
+            255
+        }
+    }
+
+    #[test]
+    fn help_flags_succeed() {
+        for args in [vec![], vec!["help".into()], vec!["-h".into()], vec!["--help".into()]] {
+            assert_eq!(code_u8(run(&args)), 0, "args={args:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_and_extra_args_fail() {
+        assert_eq!(code_u8(run(&["nope".into()])), 1);
+        assert_eq!(code_u8(run(&["status".into(), ".".into(), "extra".into()])), 1);
+    }
+
+    #[test]
+    fn actions_list_matches_issue_40() {
+        for cmd in ["status", "up", "down", "sync", "watch"] {
+            assert!(ACTIONS.contains(&cmd), "{cmd}");
+        }
+    }
 }
