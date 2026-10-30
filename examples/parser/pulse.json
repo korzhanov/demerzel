@@ -1,0 +1,9 @@
+{
+  "summary": "1500 новых лемм, 450 проверено",
+  "metrics": {
+    "parsed": 1500,
+    "checked": 450
+  },
+  "eta_seconds": 600,
+  "state": "running"
+}

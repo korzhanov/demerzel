@@ -17,6 +17,7 @@
 | [orchestrator.schema.json](orchestrator.schema.json) | JSON Schema `orchestrator.json` (проект / подпроект) |
 | [demerzel.schema.json](demerzel.schema.json) | JSON Schema `demerzel.yaml` (экосистема) |
 | [demerzel-yaml.md](demerzel-yaml.md) | Манифест экосистемы, process / docker-compose |
+| [pulse.md](pulse.md) | Контракт пульса: команда / файл, опрос, metrics (#97) |
 | [tasks-format.md](tasks-format.md) | `TODO.md`, `tasks.json`, источники задач |
 
 ## Операционные гайды
@@ -27,7 +28,7 @@
 | [agents.md](agents.md) | Worktree, Claude CLI, Ollama, лимиты, ревью (#27–#33) |
 | [alerts.md](alerts.md) | Правила алертов, notify / speak, quiet hours (#20–#23) |
 | [icloud-summary.md](icloud-summary.md) | `summary.json` → iCloud Drive для iPhone (#37) |
-| [widget-macos.md](widget-macos.md) | Сборка `.appex`, embed PlugIns, Widget Gallery (#103), пульс в small/medium (#98) |
+| [widget-macos.md](widget-macos.md) | Сборка `.appex`, embed PlugIns, Widget Gallery (#103), пульс в small/medium (#98); источник опроса — [pulse.md](pulse.md) (#97) |
 | [widgetkit-fallback.md](widgetkit-fallback.md) | Native Swift WidgetKit fallback, App Group (#38) |
 
 ## ADR (Architecture Decision Records)

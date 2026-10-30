@@ -82,6 +82,7 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 | `tasks.source` | `todo` (`TODO.md`) \| `tasks-json` \| `github` \| `notion` |
 | `tasks.repository` | `owner/name` для `source=github` |
 | `tasks.database_id` | UUID Notion DB для `source=notion` (`NOTION_TOKEN`) |
+| `pulse` | Опрос прогресса: `command` **или** `file` ([docs/pulse.md](docs/pulse.md), #97) |
 | `env` | Переменные окружения процесса |
 
 Монорепо / несколько сервисов: корневой [`demerzel.yaml`](docs/demerzel-yaml.md) перечисляет сервисы; детали каждого проекта остаются в его `orchestrator.json`.

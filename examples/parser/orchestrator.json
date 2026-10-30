@@ -1,0 +1,16 @@
+{
+  "name": "parser",
+  "type": "parser",
+  "commands": {
+    "dev": "bun run pipeline",
+    "test": "bun test"
+  },
+  "pulse": {
+    "command": "bun run pulse",
+    "interval_secs": 30,
+    "timeout_secs": 5
+  },
+  "env": {
+    "LOG_LEVEL": "info"
+  }
+}

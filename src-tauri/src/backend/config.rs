@@ -57,6 +57,31 @@ pub struct TasksConfig {
     pub status_property: Option<String>,
 }
 
+fn default_pulse_interval_secs() -> u64 {
+    30
+}
+
+fn default_pulse_timeout_secs() -> u64 {
+    5
+}
+
+/// Источник пульса проекта: команда (stdout JSON) **или** файл (#97).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PulseConfig {
+    /// Shell-команда; stdout = JSON пульса. Взаимоисключает с `file`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Путь к JSON относительно корня проекта. Взаимоисключает с `command`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// Интервал опроса, секунды (по умолчанию 30).
+    #[serde(default = "default_pulse_interval_secs")]
+    pub interval_secs: u64,
+    /// Таймаут команды, секунды (по умолчанию 5). Для `file` игнорируется.
+    #[serde(default = "default_pulse_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectConfig {
     pub name: String,
@@ -68,6 +93,9 @@ pub struct ProjectConfig {
     pub ports: Option<PortsConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tasks: Option<TasksConfig>,
+    /// Опрос прогресса проекта (#97); снимок попадает в summary / виджет (#98).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pulse: Option<PulseConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
@@ -79,6 +107,12 @@ pub enum ConfigError {
     InvalidPortRange { start: u16, end: u16 },
     DefaultOutsideRange { port: u16 },
     UnknownTaskSource(String),
+    PulseMissingSource,
+    PulseBothSources,
+    PulseEmptyCommand,
+    PulseEmptyFile,
+    PulseIntervalZero,
+    PulseTimeoutZero,
 }
 
 impl std::fmt::Display for ConfigError {
@@ -93,6 +127,16 @@ impl std::fmt::Display for ConfigError {
                 write!(f, "default port {port} is outside the range")
             }
             ConfigError::UnknownTaskSource(s) => write!(f, "unknown task source '{s}'"),
+            ConfigError::PulseMissingSource => {
+                write!(f, "pulse requires exactly one of command or file")
+            }
+            ConfigError::PulseBothSources => {
+                write!(f, "pulse cannot set both command and file")
+            }
+            ConfigError::PulseEmptyCommand => write!(f, "pulse.command must not be empty"),
+            ConfigError::PulseEmptyFile => write!(f, "pulse.file must not be empty"),
+            ConfigError::PulseIntervalZero => write!(f, "pulse.interval_secs must be ≥ 1"),
+            ConfigError::PulseTimeoutZero => write!(f, "pulse.timeout_secs must be ≥ 1"),
         }
     }
 }
@@ -210,7 +254,56 @@ pub fn validate(cfg: &ProjectConfig) -> Result<(), ConfigError> {
             return Err(ConfigError::UnknownTaskSource(tasks.source.clone()));
         }
     }
+    if let Some(pulse) = &cfg.pulse {
+        validate_pulse(pulse)?;
+    }
     Ok(())
+}
+
+/// Валидирует `pulse` в `orchestrator.json` (#97).
+pub fn validate_pulse(pulse: &PulseConfig) -> Result<(), ConfigError> {
+    let cmd_raw = pulse.command.as_deref();
+    let file_raw = pulse.file.as_deref();
+    let cmd = cmd_raw.map(str::trim).filter(|s| !s.is_empty());
+    let file = file_raw.map(str::trim).filter(|s| !s.is_empty());
+
+    match (cmd_raw, file_raw, cmd, file) {
+        (_, _, Some(_), Some(_)) => return Err(ConfigError::PulseBothSources),
+        (Some(s), None, None, None) if s.trim().is_empty() => {
+            return Err(ConfigError::PulseEmptyCommand);
+        }
+        (None, Some(s), None, None) if s.trim().is_empty() => {
+            return Err(ConfigError::PulseEmptyFile);
+        }
+        (_, _, None, None) => return Err(ConfigError::PulseMissingSource),
+        (_, _, Some(_), None) | (_, _, None, Some(_)) => {}
+    }
+
+    if pulse.interval_secs == 0 {
+        return Err(ConfigError::PulseIntervalZero);
+    }
+    if pulse.timeout_secs == 0 {
+        return Err(ConfigError::PulseTimeoutZero);
+    }
+    Ok(())
+}
+
+/// Непустая команда пульса, если источник — `command`.
+pub fn resolve_pulse_command(pulse: &PulseConfig) -> Option<&str> {
+    pulse
+        .command
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// Непустой путь файла пульса, если источник — `file`.
+pub fn resolve_pulse_file(pulse: &PulseConfig) -> Option<&str> {
+    pulse
+        .file
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
 }
 
 #[cfg(test)]
@@ -344,6 +437,81 @@ mod tests {
     #[test]
     fn rejects_empty_name() {
         assert_eq!(parse(r#"{ "name": " ", "type": "app" }"#), Err(ConfigError::EmptyName));
+    }
+
+    #[test]
+    fn parses_pulse_command() {
+        let cfg = parse(
+            r#"{
+                "name": "parser",
+                "type": "parser",
+                "pulse": {
+                    "command": "bun run pulse",
+                    "interval_secs": 15,
+                    "timeout_secs": 3
+                }
+            }"#,
+        )
+        .unwrap();
+        let pulse = cfg.pulse.unwrap();
+        assert_eq!(resolve_pulse_command(&pulse), Some("bun run pulse"));
+        assert!(resolve_pulse_file(&pulse).is_none());
+        assert_eq!(pulse.interval_secs, 15);
+        assert_eq!(pulse.timeout_secs, 3);
+    }
+
+    #[test]
+    fn parses_pulse_file_with_defaults() {
+        let cfg = parse(
+            r#"{ "name": "parser", "type": "parser", "pulse": { "file": "pulse.json" } }"#,
+        )
+        .unwrap();
+        let pulse = cfg.pulse.unwrap();
+        assert_eq!(resolve_pulse_file(&pulse), Some("pulse.json"));
+        assert_eq!(pulse.interval_secs, 30);
+        assert_eq!(pulse.timeout_secs, 5);
+    }
+
+    #[test]
+    fn rejects_pulse_both_sources() {
+        let json = r#"{
+            "name": "p",
+            "type": "parser",
+            "pulse": { "command": "echo hi", "file": "pulse.json" }
+        }"#;
+        assert_eq!(parse(json), Err(ConfigError::PulseBothSources));
+    }
+
+    #[test]
+    fn rejects_pulse_missing_and_blank() {
+        assert_eq!(
+            parse(r#"{ "name": "p", "type": "parser", "pulse": {} }"#),
+            Err(ConfigError::PulseMissingSource)
+        );
+        assert_eq!(
+            parse(r#"{ "name": "p", "type": "parser", "pulse": { "command": "  " } }"#),
+            Err(ConfigError::PulseEmptyCommand)
+        );
+        assert_eq!(
+            parse(r#"{ "name": "p", "type": "parser", "pulse": { "file": "" } }"#),
+            Err(ConfigError::PulseEmptyFile)
+        );
+    }
+
+    #[test]
+    fn rejects_pulse_zero_interval_or_timeout() {
+        assert_eq!(
+            parse(
+                r#"{ "name": "p", "type": "parser", "pulse": { "file": "a.json", "interval_secs": 0 } }"#
+            ),
+            Err(ConfigError::PulseIntervalZero)
+        );
+        assert_eq!(
+            parse(
+                r#"{ "name": "p", "type": "parser", "pulse": { "command": "true", "timeout_secs": 0 } }"#
+            ),
+            Err(ConfigError::PulseTimeoutZero)
+        );
     }
 
     fn tmp(name: &str) -> std::path::PathBuf {

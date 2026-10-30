@@ -132,6 +132,7 @@ mod tests {
             summary: "1500 новых лемм, 450 проверено".into(),
             eta_seconds: Some(600),
             state: Some("running".into()),
+            metrics: None,
         });
         s.projects.push(ProjectStatus {
             name: "web".into(),
@@ -141,6 +142,7 @@ mod tests {
                 summary: "сборка".into(),
                 eta_seconds: Some(90),
                 state: None,
+                metrics: None,
             }),
         });
         s
