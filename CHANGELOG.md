@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.1 — 2026-10-30
+
+- Сканер: `MAX_DEPTH` 6→3, nesting подпроектов ≤1, расширен ignore-лист (`vendor`, `coverage`, `venv`, …). «Обновить задачи» не обходит глубокие nested `package.json`. Реальные top-level + один уровень (dashboard / parsers/news) сохраняются. Закрывает #85.
+
 ## 0.34.0 — 2026-10-30
 
 - Запуск агента из задачи: кнопка «Исправить» на доске → `in_progress` (TODO.md / tasks.json; GitHub без remote close), worktree + limiter + Claude + `collect_review` в `AgentRunRegistry` для UI ревью. Accept задачу не закрывает. Документ `docs/agents.md`. Закрывает #33.

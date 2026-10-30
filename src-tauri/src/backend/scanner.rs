@@ -1,8 +1,8 @@
-//! Поиск проектов и подпроектов (#6).
+//! Поиск проектов и подпроектов (#6, #85).
 //!
 //! Проект — папка с маркером (`package.json`, `.git`, `orchestrator.json`).
-//! Подпроекты — вложенные папки с маркерами. Игнорируются `node_modules`,
-//! `target`, скрытые папки и другие служебные каталоги.
+//! Подпроекты — вложенные папки с маркерами (не глубже одного уровня nesting).
+//! Игнорируются `node_modules`, `target`, скрытые папки и другие служебные каталоги.
 
 use std::fs;
 use std::io;
@@ -33,8 +33,22 @@ pub const PROJECT_MARKERS: &[&str] = &[
     ".git",
 ];
 
-/// Папки, которые никогда не сканируются.
-pub const IGNORED_DIRS: &[&str] = &["node_modules", "target", "build", "dist"];
+/// Папки, которые никогда не сканируются (#85: junk / tooling / vendor trees).
+pub const IGNORED_DIRS: &[&str] = &[
+    "node_modules",
+    "target",
+    "build",
+    "dist",
+    "out",
+    "vendor",
+    "venv",
+    "coverage",
+    "__pycache__",
+    "Pods",
+    "DerivedData",
+    "bower_components",
+    "jspm_packages",
+];
 
 pub fn is_ignored(dir_name: &str) -> bool {
     IGNORED_DIRS.contains(&dir_name) || dir_name.starts_with('.')
@@ -56,16 +70,21 @@ pub fn access_hint(err: &io::Error, path: &Path) -> Option<String> {
     ))
 }
 
-/// Ограничение глубины, чтобы не уйти в огромные деревья.
-pub const MAX_DEPTH: usize = 6;
+/// Ограничение глубины walk по файловой системе (#85: было 6 — слишком глубоко для «Обновить задачи»).
+pub const MAX_DEPTH: usize = 3;
+
+/// Сколько уровней подпроектов внутри уже найденного проекта (#85).
+/// `1` = top-level проект + один уровень детей (dashboard / parsers/news), без глубоких nest package.json.
+pub const MAX_NESTING: usize = 1;
 
 /// Сканирует корневую папку и возвращает найденные проекты с подпроектами.
 pub fn scan(root: &Path) -> io::Result<Vec<Project>> {
-    scan_dir(root, 0)
+    scan_dir(root, 0, 0)
 }
 
-fn scan_dir(dir: &Path, depth: usize) -> io::Result<Vec<Project>> {
-    if depth > MAX_DEPTH {
+fn scan_dir(dir: &Path, depth: usize, nesting: usize) -> io::Result<Vec<Project>> {
+    // depth — уровень относительно корня scan; на MAX_DEPTH детей уже не читаем.
+    if depth >= MAX_DEPTH {
         return Ok(Vec::new());
     }
     let mut found = Vec::new();
@@ -81,11 +100,17 @@ fn scan_dir(dir: &Path, depth: usize) -> io::Result<Vec<Project>> {
         let path = entry.path();
         let names = child_names(&path)?;
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        let children = scan_dir(&path, depth + 1)?;
         if is_project_dir(&refs) {
+            // Внутри найденного проекта ищем детей только пока nesting < MAX_NESTING.
+            let children = if nesting < MAX_NESTING {
+                scan_dir(&path, depth + 1, nesting + 1)?
+            } else {
+                Vec::new()
+            };
             found.push(Project { name, path, children });
         } else {
-            found.extend(children);
+            // Не-проект: продолжаем walk с тем же nesting (parsers/ → news).
+            found.extend(scan_dir(&path, depth + 1, nesting)?);
         }
     }
     found.sort_by(|a, b| a.name.cmp(&b.name));
@@ -135,6 +160,9 @@ mod tests {
     #[test]
     fn ignores_heavy_and_hidden_dirs() {
         assert!(is_ignored("node_modules"));
+        assert!(is_ignored("vendor"));
+        assert!(is_ignored("coverage"));
+        assert!(is_ignored("__pycache__"));
         assert!(is_ignored(".cache"));
         assert!(!is_ignored("parsers"));
     }
@@ -170,6 +198,61 @@ mod tests {
         let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, vec!["app"]);
         assert!(projects[0].children.is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn skips_vendor_and_coverage_junk() {
+        let root = tmp("junk");
+        fs::create_dir_all(root.join("app/vendor/pkg")).unwrap();
+        fs::write(root.join("app/vendor/pkg/package.json"), "{}").unwrap();
+        fs::create_dir_all(root.join("app/coverage/tmp")).unwrap();
+        fs::write(root.join("app/coverage/tmp/package.json"), "{}").unwrap();
+        fs::write(root.join("app/package.json"), "{}").unwrap();
+
+        let projects = scan(&root).unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "app");
+        assert!(projects[0].children.is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Глубокие nested package.json (apps → packages → tools) не тянутся в дерево / refresh задач (#85).
+    #[test]
+    fn does_not_pull_deep_nested_package_json() {
+        let root = tmp("deep");
+        let app = root.join("app");
+        fs::create_dir_all(app.join("apps/web/packages/ui/tools")).unwrap();
+        fs::write(app.join("package.json"), "{}").unwrap();
+        fs::write(app.join("apps/web/package.json"), "{}").unwrap();
+        fs::write(app.join("apps/web/packages/ui/package.json"), "{}").unwrap();
+        fs::write(app.join("apps/web/packages/ui/tools/package.json"), "{}").unwrap();
+
+        let projects = scan(&root).unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "app");
+        // Один уровень nesting: web — да; ui/tools — нет.
+        let child_names: Vec<&str> = projects[0].children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(child_names, vec!["web"]);
+        assert!(projects[0].children[0].children.is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn respects_max_filesystem_depth() {
+        let root = tmp("fsdepth");
+        // root/a/b/c/d/package.json — d на 4-м уровне; при MAX_DEPTH=3 детей c не читаем.
+        let deep = root.join("a/b/c/d");
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("package.json"), "{}").unwrap();
+        // Контроль: проект на 2-м уровне находится.
+        fs::create_dir_all(root.join("x/y")).unwrap();
+        fs::write(root.join("x/y/package.json"), "{}").unwrap();
+
+        let projects = scan(&root).unwrap();
+        let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"y"), "expected shallow project, got {names:?}");
+        assert!(!names.contains(&"d"), "deep project must be skipped, got {names:?}");
         fs::remove_dir_all(&root).unwrap();
     }
 }
