@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.23.0 — 2026-10-30
+
+- Рантайм Docker Compose для `type: docker-compose`: `dem up`/`down`/`status`/`sync` через `docker compose` (`ps --format json`, `up -d`, `stop`). Учёт контейнерного `Health`, опциональный YAML `healthcheck` после up/sync, понятная ошибка если Docker не запущен. Модуль `docker.rs`, тесты parse/ready, доки в `demerzel-yaml.md` / `cli.md`. Закрывает #42.
+
 ## 0.22.0 — 2026-10-30
 
 - Схема и валидация корневого манифеста `demerzel.yaml`: сервисы `path` / `cmd` / `port` / `healthcheck`, `type: docker-compose` с `file`/`service`; неизвестные поля (`mode`, `notifications`) отклоняются. Документы `docs/demerzel-yaml.md` и `docs/demerzel.schema.json`, fallback на `orchestrator.json`, unit-тесты `load`/`parse`. Закрывает #41.
