@@ -18,6 +18,8 @@ export interface ProcessRow {
   project: string;
   command: string;
   status: ProcessStatus;
+  pid?: number | null;
+  port?: number | null;
 }
 
 export interface LogLine {
@@ -36,4 +38,23 @@ export function isRunning(s: ProcessStatus): boolean {
 
 export interface Settings {
   scan_roots: string[];
+}
+
+export interface PortRow {
+  port: number;
+  project: string | null;
+  command: string;
+  pid: number;
+  status: "ok" | "conflict" | "foreign";
+  managed_id: number | null;
+}
+
+export type TaskStatus = "todo" | "in_progress" | "done" | "blocked";
+export interface Task {
+  id: string;
+  project: string;
+  title: string;
+  status: TaskStatus;
+  source: string;
+  url: string | null;
 }

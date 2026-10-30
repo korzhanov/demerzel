@@ -13,3 +13,8 @@ pub mod summary;
 pub mod tasks;
 pub mod widget;
 pub mod widget_refresh;
+
+pub mod github_tasks;
+pub mod ecosystem;
+pub mod docker;
+pub mod cli;

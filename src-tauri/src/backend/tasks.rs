@@ -1,6 +1,7 @@
 //! Модель задачи и трейт источника (#16).
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Todo,
     InProgress,
@@ -8,7 +9,7 @@ pub enum TaskStatus {
     Blocked,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Task {
     pub id: String,
     pub project: String,
@@ -58,5 +59,82 @@ mod tests {
             task(TaskStatus::Done),
         ];
         assert_eq!(count_by_status(&tasks), (1, 1, 2, 0));
+    }
+}
+
+/// File-backed sources preserve project-qualified identities across projects.
+pub struct FileSource {
+    pub root: std::path::PathBuf,
+    pub json: bool,
+}
+
+impl TaskSource for FileSource {
+    fn name(&self) -> &str {
+        if self.json { "tasks-json" } else { "todo" }
+    }
+
+    fn fetch(&self, project: &str) -> Result<Vec<Task>, String> {
+        let path = self.root.join(if self.json { "tasks.json" } else { "TODO.md" });
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if self.json {
+            let mut tasks: Vec<Task> = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            let mut ids = std::collections::HashSet::new();
+            for task in &mut tasks {
+                if task.id.trim().is_empty() || task.title.trim().is_empty() || !ids.insert(task.id.clone()) {
+                    return Err(format!("{}: empty title/id or duplicate id", path.display()));
+                }
+                task.project = project.into();
+                task.source = self.name().into();
+                task.id = format!("{project}:json:{}", task.id);
+                task.url = Some(path.to_string_lossy().into_owned());
+            }
+            Ok(tasks)
+        } else {
+            Ok(parse_markdown(&text, project, &path.to_string_lossy()))
+        }
+    }
+}
+
+pub fn parse_markdown(text: &str, project: &str, path: &str) -> Vec<Task> {
+    let mut fenced = false;
+    text.lines().enumerate().filter_map(|(line, raw)| {
+        let raw = raw.trim_start();
+        if raw.starts_with("```") || raw.starts_with("~~~") {
+            fenced = !fenced;
+            return None;
+        }
+        if fenced { return None; }
+        let item = raw.strip_prefix("- [")?;
+        let (mark, title) = item.split_once("] ")?;
+        let status = match mark {
+            " " => TaskStatus::Todo,
+            "x" | "X" => TaskStatus::Done,
+            "~" => TaskStatus::InProgress,
+            "!" => TaskStatus::Blocked,
+            _ => return None,
+        };
+        if title.trim().is_empty() { return None; }
+        Some(Task {
+            id: format!("{project}:todo:{}", line + 1),
+            project: project.into(), title: title.trim().into(), status,
+            source: "todo".into(), url: Some(path.into()),
+        })
+    }).collect()
+}
+
+#[cfg(test)]
+mod file_tests {
+    use super::*;
+    #[test]
+    fn markdown_handles_statuses_unicode_and_code_blocks() {
+        let tasks = parse_markdown("- [ ] Привет\n  - [~] running\n- [x] done\n- [!] blocked\n```md\n- [ ] example\n```\n- [] invalid", "a", "/a/TODO.md");
+        assert_eq!(count_by_status(&tasks), (1, 1, 1, 1));
+        assert_eq!(tasks[0].title, "Привет");
+        assert_ne!(tasks[0].id, parse_markdown("- [ ] Привет", "b", "/b/TODO.md")[0].id);
+    }
+    #[test]
+    fn model_serializes_wire_statuses() {
+        assert_eq!(serde_json::to_string(&TaskStatus::InProgress).unwrap(), "\"in_progress\"");
+        assert!(serde_json::from_str::<TaskStatus>("\"unknown\"").is_err());
     }
 }

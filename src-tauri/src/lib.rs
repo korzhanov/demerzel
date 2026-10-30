@@ -123,8 +123,8 @@ fn start_process(
         }
     };
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
-    reg.start(&project, &cmd, &cwd, &Default::default(), None)
-        .map_err(|e| e.to_string())
+    // Диапазон из orchestrator.json → аренда → env PORT (#13).
+    reg.start_configured(&project, &cmd, &cwd)
 }
 
 #[tauri::command]
@@ -143,6 +143,28 @@ fn list_processes(processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, St
 fn process_logs(processes: tauri::State<'_, Processes>, id: u64) -> Result<Option<Vec<LogLine>>, String> {
     let reg = processes.0.lock().map_err(|e| e.to_string())?;
     Ok(reg.logs(id))
+}
+
+#[tauri::command]
+fn list_ports(processes: tauri::State<'_, Processes>) -> Result<Vec<backend::ports::PortRow>, String> {
+    processes.0.lock().map_err(|e| e.to_string())?.port_inventory()
+}
+
+#[tauri::command]
+fn project_tasks(path: String) -> Result<Vec<backend::tasks::Task>, String> {
+    use backend::tasks::TaskSource;
+    let root = PathBuf::from(&path);
+    let cfg = backend::config::load_checked(&root)?;
+    let task_config = cfg.and_then(|c| c.tasks);
+    let source = task_config.as_ref().map(|t| t.source.as_str()).unwrap_or("todo");
+    if source == "github" {
+        let tasks = task_config.as_ref().ok_or("missing tasks configuration")?;
+        return backend::github_tasks::GithubSource {
+            repository: tasks.repository.clone().ok_or("tasks.repository must be owner/name")?,
+            label: tasks.label.clone(),
+        }.fetch(&path);
+    }
+    backend::tasks::FileSource { root, json: source == "tasks-json" }.fetch(&path)
 }
 
 #[tauri::command]
@@ -167,7 +189,9 @@ pub fn run() {
             start_process,
             stop_process,
             list_processes,
-            process_logs
+            process_logs,
+            list_ports,
+            project_tasks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

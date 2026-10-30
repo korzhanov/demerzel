@@ -2,5 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    demerzel_lib::run()
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        demerzel_lib::run();
+    } else {
+        let result = demerzel_lib::backend::cli::run(&args);
+        if result != std::process::ExitCode::SUCCESS { std::process::exit(1); }
+    }
 }
