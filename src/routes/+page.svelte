@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onDestroy, onMount } from "svelte";
+  import type { Settings } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -19,14 +20,26 @@
 
   let poll: ReturnType<typeof setInterval> | undefined;
 
-  async function scan() {
-    error = "";
-    const list = roots
+  function rootList(): string[] {
+    return roots
       .split("\n")
       .map((r) => r.trim())
       .filter(Boolean);
+  }
+
+  async function saveRoots() {
     try {
-      projects = await invoke<Project[]>("scan_projects", { roots: list });
+      await invoke("save_settings", { settings: { scan_roots: rootList() } as Settings });
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function scan() {
+    error = "";
+    await saveRoots();
+    try {
+      projects = await invoke<Project[]>("scan_projects", { roots: rootList() });
     } catch (e) {
       error = String(e);
     }
@@ -73,7 +86,14 @@
     refresh();
   }
 
-  onMount(() => {
+  onMount(async () => {
+    try {
+      const s = await invoke<Settings>("get_settings");
+      roots = s.scan_roots.join("\n");
+      if (roots) await scan();
+    } catch (e) {
+      error = String(e);
+    }
     refresh();
     poll = setInterval(refresh, 1000);
   });
