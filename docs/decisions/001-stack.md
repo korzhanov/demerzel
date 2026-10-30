@@ -45,7 +45,7 @@
 
 ## Consequences
 
-- В основном приложении: `tauri add widgets`, `init-macos`, App Group `group.app.demerzel.orchestrator`, post-sign для локальных сборок без Team ID.
+- В основном приложении: `tauri add widgets`, `init-macos`, App Group `group.app.demerzel.orchestrator`, post-sign для локальных сборок без Team ID. Перенос sidecar: `src-tauri/macos-widget/` + docs `widget-macos.md` (#103).
 - Для TestFlight / MAS нужен Team ID и `transport: appGroup`.
 - Следить за дневным бюджетом WidgetKit reload (~40–70/сутки); для демо-тика 10 с — только debug.
 - Завести upstream-issue на s00d/tauri-plugin-widgets про missing Tests path в npm package.

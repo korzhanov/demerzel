@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.0 — 2026-10-31
+
+- Виджет macOS снова встраивается в бандл: `src-tauri/macos-widget/` (xcodegen → `.appex`), `beforeBundleCommand` + `bundle.macOS.files` → `Contents/PlugIns/`, ad-hoc `sign:macos` / `widget:install`, `tauri-plugin-widgets-api` + postinstall-патч Swift Package. Docs: `docs/widget-macos.md`. Закрывает #103 (разрыв со спайком: плагин был, `.appex` — нет).
+
 ## 0.41.0 — 2026-10-30
 
 - UI на shadcn-svelte (Tailwind v4, bits-ui, paneforge): Button, Card, Table, Tabs, Badge, Input, Textarea, ToggleGroup, ScrollArea, Resizable; тема в палитре мозаики. Колонки — с перетаскиваемыми границами. Панели портов, задач и ревью агентов переведены на компоненты. Исходники компонентов взяты с GitHub (shadcn-svelte@1.0.0): реестр сайта недоступен из песочницы, поэтому `components.json` написан вручную.
