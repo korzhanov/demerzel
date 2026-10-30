@@ -113,6 +113,7 @@ mod tests {
             name: "api".into(),
             running: 1,
             failing: 2,
+            ..Default::default()
         });
         s.recompute();
         s.port_conflicts = 1;
