@@ -264,4 +264,31 @@ mod tests {
         assert_eq!(resolve_dev_command(&dir), None);
         fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn load_checked_missing_is_none() {
+        let dir = tmp("nocheck");
+        assert_eq!(load_checked(&dir).unwrap(), None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn load_checked_rejects_bad_json() {
+        let dir = tmp("badcheck");
+        fs::write(dir.join(CONFIG_FILE), "{").unwrap();
+        assert!(load_checked(&dir).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+/// Missing configuration is allowed; malformed or unreadable configuration is not.
+pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
+    let path = dir.join(CONFIG_FILE);
+    match fs::read_to_string(&path) {
+        Ok(text) => parse(&text)
+            .map(Some)
+            .map_err(|e| format!("{}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }

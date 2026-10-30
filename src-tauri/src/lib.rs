@@ -123,8 +123,8 @@ fn start_process(
         }
     };
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
-    reg.start(&project, &cmd, &cwd, &Default::default(), None)
-        .map_err(|e| e.to_string())
+    // Диапазон из orchestrator.json → аренда → env PORT (#13).
+    reg.start_configured(&project, &cmd, &cwd)
 }
 
 #[tauri::command]

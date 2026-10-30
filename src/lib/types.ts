@@ -18,6 +18,8 @@ export interface ProcessRow {
   project: string;
   command: string;
   status: ProcessStatus;
+  pid?: number | null;
+  port?: number | null;
 }
 
 export interface LogLine {
