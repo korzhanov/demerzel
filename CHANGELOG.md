@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.29.0 — 2026-10-30
+
+- Менеджер git worktree для агентов: `create_worktree` / `remove_worktree` в `~/.orchestrator/worktrees/<project>/<run-id>` с веткой `agent/<run-id>` (`DEMERZEL_WORKTREES_DIR`), изоляция от основной ветки, документ `docs/agents.md`. Закрывает #27.
+
 ## 0.28.0 — 2026-10-30
 
 - Голосовые алерты через macOS `say -v Milena`: короткие настраиваемые фразы (`alerts.voice`), вызов только при `DeliveryDecision.speak` (critical; тихие часы → off; ≤1/мин). Модуль `backend/speak`, трейт `VoiceSpeaker` для моков, `ingest_alert_event` → `spoken`. Закрывает #23.
