@@ -32,6 +32,9 @@ pub struct WidgetState(pub Mutex<Throttle>);
 /// Stateful `DeliveryGate` для алертов (#21–#23).
 pub struct AlertGate(pub Mutex<DeliveryGate>);
 
+/// In-memory реестр agent runs для UI ревью (#32).
+pub struct AgentRuns(pub Mutex<backend::agents::AgentRunRegistry>);
+
 /// Результат приёма события алерта (для UI / тестов).
 #[derive(Debug, Clone, Serialize)]
 pub struct IngestAlertResult {
@@ -246,6 +249,53 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+fn list_agent_runs(
+    runs: tauri::State<'_, AgentRuns>,
+) -> Result<Vec<backend::agents::AgentRunRecord>, String> {
+    let reg = runs.0.lock().map_err(|e| e.to_string())?;
+    Ok(reg.list())
+}
+
+#[tauri::command]
+fn get_agent_run(
+    runs: tauri::State<'_, AgentRuns>,
+    id: String,
+) -> Result<backend::agents::AgentRunRecord, String> {
+    let reg = runs.0.lock().map_err(|e| e.to_string())?;
+    reg.get(&id)
+        .cloned()
+        .ok_or_else(|| format!("agent run not found: {id}"))
+}
+
+/// Запись / обновление run (сиды для UI и будущий запуск из задачи #33).
+#[tauri::command]
+fn upsert_agent_run(
+    runs: tauri::State<'_, AgentRuns>,
+    record: backend::agents::AgentRunRecord,
+) -> Result<(), String> {
+    let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+    reg.upsert(record)
+}
+
+#[tauri::command]
+fn accept_agent_run(
+    runs: tauri::State<'_, AgentRuns>,
+    id: String,
+) -> Result<backend::agents::AcceptAgentRunResult, String> {
+    let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+    reg.accept(&id)
+}
+
+#[tauri::command]
+fn discard_agent_run(
+    runs: tauri::State<'_, AgentRuns>,
+    id: String,
+) -> Result<backend::agents::AgentRunRecord, String> {
+    let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+    reg.discard(&id)
+}
+
 /// Оценивает событие → gate → OS notify (#22) и `say` (#23) по флагам решения.
 #[tauri::command]
 fn ingest_alert_event(
@@ -305,6 +355,7 @@ pub fn run() {
         .manage(WidgetState(Mutex::new(Throttle::new(DEFAULT_MIN_INTERVAL_SECS))))
         .manage(Processes(Mutex::new(Registry::default())))
         .manage(AlertGate(Mutex::new(DeliveryGate::new_default())))
+        .manage(AgentRuns(Mutex::new(backend::agents::AgentRunRegistry::new())))
         .setup(|app| {
             let handle = app.handle().clone();
             app.notification().on_action(move |performed| {
@@ -335,6 +386,11 @@ pub fn run() {
             process_logs,
             list_ports,
             project_tasks,
+            list_agent_runs,
+            get_agent_run,
+            upsert_agent_run,
+            accept_agent_run,
+            discard_agent_run,
             ingest_alert_event
         ])
         .run(tauri::generate_context!())

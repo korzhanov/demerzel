@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-  import type { Settings, PortRow, Task } from "$lib/types";
+  import type { AcceptAgentRunResult, AgentRunRecord, Settings, PortRow, Task } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -16,6 +16,7 @@
   import { canOpenTask } from "$lib/tasks";
   import PortsPanel from "$lib/components/PortsPanel.svelte";
   import TasksPanel from "$lib/components/TasksPanel.svelte";
+  import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
 
   let roots = $state("");
   let projects = $state<Project[]>([]);
@@ -36,6 +37,11 @@
   let taskErrors = $state<string[]>([]);
   let tasksBusy = $state(false);
   let projectFilter = $state("");
+  let agentRuns = $state<AgentRunRecord[]>([]);
+  let agentRunsError = $state("");
+  let agentRunsBusy = $state(false);
+  let selectedAgentRunId = $state<string | null>(null);
+  let agentMergeCommand = $state("");
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
@@ -78,6 +84,45 @@
       else await openPath(task.url);
     } catch (e) {
       taskErrors = [...taskErrors, String(e)];
+    }
+  }
+
+  async function refreshAgentRuns() {
+    if (!mounted || agentRunsBusy) return;
+    agentRunsBusy = true;
+    try {
+      const result = await invoke<AgentRunRecord[]>("list_agent_runs");
+      if (!mounted) return;
+      agentRuns = result;
+      agentRunsError = "";
+      if (selectedAgentRunId && !result.some((r) => r.id === selectedAgentRunId)) {
+        selectedAgentRunId = null;
+      }
+    } catch (e) {
+      if (mounted) agentRunsError = String(e);
+    } finally {
+      agentRunsBusy = false;
+    }
+  }
+
+  async function acceptAgentRun(id: string) {
+    try {
+      const result = await invoke<AcceptAgentRunResult>("accept_agent_run", { id });
+      agentMergeCommand = result.merge_command;
+      await refreshAgentRuns();
+    } catch (e) {
+      agentRunsError = String(e);
+    }
+  }
+
+  async function discardAgentRun(id: string) {
+    try {
+      await invoke("discard_agent_run", { id });
+      if (selectedAgentRunId === id) selectedAgentRunId = null;
+      if (agentMergeCommand) agentMergeCommand = "";
+      await refreshAgentRuns();
+    } catch (e) {
+      agentRunsError = String(e);
     }
   }
 
@@ -200,6 +245,7 @@
     })();
     void refresh();
     void refreshPorts();
+    void refreshAgentRuns();
     const poll = setInterval(() => { void refresh(); }, 1000);
     let nextPortPoll = Date.now();
     const portPoll = setInterval(() => {
@@ -313,6 +359,20 @@
     projects={flatProjects}
     onRefresh={refreshTasks}
     onOpen={openTask}
+  />
+
+  <AgentRunsPanel
+    runs={agentRuns}
+    runsError={agentRunsError}
+    runsBusy={agentRunsBusy}
+    bind:selectedId={selectedAgentRunId}
+    mergeCommand={agentMergeCommand}
+    onRefresh={refreshAgentRuns}
+    onSelect={(id) => {
+      selectedAgentRunId = id;
+    }}
+    onAccept={acceptAgentRun}
+    onDiscard={discardAgentRun}
   />
 </main>
 

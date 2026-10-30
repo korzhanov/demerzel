@@ -1,6 +1,6 @@
 # Агенты: git worktree, Claude CLI, лимиты и ревью
 
-Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #31 (тесты + diff). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #31 (тесты + diff), #32 (UI ревью). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -99,8 +99,22 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 - `run_project_tests` / `capture_diff` / `collect_review`
 - `TestRunResult` / `AgentReviewBundle` / `TEST_SKIPPED`
 - `config::resolve_test_command`
+- `AgentRunRecord` / `AgentRunRegistry` / `AcceptAgentRunResult`
+- `manual_merge_command` / `shell_single_quote`
+- `upsert` / `list` / `accept` / `discard` (discard → `remove_worktree`)
 
-UI ревью (#32) и запуск из задачи (#33) поверх этого слоя.
+## UI ревью (#32)
+
+Панель «Ревью агентов» в главном окне:
+
+1. **Список** — `list_agent_runs` (in-memory `AgentRunRegistry` до полной SQLite-связки).
+2. **Детали** — diff и лог тестов из записи (`get_agent_run`).
+3. **Принять** — только из `needs_review`: статус → `accepted`, UI показывает `manual_merge_command` (`git -C '<repo>' merge --no-ff agent/<run-id>`). Сам merge не выполняется.
+4. **Отклонить** — из `needs_review` / `failed` / `queued`: `remove_worktree` + статус `discarded`.
+
+Tauri: `list_agent_runs`, `get_agent_run`, `upsert_agent_run`, `accept_agent_run`, `discard_agent_run`.
+
+Запуск из задачи (#33) поверх этого слоя (`upsert` после `collect_review`).
 
 ## Связь со схемой
 

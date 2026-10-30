@@ -14,9 +14,12 @@
 //!
 //! После агента (#31): `commands.test` в worktree, `git diff` к базовой ветке,
 //! статус `needs_review` / `failed`.
+//!
+//! UI ревью (#32): in-memory реестр runs, просмотр diff/лога, accept → команда
+//! ручного merge (без git merge), discard → `remove_worktree`.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -762,7 +765,7 @@ pub fn run_claude(
 pub const TEST_SKIPPED: &str = "no commands.test; skipped";
 
 /// Итог прогона `commands.test` в каталоге worktree.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestRunResult {
     /// Команда из конфига (пустая, если skipped).
     pub command: String,
@@ -774,12 +777,154 @@ pub struct TestRunResult {
 }
 
 /// Пакет для ревью: тесты, diff, следующий статус run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentReviewBundle {
     pub tests: TestRunResult,
     pub diff: String,
     pub base_ref: String,
     pub status: RunStatus,
+}
+
+/// Запись run для UI (#32). Persist в SQLite — позже; сейчас in-memory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRunRecord {
+    pub id: String,
+    /// Сегмент пути worktree / имя проекта в оркестраторе.
+    pub project: String,
+    /// Корень git-репозитория проекта (для merge / discard).
+    pub project_path: String,
+    pub task_id: Option<String>,
+    pub status: RunStatus,
+    pub worktree: Option<String>,
+    pub base_ref: String,
+    pub tests: Option<TestRunResult>,
+    pub diff: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+/// Результат «принять»: только команда для ручного merge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcceptAgentRunResult {
+    pub run_id: String,
+    pub status: RunStatus,
+    pub merge_command: String,
+}
+
+/// Экранирование пути для shell single-quoted (`'a'\''b'`).
+pub fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Команда ручного merge ветки агента в репозиторий. Сам merge не выполняется.
+pub fn manual_merge_command(repo: &Path, run_id: &str) -> Result<String, String> {
+    let branch = branch_name(run_id)?;
+    let repo_s = repo
+        .to_str()
+        .ok_or_else(|| "repo path is not UTF-8".to_string())?;
+    Ok(format!(
+        "git -C {} merge --no-ff {}",
+        shell_single_quote(repo_s),
+        branch
+    ))
+}
+
+/// In-memory реестр agent runs для UI ревью (#32).
+#[derive(Debug, Default)]
+pub struct AgentRunRegistry {
+    runs: HashMap<String, AgentRunRecord>,
+}
+
+impl AgentRunRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn upsert(&mut self, record: AgentRunRecord) -> Result<(), String> {
+        let id = record.id.trim().to_string();
+        if id.is_empty() {
+            return Err("run id must not be empty".into());
+        }
+        validate_segment("project", &record.project)?;
+        validate_segment("run_id", &id)?;
+        if record.project_path.trim().is_empty() {
+            return Err("project_path must not be empty".into());
+        }
+        let mut row = record;
+        row.id = id;
+        self.runs.insert(row.id.clone(), row);
+        Ok(())
+    }
+
+    pub fn get(&self, id: &str) -> Option<&AgentRunRecord> {
+        self.runs.get(id)
+    }
+
+    /// Список: сначала более свежие (`finished_at` / `started_at` / id).
+    pub fn list(&self) -> Vec<AgentRunRecord> {
+        let mut rows: Vec<_> = self.runs.values().cloned().collect();
+        rows.sort_by(|a, b| {
+            let ka = a
+                .finished_at
+                .as_deref()
+                .or(a.started_at.as_deref())
+                .unwrap_or(a.id.as_str());
+            let kb = b
+                .finished_at
+                .as_deref()
+                .or(b.started_at.as_deref())
+                .unwrap_or(b.id.as_str());
+            kb.cmp(ka).then_with(|| b.id.cmp(&a.id))
+        });
+        rows
+    }
+
+    /// `needs_review` → `accepted`; возвращает команду merge, git не трогает.
+    pub fn accept(&mut self, id: &str) -> Result<AcceptAgentRunResult, String> {
+        let run = self
+            .runs
+            .get_mut(id)
+            .ok_or_else(|| format!("agent run not found: {id}"))?;
+        if !can_transition(run.status, RunStatus::Accepted) {
+            return Err(format!(
+                "cannot accept run from status '{}'",
+                run.status.as_str()
+            ));
+        }
+        let merge_command = manual_merge_command(Path::new(&run.project_path), &run.id)?;
+        run.status = RunStatus::Accepted;
+        Ok(AcceptAgentRunResult {
+            run_id: run.id.clone(),
+            status: run.status,
+            merge_command,
+        })
+    }
+
+    /// `needs_review` / `failed` / `queued` → `discarded` + `remove_worktree`.
+    pub fn discard(&mut self, id: &str) -> Result<AgentRunRecord, String> {
+        let snapshot = self
+            .runs
+            .get(id)
+            .cloned()
+            .ok_or_else(|| format!("agent run not found: {id}"))?;
+        if !can_transition(snapshot.status, RunStatus::Discarded) {
+            return Err(format!(
+                "cannot discard run from status '{}'",
+                snapshot.status.as_str()
+            ));
+        }
+        if snapshot.worktree.is_some() {
+            remove_worktree(
+                Path::new(&snapshot.project_path),
+                &snapshot.project,
+                &snapshot.id,
+            )?;
+        }
+        let run = self.runs.get_mut(id).expect("run exists after snapshot");
+        run.status = RunStatus::Discarded;
+        run.worktree = None;
+        Ok(run.clone())
+    }
 }
 
 /// Запускает shell-команду тестов в worktree (`sh -c`).
@@ -1415,5 +1560,106 @@ Pages wired down:                         9000.
         unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
         let _ = fs::remove_dir_all(&repo);
         let _ = fs::remove_dir_all(&wt_root);
+    }
+
+    fn sample_review_record(repo: &Path, project: &str, run_id: &str, wt: &Path) -> AgentRunRecord {
+        AgentRunRecord {
+            id: run_id.to_string(),
+            project: project.to_string(),
+            project_path: repo.display().to_string(),
+            task_id: Some("task-1".into()),
+            status: NeedsReview,
+            worktree: Some(wt.display().to_string()),
+            base_ref: "main".into(),
+            tests: Some(TestRunResult {
+                command: "exit 0".into(),
+                exit_code: Some(0),
+                log: "ok\n".into(),
+                skipped: false,
+                duration_ms: 1,
+            }),
+            diff: Some("diff --git a/x b/x\n".into()),
+            started_at: Some("2026-10-30T10:00:00Z".into()),
+            finished_at: Some("2026-10-30T10:05:00Z".into()),
+        }
+    }
+
+    #[test]
+    fn manual_merge_command_quotes_path() {
+        let cmd = manual_merge_command(Path::new("/tmp/demo's"), "run-1").unwrap();
+        assert_eq!(
+            cmd,
+            "git -C '/tmp/demo'\\''s' merge --no-ff agent/run-1"
+        );
+    }
+
+    #[test]
+    fn registry_accept_shows_merge_command_without_removing_worktree() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let repo = std::env::temp_dir().join(format!("demerzel-ui-acc-{}", std::process::id()));
+        let wt_root = std::env::temp_dir().join(format!("demerzel-ui-acc-wt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        init_repo(&repo);
+        unsafe { std::env::set_var("DEMERZEL_WORKTREES_DIR", &wt_root) };
+        let handle = create_worktree(&repo, "app", "acc-1", Some("main")).unwrap();
+        fs::write(handle.path.join("note.txt"), "n\n").unwrap();
+
+        let mut reg = AgentRunRegistry::new();
+        reg.upsert(sample_review_record(&repo, "app", "acc-1", &handle.path))
+            .unwrap();
+
+        let accepted = reg.accept("acc-1").unwrap();
+        assert_eq!(accepted.status, Accepted);
+        assert!(accepted.merge_command.contains("merge --no-ff agent/acc-1"));
+        assert!(handle.path.is_dir(), "accept must not remove worktree");
+        assert_eq!(reg.get("acc-1").unwrap().status, Accepted);
+        assert!(reg.accept("acc-1").is_err());
+
+        remove_worktree(&repo, "app", "acc-1").unwrap();
+        unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+    }
+
+    #[test]
+    fn registry_discard_removes_worktree() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let repo = std::env::temp_dir().join(format!("demerzel-ui-disc-{}", std::process::id()));
+        let wt_root = std::env::temp_dir().join(format!("demerzel-ui-disc-wt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        init_repo(&repo);
+        unsafe { std::env::set_var("DEMERZEL_WORKTREES_DIR", &wt_root) };
+        let handle = create_worktree(&repo, "app", "disc-1", Some("main")).unwrap();
+        let wt_path = handle.path.clone();
+
+        let mut reg = AgentRunRegistry::new();
+        reg.upsert(sample_review_record(&repo, "app", "disc-1", &wt_path))
+            .unwrap();
+        let discarded = reg.discard("disc-1").unwrap();
+        assert_eq!(discarded.status, Discarded);
+        assert!(discarded.worktree.is_none());
+        assert!(!wt_path.exists());
+        assert!(reg.discard("disc-1").is_err());
+
+        unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+    }
+
+    #[test]
+    fn registry_list_orders_newest_first() {
+        let mut reg = AgentRunRegistry::new();
+        let mut older = sample_review_record(Path::new("/tmp/r"), "app", "old", Path::new("/tmp/w1"));
+        older.finished_at = Some("2026-10-30T09:00:00Z".into());
+        older.worktree = None;
+        let mut newer = sample_review_record(Path::new("/tmp/r"), "app", "new", Path::new("/tmp/w2"));
+        newer.finished_at = Some("2026-10-30T11:00:00Z".into());
+        newer.worktree = None;
+        reg.upsert(older).unwrap();
+        reg.upsert(newer).unwrap();
+        let ids: Vec<_> = reg.list().into_iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec!["new".to_string(), "old".to_string()]);
     }
 }
