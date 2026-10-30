@@ -11,9 +11,24 @@
 | `dem down [ROOT]` | Остановка сервисов, поднятых через `up` |
 | `dem sync [ROOT]` | Перезапуск упавших + `commands.migrate` |
 | `dem watch [ROOT]` | Живой стрим логов и CPU/RSS (раз в секунду) |
+| `dem pulse [PROJECT] [--json] [ROOT]` | Пульс прогресса проекта (#97 / #102) |
+| `dem restart <PROJECT> [--json] [ROOT]` | Перезапуск одного сервиса (#102) |
 | `dem help` | Справка |
 
-`ROOT` по умолчанию — текущая директория.
+`ROOT` по умолчанию — текущая директория. `PROJECT` — имя сервиса из `demerzel.yaml` или `name` из `orchestrator.json`.
+
+## Пульс и перезапуск (#102)
+
+Опираются на контракт опроса ([pulse.md](pulse.md)). Ходят в тот же Unix-сокет, что и `status` / `up` — единый локальный API для CLI и будущих App Intents. Сети наружу нет.
+
+| Команда | Поведение |
+|---|---|
+| `dem pulse` | Все проекты с `pulse` в `orchestrator.json`; человекочитаемая строка `name: summary, ещё N мин` |
+| `dem pulse parser --json` | JSON: `{ "project", "summary", "metrics?", "eta_seconds?", "state?" }` |
+| `dem restart parser` | Stop + start process-сервиса или `docker compose restart` |
+| `dem restart parser --json` | `{ "project", "status": "restarted", "id?" }` |
+
+Без `--json` несколько пульсов выводятся построчно; с `--json` — один объект или массив.
 
 ## Миграции (`commands.migrate`)
 
@@ -40,9 +55,24 @@ Docker Compose-сервисы (`type: docker-compose`) миграции чере
 }
 ```
 
-## Supervisor
+## Supervisor / локальный API
 
-Состояние процессов держит фоновый supervisor на Unix-сокете `~/.orchestrator/runtime/dem.sock` (override: `DEMERZEL_RUNTIME_DIR`). Команды `up`, `sync`, `status` и `watch` поднимают его при необходимости; `down` требует уже запущенный supervisor.
+Состояние процессов держит фоновый supervisor на Unix-сокете `~/.orchestrator/runtime/dem.sock` (override: `DEMERZEL_RUNTIME_DIR`). Протокол — одна JSON-строка запроса / ответа на соединение:
+
+```json
+{ "action": "pulse", "root": "/path/to/ecosystem", "project": "parser", "json": true }
+```
+
+| Поле | Смысл |
+|---|---|
+| `action` | `up` / `down` / `sync` / `status` / `watch` / `pulse` / `restart` |
+| `root` | Каталог с `demerzel.yaml` или `orchestrator.json` |
+| `project` | Имя сервиса (нужен для `restart`; для `pulse` опционален) |
+| `json` | Машинный ответ для `pulse` / `restart` |
+
+Ответ: `{ "output": "…", "error": null }` или `{ "output": "", "error": "…" }`.
+
+Команды `up`, `sync`, `status`, `watch`, `pulse` и `restart` поднимают supervisor при необходимости; `down` требует уже запущенный supervisor.
 
 Лог supervisor: `~/.orchestrator/runtime/supervisor.log` (или `$DEMERZEL_RUNTIME_DIR/supervisor.log`).
 
@@ -50,3 +80,4 @@ Docker Compose-сервисы (`type: docker-compose`) миграции чере
 
 - Менеджер процессов / реестр (#8) и логи (#9).
 - Манифест экосистемы [`demerzel.yaml`](demerzel-yaml.md): process и `type: docker-compose` (рантайм Compose — #42 / `docker.rs`). Для одного проекта достаточно `orchestrator.json`.
+- Контракт пульса (#97): [pulse.md](pulse.md).

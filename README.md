@@ -34,7 +34,7 @@ bun run tauri dev
 Юнит-тесты бэкенда: `cd src-tauri && cargo test --lib`.  
 Проверка типов: `bun run check`.
 
-CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|up|down|sync|watch` — см. [docs/cli.md](docs/cli.md).
+CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|up|down|sync|watch`, `dem pulse [--json]`, `dem restart <проект>` — см. [docs/cli.md](docs/cli.md).
 
 Состояние рантайма и worktree агентов живут в `~/.orchestrator/` (override: `DEMERZEL_RUNTIME_DIR`, `DEMERZEL_WORKTREES_DIR`).
 

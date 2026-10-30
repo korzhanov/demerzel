@@ -1,7 +1,7 @@
 //! Контракт «пульс проекта»: опрос команды / файла (#97).
 //!
 //! Конфиг — `orchestrator.json` → `pulse`. Снимок совместим с `summary::ProjectPulse` (#98).
-//! CLI `dem pulse` — отдельно (#102).
+//! CLI `dem pulse` / `dem restart` — #102 (`backend/cli`).
 
 use super::config::{resolve_pulse_command, resolve_pulse_file, PulseConfig};
 use super::summary::ProjectPulse;
