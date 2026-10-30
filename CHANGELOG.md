@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.1 — 2026-10-30
+
+- README: что это, запуск, `orchestrator.json`, ссылки на docs. Указатель `docs/README.md` (ADR, схемы, форматы, фазы). Закрывает #35.
+
 ## 0.35.0 — 2026-10-30
 
 - Опциональный раннер Ollama (`ollama run qwen2.5-coder:7b`) рядом с Claude CLI: выбор в `agents.runner` / селект на доске задач, модель в `agents.ollama_model`, тот же worktree + `collect_review`. Claude остаётся путём по умолчанию. Документ `docs/agents.md`. Закрывает #30.

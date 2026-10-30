@@ -1,6 +1,6 @@
 [package]
 name = "demerzel"
-version = "0.35.0"
+version = "0.35.1"
 description = "The Shadow Orchestrator of Your Local Stack Empire"
 authors = ["you"]
 edition = "2024"
