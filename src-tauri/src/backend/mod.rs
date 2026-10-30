@@ -1,5 +1,6 @@
 //! Бэкенд Demerzel. Модули не зависят от Tauri: логика тестируется без GUI.
 pub mod agents;
+pub mod config;
 pub mod alerts;
 pub mod ports;
 pub mod process;
