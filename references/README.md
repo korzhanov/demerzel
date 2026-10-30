@@ -7,6 +7,7 @@
 - `media/`: иконки, обложки, скриншоты для публичных материалов.
 - `tasks.md`: черновик задач по ассетам (иконки, обложки).
 - `alerts-rules-wireframe.md`: контракт движка правил алертов (#20).
+- `alerts-delivery-wireframe.md`: дедуп / троттлинг / тихие часы (#21).
 - `ports-tasks-wireframe.md`: порты и доска задач.
 
 Правила: см. [docs/CONVENTIONS.md](../docs/CONVENTIONS.md#референсы-и-ассеты).

@@ -55,8 +55,21 @@ export interface AlertRule {
   enabled?: boolean;
 }
 
+export interface QuietHoursConfig {
+  enabled?: boolean;
+  start?: string;
+  end?: string;
+}
+
 export interface AlertsConfig {
   rules: AlertRule[];
+  /** Окно дедупа, секунды (по умолчанию 600). */
+  dedupe_window_secs?: number;
+  /** Мин. интервал между голосами, секунды (по умолчанию 60). */
+  voice_min_interval_secs?: number;
+  quiet_hours?: QuietHoursConfig;
+  /** IANA TZ, по умолчанию Europe/Berlin. */
+  timezone?: string;
 }
 
 export interface Settings {
