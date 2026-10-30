@@ -74,3 +74,35 @@ Demerzel читает задачи проекта из файлов в корн�
 ```
 
 Ошибки: файл не читается, JSON невалиден, пустой `id`/`title`, дубликат `id`.
+
+## GitHub Issues (`source: "github"`)
+
+Адаптер `GithubSource` в `github_tasks.rs` (#18). Только REST через `gh api` (сессия `gh auth login` / токен Keychain). GraphQL не используется.
+
+В `orchestrator.json`:
+
+```json
+{
+  "name": "demerzel",
+  "type": "app",
+  "tasks": {
+    "source": "github",
+    "repository": "owner/name",
+    "label": "tasks"
+  }
+}
+```
+
+| Поле | Обязательно | Описание |
+|---|---|---|
+| `repository` | да (при fetch) | `owner/name`; путь/URL отклоняются |
+| `label` | нет | фильтр метки; без него — все открытые issues |
+
+Поведение:
+
+- Запрос: `GET /repos/{owner}/{name}/issues?state=open&per_page=100` (+ `labels=`).
+- Записи с полем `pull_request` отбрасываются.
+- `open` → `todo`, `closed` → `done` (на случай нормализации вне списка open).
+- Id: `github:{owner}/{name}#{number}`; `source` = `github`; `url` = `html_url`.
+- Кэш: ETag + `If-None-Match` (ответ `304` → кэш); повторный REST не чаще раза в 60 с на endpoint (лимит запросов).
+- Пагинация до 100 страниц; иначе ошибка с просьбой сузить `label`.

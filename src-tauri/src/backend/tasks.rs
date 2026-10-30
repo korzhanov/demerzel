@@ -1,4 +1,5 @@
 //! Модель задачи и трейт источника (#16); файловый адаптер TODO.md / tasks.json (#17).
+//! GitHub Issues REST + ETag — `github_tasks::GithubSource` (#18).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

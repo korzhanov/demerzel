@@ -37,7 +37,15 @@
       "required": ["source"],
       "additionalProperties": false,
       "properties": {
-        "source": { "enum": ["todo", "tasks-json", "github"] }
+        "source": { "enum": ["todo", "tasks-json", "github"] },
+        "repository": {
+          "type": "string",
+          "description": "owner/name для source=github (#18)"
+        },
+        "label": {
+          "type": "string",
+          "description": "Опциональный фильтр метки GitHub Issues"
+        }
       }
     },
     "env": {

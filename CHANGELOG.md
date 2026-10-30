@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.19.0 — 2026-10-30
+
+- Адаптер GitHub Issues `GithubSource`: REST через `gh api`, фильтр по метке, исключение PR, кэш ответа по ETag/`If-None-Match` и минимум 60 с между запросами. Документ `docs/tasks-format.md` (секция GitHub), поля `repository`/`label` в схеме. Закрывает #18.
+
 ## 0.18.0 — 2026-10-30
 
 - Файловый адаптер `FileSource`: парсер чекбоксов `TODO.md` (`parse_markdown`, статус `in_progress` через `- [~]`) и чтение `tasks.json` с квалификацией id по проекту. Документ `docs/tasks-format.md`, тесты на фикстурах. Закрывает #17.
