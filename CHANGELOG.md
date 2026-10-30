@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — 2026-10-30
+
+- Инструменты: Bun вместо pnpm (`bun.lock`, `beforeDevCommand`/`beforeBuildCommand`, CI через `oven-sh/setup-bun`).
+- Конвенции: Bun и шаг обновления ссылки на удалённую ветку после push.
+
 ## 0.1.1 — 2026-10-30
 
 - CI: GitHub Actions. Frontend на Ubuntu (`pnpm check`, `pnpm build`), backend на macOS (`cargo test`, `cargo clippy -D warnings`, `pnpm tauri build --debug`). Закрывает #34.

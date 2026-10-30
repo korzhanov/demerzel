@@ -10,8 +10,16 @@ The Shadow Orchestrator of Your Local Stack Empire.
 - SvelteKit в режиме SPA (интерфейс)
 - `tauri-plugin-widgets` (виджет macOS, запасной вариант: Swift WidgetKit)
 - SQLite (состояние)
+- Bun (пакеты, скрипты, запуск)
 
 Решения зафиксированы в [docs/decisions](docs/decisions).
+
+## Запуск
+
+```sh
+bun install
+bun run tauri dev
+```
 
 ## Статус
 
