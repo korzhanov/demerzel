@@ -6,6 +6,7 @@
 //! Опциональный пульс проектов (#98); источник команды/файла — #97.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -13,7 +14,7 @@ use std::path::Path;
 pub const SUMMARY_VERSION: u32 = 1;
 
 /// Снимок пульса для виджета / summary.json (#98).
-/// Полный контракт опроса (команда / файл) — #97.
+/// Полный контракт опроса (команда / файл, metrics) — #97.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProjectPulse {
     pub summary: String,
@@ -21,6 +22,9 @@ pub struct ProjectPulse {
     pub eta_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// Числовые метрики прогресса (например parsed / checked); виджет их не рисует.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<BTreeMap<String, i64>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -125,6 +129,10 @@ mod tests {
                 summary: "1500 новых лемм, 450 проверено".into(),
                 eta_seconds: Some(600),
                 state: Some("running".into()),
+                metrics: Some(BTreeMap::from([
+                    ("parsed".into(), 1500),
+                    ("checked".into(), 450),
+                ])),
             }),
         });
         s.projects.push(ProjectStatus {
@@ -158,6 +166,7 @@ mod tests {
             summary: "1500 новых лемм, 450 проверено".into(),
             eta_seconds: Some(600),
             state: None,
+            metrics: None,
         };
         assert_eq!(
             format_pulse_line("parser", &pulse),
@@ -178,6 +187,7 @@ mod tests {
                 summary: "  ".into(),
                 eta_seconds: None,
                 state: None,
+                metrics: None,
             }),
         });
         let names: Vec<_> = s.projects_with_pulse().map(|(n, _)| n).collect();

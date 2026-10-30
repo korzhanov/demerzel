@@ -66,6 +66,39 @@
     "env": {
       "type": "object",
       "additionalProperties": { "type": "string" }
+    },
+    "pulse": {
+      "type": "object",
+      "description": "Опрос прогресса проекта (#97): ровно один из command | file. Снимок → summary.json / виджет (#98).",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell-команда; stdout = JSON {summary, metrics?, eta_seconds?, state?}"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Относительный путь к JSON пульса в корне проекта (без ..)"
+        },
+        "interval_secs": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "Интервал опроса, секунды"
+        },
+        "timeout_secs": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Таймаут команды, секунды (для file игнорируется)"
+        }
+      },
+      "oneOf": [
+        { "required": ["command"], "not": { "required": ["file"] } },
+        { "required": ["file"], "not": { "required": ["command"] } }
+      ]
     }
   }
 }

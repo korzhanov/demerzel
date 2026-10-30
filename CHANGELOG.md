@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.44.0 — 2026-10-31
+
+- Контракт пульса проекта (#97): `pulse` в `orchestrator.json` (`command` или `file`, `interval_secs`, `timeout_secs`), JSON `{summary, metrics?, eta_seconds?, state?}`, модуль `backend/pulse` с таймаутом команды и `PulseStore` (последняя запись). Схема, docs `pulse.md`, пример `examples/parser/`. Снимок совместим с виджетом (#98); CLI `dem pulse` — #102. Закрывает #97.
+
 ## 0.43.0 — 2026-10-31
 
 - Пульс проектов в виджете: опциональный `pulse` в `summary.json` (summary + ETA), строки в small (1) / medium (до 3), `widget::config` пушит оба размера; reload только при изменении текста IR. Зеркало в native WidgetKit fallback и `src/lib/pulse.ts`. Docs: `docs/widget-macos.md`. Источник опроса (#97) отдельно. Закрывает #98.

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   formatEtaRu,
   formatPulseLine,
+  parsePulsePayload,
   projectsWithPulse,
   pulseFingerprint,
   type ProjectWithPulse,
@@ -60,5 +61,23 @@ describe("projectsWithPulse / pulseFingerprint", () => {
         },
       ]),
     ).not.toBe(a);
+  });
+});
+
+describe("parsePulsePayload (#97)", () => {
+  test("accepts metrics and eta", () => {
+    const p = parsePulsePayload({
+      summary: "1500 новых лемм, 450 проверено",
+      metrics: { parsed: 1500, checked: 450 },
+      eta_seconds: 600,
+      state: "running",
+    });
+    expect(p.summary).toBe("1500 новых лемм, 450 проверено");
+    expect(p.metrics).toEqual({ parsed: 1500, checked: 450 });
+    expect(p.eta_seconds).toBe(600);
+  });
+
+  test("rejects empty summary", () => {
+    expect(() => parsePulsePayload({ summary: "  " })).toThrow(/summary/);
   });
 });

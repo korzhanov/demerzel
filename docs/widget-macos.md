@@ -80,9 +80,9 @@ bun run widget:preview
 
 С Team ID / MAS: `transport: appGroup` и Developer portal App Group — см. ADR-001.
 
-## Пульс проектов (#98)
+## Пульс проектов (#98 / #97)
 
-В `summary.json` у проекта может быть опциональный снимок пульса (совместим с контрактом #97):
+В `summary.json` у проекта может быть опциональный снимок пульса. Источник — `orchestrator.json` → `pulse` (команда или файл, опрос с таймаутом): [pulse.md](pulse.md) (#97).
 
 ```json
 {
@@ -91,6 +91,7 @@ bun run widget:preview
   "failing": 0,
   "pulse": {
     "summary": "1500 новых лемм, 450 проверено",
+    "metrics": { "parsed": 1500, "checked": 450 },
     "eta_seconds": 600,
     "state": "running"
   }
@@ -104,6 +105,6 @@ bun run widget:preview
 | small | failing + порты + **1** строка пульса (`name: summary, ещё N мин`) |
 | medium | проекты / задачи + до **3** строк пульса |
 
-IR собирается в `widget::config` (small+medium). `refresh_widget` сравнивает текст IR и вызывает `reload_all_timelines` только при изменении (throttle ≥30 с) — бюджет WidgetKit не жжётся на тот же пульс. Источник опроса команды/файла — [#97](https://github.com/korzhanov/demerzel/issues/97); виджет только отображает уже попавший в summary снимок.
+Метрики в IR не рисуются. IR собирается в `widget::config` (small+medium). `refresh_widget` сравнивает текст IR и вызывает `reload_all_timelines` только при изменении (throttle ≥30 с) — бюджет WidgetKit не жжётся на тот же пульс.
 
-Превью IR: `bun run widget:preview` (см. `widget.json`).
+Превью IR: `bun run widget:preview` (см. `widget.json`). Пример parser: `examples/parser/`.

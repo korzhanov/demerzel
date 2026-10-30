@@ -1,0 +1,9 @@
+{
+  "name": "demerzel-example-parser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pipeline": "echo pipeline placeholder",
+    "pulse": "bun ./pulse.mjs"
+  }
+}
