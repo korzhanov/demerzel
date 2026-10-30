@@ -3,7 +3,7 @@
 //! Оценивает события → `AlertCandidate`, затем `DeliveryGate` решает
 //! emit / speak / notify (дедуп, троттлинг голоса, тихие часы).
 //! Системные уведомления (#22): `backend::notify` + Tauri plugin.
-//! Голос `say` (#23) — отдельная задача.
+//! Голос `say` (#23): `backend::speak` + `VoiceConfig`.
 
 use chrono::{DateTime, NaiveTime, Utc};
 use chrono_tz::Tz;
@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
+
+use super::speak::VoiceConfig;
 
 /// Уровни: critical (голос + уведомление), important (уведомление), info (только UI).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -121,6 +123,9 @@ pub struct AlertsConfig {
     /// IANA TZ для тихих часов (по умолчанию Europe/Berlin).
     #[serde(default = "default_timezone")]
     pub timezone: String,
+    /// Голос и шаблоны фраз для `say` (#23).
+    #[serde(default)]
+    pub voice: VoiceConfig,
 }
 
 impl Default for AlertsConfig {
@@ -131,6 +136,7 @@ impl Default for AlertsConfig {
             voice_min_interval_secs: default_voice_min_interval_secs(),
             quiet_hours: QuietHoursConfig::default(),
             timezone: default_timezone(),
+            voice: VoiceConfig::default(),
         }
     }
 }
@@ -167,7 +173,7 @@ impl AlertEvent {
     }
 }
 
-/// Кандидат алерта после матчинга правила. Доставка: gate (#21), notify (#22), say (#23).
+/// Кандидат алерта после матчинга правила. Доставка: gate (#21), notify (#22), speak (#23).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlertCandidate {
     pub rule_id: String,
@@ -540,6 +546,7 @@ mod tests {
         assert!(back.quiet_hours.enabled);
         assert_eq!(back.quiet_hours.start, "23:00");
         assert_eq!(back.quiet_hours.end, "08:00");
+        assert_eq!(back.voice.name, "Milena");
     }
 
     #[test]
@@ -548,6 +555,7 @@ mod tests {
         assert_eq!(cfg.dedupe_window_secs, 600);
         assert_eq!(cfg.timezone, "Europe/Berlin");
         assert_eq!(cfg.quiet_hours.start, "23:00");
+        assert_eq!(cfg.voice.name, "Milena");
     }
 
     fn candidate_port(port: u16) -> AlertCandidate {

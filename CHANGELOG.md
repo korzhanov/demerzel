@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.0 — 2026-10-30
+
+- Голосовые алерты через macOS `say -v Milena`: короткие настраиваемые фразы (`alerts.voice`), вызов только при `DeliveryDecision.speak` (critical; тихие часы → off; ≤1/мин). Модуль `backend/speak`, трейт `VoiceSpeaker` для моков, `ingest_alert_event` → `spoken`. Закрывает #23.
+
 ## 0.27.0 — 2026-10-30
 
 - Системные уведомления алертов через `tauri-plugin-notification`: короткий текст, показ только при `DeliveryDecision.notify` (тихие часы → только `critical`), клик фокусирует окно и открывает проект (`alerts:open-project`). Модуль `backend/notify`, команда `ingest_alert_event`, ADR Focus Mode (#22). Голос `say` не входит (#23).

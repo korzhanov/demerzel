@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use backend::alerts::{AlertEvent, DeliveryDecision, DeliveryGate};
 use backend::notify::{self, NotifyPayload, OpenProjectPayload, EXTRA_PROJECT, OPEN_PROJECT_EVENT};
+use backend::speak::{self, SaySpeaker};
 use backend::registry::{Registry, Row};
 use backend::scanner::{self, Project};
 use backend::logs::LogLine;
@@ -28,7 +29,7 @@ pub struct Processes(pub Mutex<Registry>);
 /// Состояние троттлинга виджета, общее для всего приложения.
 pub struct WidgetState(pub Mutex<Throttle>);
 
-/// Stateful `DeliveryGate` для алертов (#21–#22).
+/// Stateful `DeliveryGate` для алертов (#21–#23).
 pub struct AlertGate(pub Mutex<DeliveryGate>);
 
 /// Результат приёма события алерта (для UI / тестов).
@@ -37,6 +38,7 @@ pub struct IngestAlertResult {
     pub matched: bool,
     pub decision: Option<DeliveryDecisionDto>,
     pub notified: bool,
+    pub spoken: bool,
     pub project: Option<String>,
 }
 
@@ -244,7 +246,7 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-/// Оценивает событие → gate → OS notify при `decision.notify` (#22). Без `say` (#23).
+/// Оценивает событие → gate → OS notify (#22) и `say` (#23) по флагам решения.
 #[tauri::command]
 fn ingest_alert_event(
     app: tauri::AppHandle,
@@ -258,6 +260,7 @@ fn ingest_alert_event(
             matched: false,
             decision: None,
             notified: false,
+            spoken: false,
             project,
         });
     };
@@ -271,10 +274,24 @@ fn ingest_alert_event(
     } else {
         false
     };
+    // Ошибка `say` не валит ingest: gate уже учёл speak; логируем в stderr.
+    let spoken = match speak::deliver_speak(
+        &candidate,
+        &decision,
+        &settings.alerts.voice,
+        &SaySpeaker,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[alerts] say failed: {e}");
+            false
+        }
+    };
     Ok(IngestAlertResult {
         matched: true,
         decision: Some(decision.into()),
         notified,
+        spoken,
         project: notify::project_hint(&candidate.event).or(project),
     })
 }

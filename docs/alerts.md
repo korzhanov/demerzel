@@ -1,6 +1,6 @@
 # Алерты: движок правил, политика доставки и системные уведомления
 
-Phase-4, issues #20–#22. Правила и политика живут в **конфиге приложения** (`settings.json` → `alerts`), не в `demerzel.yaml` / `orchestrator.json`.
+Phase-4, issues #20–#23. Правила и политика живут в **конфиге приложения** (`settings.json` → `alerts`), не в `demerzel.yaml` / `orchestrator.json`.
 
 ## Уровни важности
 
@@ -12,7 +12,26 @@ Phase-4, issues #20–#22. Правила и политика живут в **к
 
 \* С учётом политики доставки (#21): дедуп, троттлинг голоса, тихие часы.
 
-Модуль **матчит** событие → `AlertCandidate`, затем `DeliveryGate` решает `emit` / `speak` / `notify`. При `notify=true` слой #22 показывает OS-уведомление (`tauri-plugin-notification`). Голос `say` — #23.
+Модуль **матчит** событие → `AlertCandidate`, затем `DeliveryGate` решает `emit` / `speak` / `notify`. При `notify=true` слой #22 показывает OS-уведомление (`tauri-plugin-notification`). При `speak=true` слой #23 вызывает `say -v <voice>` с короткой фразой из `alerts.voice`.
+
+## Голос `say` (#23)
+
+| Шаг | Поведение |
+|-----|-----------|
+| Gate | Произношение только если `DeliveryDecision.speak` (critical; тихие часы → speak off; ≤1/мин) |
+| Голос | `alerts.voice.name` (по умолчанию `Milena`) |
+| Фраза | Шаблон из `alerts.voice.phrases.*` + плейсхолдеры `{project}`, `{code}`, `{port}`, `{run_id}` |
+| Вызов | `say -v <name> <phrase>` через трейт `VoiceSpeaker` / `SaySpeaker` (мок в тестах) |
+| Ошибка | Сбой `say` логируется; ingest не падает |
+
+Шаблоны по умолчанию:
+
+| Событие | Фраза |
+|---------|--------|
+| `process_exited` | `Олег, внимание. {project} упал, код {code}.` |
+| `port_conflict` | `Олег, внимание. Порт {port} занят.` |
+| `agent_failed` | `Олег, внимание. Агент {run_id} не справился.` |
+| `tests_failed` | `Олег, внимание. Тесты {run_id} упали.` |
 
 ## Системные уведомления (#22)
 
@@ -23,7 +42,7 @@ Phase-4, issues #20–#22. Правила и политика живут в **к
 | Клик | Фокус окна + событие `alerts:open-project` с `project` (для `process_exited`) |
 | Focus/DND | Публичного API статуса Focus для non-communication apps нет — см. [ADR-002](./decisions/002-focus-mode.md); опираемся на quiet hours + фильтр macOS |
 
-Команда Tauri: `ingest_alert_event(event)` → `{ matched, decision, notified, project }`.
+Команда Tauri: `ingest_alert_event(event)` → `{ matched, decision, notified, spoken, project }`.
 
 ## Правила по умолчанию
 
@@ -61,7 +80,10 @@ Phase-4, issues #20–#22. Правила и политика живут в **к
 - `should_speak` / `should_notify` — базовые подсказки по severity
 - `DeliveryGate::decide(candidate, now) -> DeliveryDecision { emit, speak, notify }`
 - `QuietHoursConfig { enabled, start, end }` + `timezone`
+- `VoiceConfig { name, phrases }` — голос и шаблоны `say`
 - `notify::maybe_notify(candidate, decision) -> Option<NotifyPayload>`
+- `speak::maybe_speak(candidate, decision, voice) -> Option<SpeakPayload>`
+- `speak::VoiceSpeaker` / `SaySpeaker` — вызов `say` (мок в тестах)
 - `notify::project_hint` / `project_from_extra` — deep-link проекта при клике
 
 Пример фрагмента `settings.json`:
@@ -78,6 +100,13 @@ Phase-4, issues #20–#22. Правила и политика живут в **к
       "start": "23:00",
       "end": "08:00"
     },
+    "voice": {
+      "name": "Milena",
+      "phrases": {
+        "process_exited": "Олег, внимание. {project} упал, код {code}.",
+        "port_conflict": "Олег, внимание. Порт {port} занят."
+      }
+    },
     "rules": [
       {
         "id": "process_exited_nonzero",
@@ -91,13 +120,13 @@ Phase-4, issues #20–#22. Правила и политика живут в **к
 }
 ```
 
-Отсутствующее поле `alerts` (и недостающие поля доставки) подставляет значения по умолчанию.
+Отсутствующее поле `alerts` (и недостающие поля доставки / `voice`) подставляет значения по умолчанию.
 
 ## Код
 
-- Rust: `src-tauri/src/backend/alerts.rs`, `backend/notify.rs`
+- Rust: `src-tauri/src/backend/alerts.rs`, `backend/notify.rs`, `backend/speak.rs`
 - Tauri: `ingest_alert_event`, plugin `tauri-plugin-notification`, capability `notification:default`
 - Настройки: `backend/settings.rs` → `Settings.alerts`
 - Зеркало UI-хелперов: `src/lib/alerts.ts`
 - ADR Focus Mode: `docs/decisions/002-focus-mode.md`
-- Wireframe: `references/alerts-notify-wireframe.md`
+- Wireframe: `references/alerts-notify-wireframe.md`, `references/alerts-speak-wireframe.md`
