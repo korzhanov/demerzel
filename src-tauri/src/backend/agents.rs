@@ -17,6 +17,9 @@
 //!
 //! UI ревью (#32): in-memory реестр runs, просмотр diff/лога, accept → команда
 //! ручного merge (без git merge), discard → `remove_worktree`.
+//!
+//! Запуск из задачи (#33): `start_agent_from_task` — статус задачи `in_progress`,
+//! worktree + limiter + Claude + `collect_review` → registry.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -26,7 +29,10 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use super::config::{self, resolve_test_command};
+use super::tasks::{mark_task_in_progress, Task};
 
 /// Статусы прогона агента (#27–#31). Строки для SQLite / UI: snake_case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1010,6 +1016,298 @@ pub fn collect_review(
     })
 }
 
+// --- Start agent from task (#33) ---
+
+/// Человекочитаемая причина очереди для UI.
+pub fn queue_reason_message(reason: &QueueReason) -> String {
+    match reason {
+        QueueReason::ConcurrencyLimit { running, max } => {
+            format!("concurrency limit: {running}/{max} running")
+        }
+        QueueReason::InsufficientMemory {
+            free_mb,
+            required_mb,
+            ollama_running,
+        } => {
+            let ollama = if *ollama_running {
+                " (ollama reserve)"
+            } else {
+                ""
+            };
+            format!("insufficient memory: {free_mb} MiB free, need {required_mb}{ollama}")
+        }
+    }
+}
+
+/// Сегмент пути worktree из `orchestrator.json` name или basename каталога.
+pub fn project_slug(project_path: &Path) -> Result<String, String> {
+    if let Some(cfg) = config::load_from_dir(project_path) {
+        let name = cfg.name.trim();
+        if !name.is_empty() && validate_segment("project", name).is_ok() {
+            return Ok(name.to_string());
+        }
+    }
+    let raw = project_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("project path has no name: {}", project_path.display()))?;
+    let slug: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    validate_segment("project", &slug)?;
+    Ok(slug)
+}
+
+/// Уникальный `run_id` (один сегмент пути).
+pub fn new_run_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("r{nanos:x}")
+}
+
+fn now_rfc3339() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Достаточно для сортировки списка; полный chrono не обязателен в agents.
+    format!("{secs}")
+}
+
+/// Текст промпта из задачи (title + optional source url).
+pub fn task_prompt_text(task: &Task) -> String {
+    match task.url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        Some(url) => format!("{}\n\nSource: {url}", task.title.trim()),
+        None => task.title.trim().to_string(),
+    }
+}
+
+/// Результат запуска агента из задачи (#33).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartAgentRunResult {
+    pub run: AgentRunRecord,
+    pub task: Task,
+    /// `true`, если limiter не выдал слот — Claude ещё не стартовал.
+    pub queued: bool,
+    pub queue_reason: Option<String>,
+}
+
+/// Параметры `start_agent_from_task` / `prepare_agent_from_task`.
+pub struct StartAgentParams<'a, M: MemoryProbe, O: OllamaProbe> {
+    pub task: &'a Task,
+    pub project_path: &'a Path,
+    pub registry: &'a mut AgentRunRegistry,
+    pub limiter: &'a mut AgentLimiter<M, O>,
+    pub timeout: Duration,
+    pub base_ref: Option<&'a str>,
+    pub cancel: Option<&'a AtomicBool>,
+    /// Зафиксированный run_id (тесты); иначе `new_run_id()`.
+    pub run_id: Option<String>,
+}
+
+/// Готовит run из задачи: `in_progress`, limiter, worktree при слоте.
+/// Claude не запускает — см. `complete_agent_run` / `start_agent_from_task`.
+pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
+    task: &Task,
+    project_path: &Path,
+    registry: &mut AgentRunRegistry,
+    limiter: &mut AgentLimiter<M, O>,
+    base_ref: Option<&str>,
+    run_id: Option<String>,
+) -> Result<StartAgentRunResult, String> {
+    if task.title.trim().is_empty() {
+        return Err("task title must not be empty".into());
+    }
+    if !project_path.is_dir() {
+        return Err(format!(
+            "project_path is not a directory: {}",
+            project_path.display()
+        ));
+    }
+
+    let task = mark_task_in_progress(task)?;
+    let project = project_slug(project_path)?;
+    let id = run_id.unwrap_or_else(new_run_id);
+    validate_segment("run_id", &id)?;
+    let base = base_ref.unwrap_or("HEAD").trim().to_string();
+    if base.is_empty() {
+        return Err("base_ref must not be empty".into());
+    }
+
+    let mut record = AgentRunRecord {
+        id: id.clone(),
+        project: project.clone(),
+        project_path: project_path
+            .to_str()
+            .ok_or("project_path is not UTF-8")?
+            .to_string(),
+        task_id: Some(task.id.clone()),
+        status: RunStatus::Queued,
+        worktree: None,
+        base_ref: base.clone(),
+        tests: None,
+        diff: None,
+        started_at: Some(now_rfc3339()),
+        finished_at: None,
+    };
+    registry.upsert(record.clone())?;
+
+    match limiter.try_acquire(&id)? {
+        StartDecision::Queue(reason) => {
+            return Ok(StartAgentRunResult {
+                run: record,
+                task,
+                queued: true,
+                queue_reason: Some(queue_reason_message(&reason)),
+            });
+        }
+        StartDecision::Start => {}
+    }
+
+    let handle = match create_worktree(project_path, &project, &id, Some(&base)) {
+        Ok(h) => h,
+        Err(e) => {
+            limiter.release(&id);
+            record.status = RunStatus::Failed;
+            record.finished_at = Some(now_rfc3339());
+            let _ = registry.upsert(record);
+            return Err(e);
+        }
+    };
+    record.status = RunStatus::Running;
+    record.worktree = Some(handle.path.display().to_string());
+    registry.upsert(record.clone())?;
+
+    Ok(StartAgentRunResult {
+        run: record,
+        task,
+        queued: false,
+        queue_reason: None,
+    })
+}
+
+/// Claude + `collect_review` для уже `running` run; освобождает limiter.
+pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
+    run_id: &str,
+    task_title_prompt: &str,
+    registry: &mut AgentRunRegistry,
+    limiter: &mut AgentLimiter<M, O>,
+    timeout: Duration,
+    cancel: Option<&AtomicBool>,
+) -> Result<AgentRunRecord, String> {
+    let snapshot = registry
+        .get(run_id)
+        .cloned()
+        .ok_or_else(|| format!("agent run not found: {run_id}"))?;
+    if snapshot.status != RunStatus::Running {
+        return Err(format!(
+            "complete_agent_run expects running, got '{}'",
+            snapshot.status.as_str()
+        ));
+    }
+    let worktree_owned = snapshot
+        .worktree
+        .clone()
+        .ok_or("running run has no worktree")?;
+    let project_path_owned = snapshot.project_path.clone();
+    let base = snapshot.base_ref.clone();
+
+    let mut record = snapshot;
+    let result = (|| -> Result<(), String> {
+        let worktree_path = Path::new(&worktree_owned);
+        let claude = run_claude(worktree_path, task_title_prompt, timeout, cancel)?;
+        if claude.timed_out || claude.cancelled {
+            record.status = RunStatus::Failed;
+            record.finished_at = Some(now_rfc3339());
+            record.tests = Some(TestRunResult {
+                command: "claude".into(),
+                exit_code: claude.exit_code,
+                log: format!(
+                    "claude timed_out={} cancelled={} exit={:?}\n{}{}",
+                    claude.timed_out,
+                    claude.cancelled,
+                    claude.exit_code,
+                    claude.stdout,
+                    claude.stderr
+                ),
+                skipped: false,
+                duration_ms: claude.duration_ms,
+            });
+            registry.upsert(record.clone())?;
+            return Ok(());
+        }
+
+        let test_cmd = config::load_from_dir(Path::new(&project_path_owned))
+            .as_ref()
+            .and_then(|c| resolve_test_command(&c.commands).map(str::to_string));
+        let bundle = collect_review(worktree_path, test_cmd.as_deref(), &base)?;
+        record.tests = Some(bundle.tests);
+        record.diff = Some(bundle.diff);
+        record.status = bundle.status;
+        record.finished_at = Some(now_rfc3339());
+        registry.upsert(record.clone())?;
+        Ok(())
+    })();
+
+    limiter.release(run_id);
+    match result {
+        Ok(()) => Ok(registry.get(run_id).cloned().unwrap_or(record)),
+        Err(e) => {
+            record.status = RunStatus::Failed;
+            record.finished_at = Some(now_rfc3339());
+            let _ = registry.upsert(record);
+            Err(e)
+        }
+    }
+}
+
+/// Полный синхронный путь: prepare + complete (тесты).
+///
+/// Если limiter вернул Queue — Claude не стартует. Accept задачу не закрывает (#33).
+pub fn start_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
+    params: StartAgentParams<'_, M, O>,
+) -> Result<StartAgentRunResult, String> {
+    let StartAgentParams {
+        task,
+        project_path,
+        registry,
+        limiter,
+        timeout,
+        base_ref,
+        cancel,
+        run_id,
+    } = params;
+    let prompt = task_prompt_text(task);
+    let prepared =
+        prepare_agent_from_task(task, project_path, registry, limiter, base_ref, run_id)?;
+    if prepared.queued {
+        return Ok(prepared);
+    }
+    let run = complete_agent_run(
+        &prepared.run.id,
+        &prompt,
+        registry,
+        limiter,
+        timeout,
+        cancel,
+    )?;
+    Ok(StartAgentRunResult {
+        run,
+        task: prepared.task,
+        queued: false,
+        queue_reason: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1661,5 +1959,162 @@ Pages wired down:                         9000.
         reg.upsert(newer).unwrap();
         let ids: Vec<_> = reg.list().into_iter().map(|r| r.id).collect();
         assert_eq!(ids, vec!["new".to_string(), "old".to_string()]);
+    }
+
+    fn always_free_limiter() -> AgentLimiter<FixedMemory, FixedOllama> {
+        AgentLimiter::with_probes(
+            AgentsConfig {
+                max_concurrent: 2,
+                min_free_memory_mb: 1,
+                ollama_reserve_mb: 0,
+            },
+            FixedMemory(8192),
+            FixedOllama(false),
+        )
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn start_agent_from_task_runs_pipeline_and_marks_todo() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let repo = std::env::temp_dir().join(format!("demerzel-start-repo-{pid}"));
+        let wt_root = std::env::temp_dir().join(format!("demerzel-start-wt-{pid}"));
+        let fake_dir = std::env::temp_dir().join(format!("demerzel-start-fake-{pid}"));
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        let _ = fs::remove_dir_all(&fake_dir);
+        init_repo(&repo);
+        fs::write(
+            repo.join("orchestrator.json"),
+            r#"{"name":"demo-app","type":"app","commands":{"test":"exit 0"}}"#,
+        )
+        .unwrap();
+        let todo_path = repo.join("TODO.md");
+        fs::write(&todo_path, "- [ ] Fix flaky test\n").unwrap();
+        unsafe { std::env::set_var("DEMERZEL_WORKTREES_DIR", &wt_root) };
+        fs::create_dir_all(&fake_dir).unwrap();
+        install_fake_claude(
+            &fake_dir,
+            "#!/bin/sh\nset -e\necho agent-ok\nprintf 'from agent\\n' > agent-out.txt\ngit add agent-out.txt\ngit -c user.email=t@t -c user.name=t commit -m agent-wip\nexit 0\n",
+        );
+
+        let task = Task {
+            id: format!("{}:todo:1", repo.display()),
+            project: repo.display().to_string(),
+            title: "Fix flaky test".into(),
+            status: super::super::tasks::TaskStatus::Todo,
+            source: "todo".into(),
+            url: Some(todo_path.display().to_string()),
+        };
+        let mut reg = AgentRunRegistry::new();
+        let mut limiter = always_free_limiter();
+        let result = start_agent_from_task(StartAgentParams {
+            task: &task,
+            project_path: &repo,
+            registry: &mut reg,
+            limiter: &mut limiter,
+            timeout: Duration::from_secs(5),
+            base_ref: Some("main"),
+            cancel: None,
+            run_id: Some("start-1".into()),
+        })
+        .unwrap();
+
+        assert!(!result.queued);
+        assert_eq!(result.task.status, super::super::tasks::TaskStatus::InProgress);
+        assert_eq!(result.run.status, NeedsReview);
+        assert_eq!(result.run.project, "demo-app");
+        assert!(result.run.diff.as_ref().is_some_and(|d| d.contains("agent-out")));
+        assert!(fs::read_to_string(&todo_path).unwrap().contains("- [~]"));
+        assert_eq!(reg.get("start-1").unwrap().status, NeedsReview);
+        assert_eq!(limiter.running_count(), 0);
+
+        remove_worktree(&repo, "demo-app", "start-1").unwrap();
+        unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
+        unsafe { std::env::remove_var("DEMERZEL_CLAUDE_BIN") };
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        let _ = fs::remove_dir_all(&fake_dir);
+    }
+
+    #[test]
+    fn start_agent_from_task_queues_when_memory_low() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let repo = std::env::temp_dir().join(format!("demerzel-start-q-{pid}"));
+        let _ = fs::remove_dir_all(&repo);
+        init_repo(&repo);
+        let todo_path = repo.join("TODO.md");
+        fs::write(&todo_path, "- [ ] Queued task\n").unwrap();
+
+        let task = Task {
+            id: format!("{}:todo:1", repo.display()),
+            project: repo.display().to_string(),
+            title: "Queued task".into(),
+            status: super::super::tasks::TaskStatus::Todo,
+            source: "todo".into(),
+            url: Some(todo_path.display().to_string()),
+        };
+        let mut reg = AgentRunRegistry::new();
+        let mut limiter = AgentLimiter::with_probes(
+            AgentsConfig {
+                max_concurrent: 1,
+                min_free_memory_mb: 4096,
+                ollama_reserve_mb: 0,
+            },
+            FixedMemory(100),
+            FixedOllama(false),
+        );
+        let result = start_agent_from_task(StartAgentParams {
+            task: &task,
+            project_path: &repo,
+            registry: &mut reg,
+            limiter: &mut limiter,
+            timeout: Duration::from_secs(1),
+            base_ref: Some("main"),
+            cancel: None,
+            run_id: Some("queued-1".into()),
+        })
+        .unwrap();
+
+        assert!(result.queued);
+        assert_eq!(result.run.status, Queued);
+        assert!(result.run.worktree.is_none());
+        assert_eq!(result.task.status, super::super::tasks::TaskStatus::InProgress);
+        assert!(result.queue_reason.as_ref().unwrap().contains("insufficient memory"));
+        assert!(fs::read_to_string(&todo_path).unwrap().contains("- [~]"));
+
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn project_slug_prefers_orchestrator_name() {
+        let dir = std::env::temp_dir().join(format!("demerzel-slug-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("orchestrator.json"),
+            r#"{"name":"my-slug","type":"app"}"#,
+        )
+        .unwrap();
+        assert_eq!(project_slug(&dir).unwrap(), "my-slug");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn task_prompt_includes_source_url() {
+        let task = Task {
+            id: "t1".into(),
+            project: "/p".into(),
+            title: "Fix".into(),
+            status: super::super::tasks::TaskStatus::Todo,
+            source: "github".into(),
+            url: Some("https://example.test/1".into()),
+        };
+        assert_eq!(
+            task_prompt_text(&task),
+            "Fix\n\nSource: https://example.test/1"
+        );
     }
 }

@@ -11,6 +11,6 @@
 - `alerts-notify-wireframe.md`: OS notify + клик → проект (#22).
 - `alerts-speak-wireframe.md`: голос `say` + шаблоны фраз (#23).
 - `ports-tasks-wireframe.md`: порты и доска задач.
-- Агенты / worktree + Claude CLI + concurrency/память + тесты/diff + UI ревью: контракт в [docs/agents.md](../docs/agents.md) (#27–#29, #31–#32).
+- Агенты / worktree + Claude CLI + concurrency/память + тесты/diff + UI ревью + запуск из задачи: контракт в [docs/agents.md](../docs/agents.md) (#27–#29, #31–#33).
 
 Правила: см. [docs/CONVENTIONS.md](../docs/CONVENTIONS.md#референсы-и-ассеты).

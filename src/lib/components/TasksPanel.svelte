@@ -3,6 +3,7 @@
   import {
     TASK_BOARD_COLUMNS,
     canOpenTask,
+    canStartAgentFromTask,
     filterTasksByProject,
     tasksForColumn,
   } from "$lib/tasks";
@@ -13,8 +14,10 @@
     tasksBusy: boolean;
     projectFilter: string;
     projects: Project[];
+    startBusyTaskId?: string | null;
     onRefresh: () => void;
     onOpen: (task: Task) => void | Promise<void>;
+    onStartAgent?: (task: Task) => void | Promise<void>;
   }
 
   let {
@@ -23,8 +26,10 @@
     tasksBusy,
     projectFilter = $bindable(""),
     projects,
+    startBusyTaskId = null,
     onRefresh,
     onOpen,
+    onStartAgent,
   }: Props = $props();
 
   const visibleTasks = $derived(filterTasksByProject(tasks, projectFilter));
@@ -61,9 +66,19 @@
             <strong>{task.title}</strong>
             <p>{task.project}</p>
             <small>{task.source}</small>
-            {#if canOpenTask(task)}
-              <button type="button" onclick={() => onOpen(task)}>Открыть источник</button>
-            {/if}
+            <div class="actions">
+              {#if canOpenTask(task)}
+                <button type="button" onclick={() => onOpen(task)}>Открыть источник</button>
+              {/if}
+              {#if onStartAgent && canStartAgentFromTask(task)}
+                <button
+                  type="button"
+                  disabled={tasksBusy || startBusyTaskId === task.id}
+                  onclick={() => onStartAgent(task)}
+                  >{startBusyTaskId === task.id ? "Запуск…" : "Исправить"}</button
+                >
+              {/if}
+            </div>
           </article>
         {:else}
           <p class="empty">Нет задач</p>
@@ -119,8 +134,10 @@
     font-size: 0.8rem;
     color: #555;
   }
-  .task-card button {
-    display: block;
+  .actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     margin-top: 8px;
   }
   .empty {

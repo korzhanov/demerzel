@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   TASK_BOARD_COLUMNS,
   canOpenTask,
+  canStartAgentFromTask,
   countByStatus,
   filterTasksByProject,
   taskStatusLabel,
@@ -78,6 +79,15 @@ describe("canOpenTask", () => {
     expect(canOpenTask({ url: null })).toBe(false);
     expect(canOpenTask({ url: "" })).toBe(false);
     expect(canOpenTask({ url: "relative/TODO.md" })).toBe(false);
+  });
+});
+
+describe("canStartAgentFromTask", () => {
+  test("allows all statuses except done", () => {
+    expect(canStartAgentFromTask({ status: "todo" })).toBe(true);
+    expect(canStartAgentFromTask({ status: "in_progress" })).toBe(true);
+    expect(canStartAgentFromTask({ status: "blocked" })).toBe(true);
+    expect(canStartAgentFromTask({ status: "done" })).toBe(false);
   });
 });
 

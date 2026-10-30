@@ -1,5 +1,9 @@
 //! Модель задачи и трейт источника (#16); файловый адаптер TODO.md / tasks.json (#17).
 //! GitHub Issues REST + ETag — `github_tasks::GithubSource` (#18).
+//! Обновление статуса при старте агента (#33): `mark_task_in_progress`.
+
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -194,6 +198,131 @@ impl TaskSource for FileSource {
     }
 }
 
+/// Переводит задачу в `in_progress` при старте агента (#33).
+///
+/// - `todo` / `tasks-json` — пишет в файл источника.
+/// - `github` — remote не трогает (закрытие issue только вручную); возвращает копию со статусом.
+pub fn mark_task_in_progress(task: &Task) -> Result<Task, String> {
+    if task.status == TaskStatus::Done {
+        return Err("cannot start agent for a done task".into());
+    }
+    let mut updated = task.clone();
+    updated.status = TaskStatus::InProgress;
+
+    match task.source.as_str() {
+        "todo" => {
+            let path = task
+                .url
+                .as_deref()
+                .filter(|u| !u.is_empty())
+                .ok_or("todo task has no file url")?;
+            let line = parse_todo_line_number(&task.id)?;
+            set_todo_checkbox(Path::new(path), line, '~')?;
+        }
+        "tasks-json" => {
+            let path = task
+                .url
+                .as_deref()
+                .filter(|u| !u.is_empty())
+                .ok_or("tasks-json task has no file url")?;
+            let raw_id = parse_json_task_id(&task.id)?;
+            set_tasks_json_status(Path::new(path), &raw_id, TaskStatus::InProgress)?;
+        }
+        "github" => {
+            // Статус только для UI/ответа; GitHub issue не закрываем и не меняем.
+        }
+        other => {
+            return Err(format!("cannot update status for task source '{other}'"));
+        }
+    }
+    Ok(updated)
+}
+
+/// Номер строки из `{project}:todo:{line}` (1-based).
+pub fn parse_todo_line_number(task_id: &str) -> Result<usize, String> {
+    let (_, line) = task_id
+        .rsplit_once(":todo:")
+        .ok_or_else(|| format!("not a todo task id: {task_id}"))?;
+    line.parse::<usize>()
+        .map_err(|_| format!("invalid todo line in task id: {task_id}"))
+        .and_then(|n| {
+            if n == 0 {
+                Err(format!("todo line must be 1-based: {task_id}"))
+            } else {
+                Ok(n)
+            }
+        })
+}
+
+/// Исходный id из `{project}:json:{id}`.
+pub fn parse_json_task_id(task_id: &str) -> Result<String, String> {
+    let (_, raw) = task_id
+        .rsplit_once(":json:")
+        .ok_or_else(|| format!("not a tasks-json task id: {task_id}"))?;
+    if raw.trim().is_empty() {
+        return Err(format!("empty json id in task id: {task_id}"));
+    }
+    Ok(raw.to_string())
+}
+
+fn replace_checkbox_mark(line: &str, mark: char) -> Option<String> {
+    let trimmed_start = line.len() - line.trim_start().len();
+    let rest = &line[trimmed_start..];
+    let item = rest.strip_prefix("- [")?;
+    let (_old_mark, after_bracket) = item.split_once(']')?;
+    Some(format!(
+        "{}- [{mark}]{after_bracket}",
+        &line[..trimmed_start]
+    ))
+}
+
+/// Меняет маркер чекбокса на указанной 1-based строке TODO.md.
+pub fn set_todo_checkbox(path: &Path, line_1based: usize, mark: char) -> Result<(), String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut lines: Vec<String> = text.lines().map(String::from).collect();
+    let idx = line_1based
+        .checked_sub(1)
+        .ok_or_else(|| format!("invalid todo line {line_1based}"))?;
+    let line = lines
+        .get_mut(idx)
+        .ok_or_else(|| format!("{}: line {line_1based} out of range", path.display()))?;
+    let replaced = replace_checkbox_mark(line, mark)
+        .ok_or_else(|| format!("{}: line {line_1based} is not a checkbox task", path.display()))?;
+    *line = replaced;
+    let mut out = lines.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Обновляет `status` записи с исходным `id` в tasks.json.
+pub fn set_tasks_json_status(
+    path: &Path,
+    raw_id: &str,
+    status: TaskStatus,
+) -> Result<(), String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut rows: Vec<serde_json::Value> = serde_json::from_str(&text)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let status_json = serde_json::to_value(status).map_err(|e| e.to_string())?;
+    let mut found = false;
+    for row in &mut rows {
+        if row.get("id").and_then(|v| v.as_str()) == Some(raw_id) {
+            row.as_object_mut()
+                .ok_or_else(|| format!("{}: task '{raw_id}' is not an object", path.display()))?
+                .insert("status".into(), status_json.clone());
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        return Err(format!("{}: task id '{raw_id}' not found", path.display()));
+    }
+    let out = serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?;
+    fs::write(path, format!("{out}\n")).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// Парсер чекбоксов Markdown: `- [ ]` / `- [~]` / `- [x]` / `- [!]`. См. `docs/tasks-format.md`.
 pub fn parse_markdown(text: &str, project: &str, path: &str) -> Vec<Task> {
     let mut fenced = false;
@@ -358,5 +487,79 @@ mod file_tests {
         assert!(err.contains("TODO.md"), "{err}");
         assert!(!err.is_empty());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mark_todo_task_in_progress_rewrites_checkbox() {
+        let root = temp_root("mark-todo");
+        let path = root.join("TODO.md");
+        fs::write(&path, "# T\n\n- [ ] Fix me\n- [x] Done\n").unwrap();
+        let task = Task {
+            id: format!("{}:todo:3", root.display()),
+            project: root.display().to_string(),
+            title: "Fix me".into(),
+            status: TaskStatus::Todo,
+            source: "todo".into(),
+            url: Some(path.display().to_string()),
+        };
+        let updated = mark_task_in_progress(&task).unwrap();
+        assert_eq!(updated.status, TaskStatus::InProgress);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("- [~] Fix me"), "{text}");
+        assert!(text.contains("- [x] Done"), "{text}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mark_json_task_in_progress_updates_status() {
+        let root = temp_root("mark-json");
+        let path = root.join("tasks.json");
+        fs::write(
+            &path,
+            r#"[{"id":"setup","project":"","title":"Setup","status":"todo","source":"","url":null}]
+"#,
+        )
+        .unwrap();
+        let task = Task {
+            id: format!("{}:json:setup", root.display()),
+            project: root.display().to_string(),
+            title: "Setup".into(),
+            status: TaskStatus::Todo,
+            source: "tasks-json".into(),
+            url: Some(path.display().to_string()),
+        };
+        let updated = mark_task_in_progress(&task).unwrap();
+        assert_eq!(updated.status, TaskStatus::InProgress);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"in_progress\""), "{text}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mark_github_task_in_progress_is_local_only() {
+        let task = Task {
+            id: "github:a/b#1".into(),
+            project: "/proj".into(),
+            title: "Bug".into(),
+            status: TaskStatus::Todo,
+            source: "github".into(),
+            url: Some("https://github.com/a/b/issues/1".into()),
+        };
+        let updated = mark_task_in_progress(&task).unwrap();
+        assert_eq!(updated.status, TaskStatus::InProgress);
+        assert_eq!(updated.id, task.id);
+    }
+
+    #[test]
+    fn mark_done_task_rejected() {
+        let task = Task {
+            id: "github:a/b#2".into(),
+            project: "/p".into(),
+            title: "Closed".into(),
+            status: TaskStatus::Done,
+            source: "github".into(),
+            url: None,
+        };
+        assert!(mark_task_in_progress(&task).is_err());
     }
 }

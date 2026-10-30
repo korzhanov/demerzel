@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.0 — 2026-10-30
+
+- Запуск агента из задачи: кнопка «Исправить» на доске → `in_progress` (TODO.md / tasks.json; GitHub без remote close), worktree + limiter + Claude + `collect_review` в `AgentRunRegistry` для UI ревью. Accept задачу не закрывает. Документ `docs/agents.md`. Закрывает #33.
+
 ## 0.33.0 — 2026-10-30
 
 - UI ревью результата агента: список runs со статусами, просмотр diff и лога тестов; «принять» показывает команду ручного `git merge` (без авто-merge), «отклонить» удаляет worktree. `AgentRunRegistry` + Tauri-команды, документ `docs/agents.md`. Закрывает #32.
