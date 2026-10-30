@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.33.0 — 2026-10-30
+
+- UI ревью результата агента: список runs со статусами, просмотр diff и лога тестов; «принять» показывает команду ручного `git merge` (без авто-merge), «отклонить» удаляет worktree. `AgentRunRegistry` + Tauri-команды, документ `docs/agents.md`. Закрывает #32.
+
 ## 0.32.0 — 2026-10-30
 
 - После агента: прогон `commands.test` в worktree, сбор exit/лога и `git diff` к базовой ветке; статусы run `queued`…`accepted`, переход в `needs_review` / `failed`. Документ `docs/agents.md`. Закрывает #31.

@@ -165,6 +165,27 @@ export interface AgentReviewBundle {
   status: AgentRunStatus;
 }
 
+/** Запись agent run для UI ревью (#32). */
+export interface AgentRunRecord {
+  id: string;
+  project: string;
+  project_path: string;
+  task_id: string | null;
+  status: AgentRunStatus;
+  worktree: string | null;
+  base_ref: string;
+  tests: AgentTestRunResult | null;
+  diff: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface AcceptAgentRunResult {
+  run_id: string;
+  status: AgentRunStatus;
+  merge_command: string;
+}
+
 export interface Settings {
   scan_roots: string[];
   alerts?: AlertsConfig;

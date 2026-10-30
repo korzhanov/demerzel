@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentRunStatusLabel,
+  canAcceptAgentRun,
+  canDiscardAgentRun,
+  hasAgentRunReviewPayload,
+  manualMergeCommand,
+  shellSingleQuote,
+} from "./agents";
+import {
   AGENT_RUN_STATUSES,
   DEFAULT_AGENT_CONCURRENCY,
   DEFAULT_MIN_FREE_MEMORY_MB,
@@ -8,6 +16,7 @@ import {
   canTransitionAgentRun,
   requiredFreeMemoryMb,
   statusAfterTests,
+  type AgentRunRecord,
 } from "./types";
 
 describe("agents config defaults (#29)", () => {
@@ -69,5 +78,44 @@ describe("agent run status + tests (#31)", () => {
       "needs_review",
     );
     expect(statusAfterTests({ skipped: false, exitCode: 1 })).toBe("failed");
+  });
+});
+
+describe("agent review UI helpers (#32)", () => {
+  test("status labels and accept/discard gates", () => {
+    expect(agentRunStatusLabel("needs_review")).toBe("на ревью");
+    expect(canAcceptAgentRun("needs_review")).toBe(true);
+    expect(canAcceptAgentRun("failed")).toBe(false);
+    expect(canDiscardAgentRun("needs_review")).toBe(true);
+    expect(canDiscardAgentRun("failed")).toBe(true);
+    expect(canDiscardAgentRun("accepted")).toBe(false);
+  });
+
+  test("manualMergeCommand mirrors Rust quoting", () => {
+    expect(shellSingleQuote("demo's")).toBe(`'demo'\\''s'`);
+    expect(manualMergeCommand("/tmp/demo's", "run-1")).toBe(
+      "git -C '/tmp/demo'\\''s' merge --no-ff agent/run-1",
+    );
+  });
+
+  test("hasAgentRunReviewPayload", () => {
+    const base: Pick<AgentRunRecord, "diff" | "tests"> = {
+      diff: null,
+      tests: null,
+    };
+    expect(hasAgentRunReviewPayload(base)).toBe(false);
+    expect(hasAgentRunReviewPayload({ ...base, diff: "x" })).toBe(true);
+    expect(
+      hasAgentRunReviewPayload({
+        diff: null,
+        tests: {
+          command: "t",
+          exit_code: 0,
+          log: "ok",
+          skipped: false,
+          duration_ms: 1,
+        },
+      }),
+    ).toBe(true);
   });
 });
