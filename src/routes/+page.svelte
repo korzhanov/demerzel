@@ -346,11 +346,15 @@
 {#snippet tree(list: Project[], depth: number)}
   {#each list as p (p.path)}
     <li
-      style="padding-left: {depth * 16}px"
-      class={["flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent", focusProject === p.name && "bg-accent ring-1 ring-primary"]}
+      style="padding-left: {depth * 12}px"
+      class={[
+        "flex min-w-0 items-center gap-2 rounded-md px-2 py-1 hover:bg-accent",
+        focusProject === p.name && "bg-accent ring-1 ring-primary",
+      ]}
+      title="{p.name} — {p.path}"
     >
-      <span class="flex-1 truncate text-sm">{p.name}</span>
-      <Button size="sm" variant="outline" onclick={() => start(p)}>Запустить</Button>
+      <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+      <Button size="sm" variant="outline" class="shrink-0" onclick={() => start(p)}>Запустить</Button>
     </li>
     {#if p.children.length}
       {@render tree(p.children, depth + 1)}
@@ -359,17 +363,17 @@
 {/snippet}
 
 {#snippet projectsView()}
-  <Card.Root class="h-full">
-    <Card.Header>
+  <Card.Root class="h-full min-w-0 overflow-hidden">
+    <Card.Header class="px-4">
       <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Проекты</Card.Title>
     </Card.Header>
-    <Card.Content class="space-y-3">
-      <Textarea aria-label="Корневые папки сканирования" bind:value={roots} rows={2} placeholder="/Users/you/code" />
-      <div class="flex flex-wrap items-center gap-2">
-        <Button onclick={scan} disabled={scanBusy}>Сканировать</Button>
-        <Input class="min-w-48 flex-1" bind:value={commandOverride} placeholder="команда (пусто = из orchestrator.json)" />
+    <Card.Content class="min-w-0 space-y-3 overflow-x-hidden px-4">
+      <Textarea aria-label="Корневые папки сканирования" bind:value={roots} rows={2} placeholder="/Users/you/code" class="min-w-0" />
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <Button class="shrink-0" onclick={scan} disabled={scanBusy}>Сканировать</Button>
+        <Input class="min-w-0 flex-1 basis-32" bind:value={commandOverride} placeholder="команда (пусто = из orchestrator.json)" />
       </div>
-      <ul class="space-y-0.5">
+      <ul class="min-w-0 space-y-0.5 overflow-x-hidden">
         {@render tree(projects, 0)}
       </ul>
     </Card.Content>
@@ -493,13 +497,13 @@
   {/if}
 
   {#if view === "columns"}
-    <Resizable.PaneGroup direction="horizontal" class="min-h-[560px] rounded-xl border">
-      <Resizable.Pane defaultSize={24} minSize={16}>
-        <div class="h-full p-2">{@render projectsView()}</div>
+    <Resizable.PaneGroup direction="horizontal" class="min-h-[560px] min-w-0 rounded-xl border">
+      <Resizable.Pane defaultSize={24} minSize={16} class="min-w-0 overflow-hidden">
+        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto p-2">{@render projectsView()}</div>
       </Resizable.Pane>
       <Resizable.Handle withHandle />
-      <Resizable.Pane defaultSize={48} minSize={25}>
-        <div class="space-y-3 p-2">
+      <Resizable.Pane defaultSize={48} minSize={25} class="min-w-0 overflow-hidden">
+        <div class="min-w-0 space-y-3 overflow-x-hidden p-2">
           {@render processesView()}
           {@render portsView()}
           {@render tasksView()}
@@ -507,8 +511,8 @@
         </div>
       </Resizable.Pane>
       <Resizable.Handle withHandle />
-      <Resizable.Pane defaultSize={28} minSize={16}>
-        <div class="h-full p-2">{@render logsView()}</div>
+      <Resizable.Pane defaultSize={28} minSize={16} class="min-w-0 overflow-hidden">
+        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto p-2">{@render logsView()}</div>
       </Resizable.Pane>
     </Resizable.PaneGroup>
   {:else}

@@ -5,10 +5,15 @@
     TASK_BOARD_COLUMNS,
     canOpenTask,
     canStartAgentFromTask,
+    countByStatus,
     filterTasksByProject,
+    formatTaskBoardSummary,
     tasksForColumn,
   } from "$lib/tasks";
   import { agentRunnerLabel } from "$lib/agents";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
 
   interface Props {
     tasks: Task[];
@@ -38,24 +43,20 @@
   }: Props = $props();
 
   const visibleTasks = $derived(filterTasksByProject(tasks, projectFilter));
-  import { Button } from "$lib/components/ui/button/index.js";
-  import * as Card from "$lib/components/ui/card/index.js";
-  import * as Table from "$lib/components/ui/table/index.js";
-  import { Badge } from "$lib/components/ui/badge/index.js";
-  import { Input } from "$lib/components/ui/input/index.js";
+  const boardSummary = $derived(formatTaskBoardSummary(countByStatus(visibleTasks)));
 </script>
 
-<Card.Root aria-labelledby="tasks-title">
+<Card.Root class="min-w-0 overflow-hidden" aria-labelledby="tasks-title">
   <Card.Header>
     <Card.Title id="tasks-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Задачи</Card.Title>
   </Card.Header>
-  <Card.Content class="space-y-3">
-    <div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-      <label class="flex items-center gap-2">Проект
-        <select class="h-9 rounded-md border border-input bg-background px-2 text-sm" bind:value={projectFilter}>
+  <Card.Content class="min-w-0 space-y-3">
+    <div class="flex min-w-0 flex-wrap items-center gap-3 text-sm text-muted-foreground">
+      <label class="flex min-w-0 max-w-full items-center gap-2">Проект
+        <select class="h-9 max-w-full min-w-0 truncate rounded-md border border-input bg-background px-2 text-sm" bind:value={projectFilter}>
           <option value="">Все проекты</option>
           {#each projects as p (p.path)}
-            <option value={p.path}>{p.name} — {p.path}</option>
+            <option value={p.path} title="{p.name} — {p.path}">{p.name} — {p.path}</option>
           {/each}
         </select>
       </label>
@@ -70,27 +71,30 @@
         {tasksBusy ? "Загрузка…" : "Обновить задачи"}
       </Button>
     </div>
+    {#if projects.length > 0}
+      <p class="text-sm text-muted-foreground" aria-live="polite">{boardSummary}</p>
+    {/if}
     {#each taskErrors as message, i (i)}
       <p class="break-words text-sm text-destructive" role="alert">{message}</p>
     {/each}
     {#if projects.length === 0}
       <p class="text-sm text-muted-foreground">Сначала выберите корневые папки и выполните сканирование.</p>
     {/if}
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="grid min-w-0 grid-cols-1 gap-3 overflow-x-hidden sm:grid-cols-2 xl:grid-cols-4">
       {#each TASK_BOARD_COLUMNS as column (column.status)}
-        <section class="space-y-2 rounded-lg bg-muted p-2" aria-label={column.label}>
-          <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{column.label}</h3>
+        <section class="min-w-0 space-y-2 overflow-hidden rounded-lg bg-muted p-2" aria-label={column.label}>
+          <h3 class="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground">{column.label}</h3>
           {#each tasksForColumn(visibleTasks, column.status) as task (task.id)}
-            <article class="space-y-1 rounded-md border bg-card p-3 text-sm">
-              <strong class="font-medium">{task.title}</strong>
-              <p class="text-xs text-muted-foreground">{task.project}</p>
-              <Badge variant="outline">{task.source}</Badge>
-              <div class="flex flex-wrap gap-2 pt-1">
+            <article class="min-w-0 space-y-1 overflow-hidden rounded-md border bg-card p-3 text-sm">
+              <strong class="block break-words font-medium [overflow-wrap:anywhere]">{task.title}</strong>
+              <p class="truncate text-xs text-muted-foreground" title={task.project}>{task.project}</p>
+              <Badge variant="outline" class="max-w-full truncate">{task.source}</Badge>
+              <div class="flex min-w-0 flex-wrap gap-2 pt-1">
                 {#if canOpenTask(task)}
-                  <Button size="sm" variant="outline" onclick={() => onOpen(task)}>Открыть источник</Button>
+                  <Button size="sm" variant="outline" class="max-w-full shrink" onclick={() => onOpen(task)}>Открыть источник</Button>
                 {/if}
                 {#if onStartAgent && canStartAgentFromTask(task)}
-                  <Button size="sm" disabled={tasksBusy || startBusyTaskId === task.id} onclick={() => onStartAgent(task)}>
+                  <Button size="sm" class="shrink" disabled={tasksBusy || startBusyTaskId === task.id} onclick={() => onStartAgent(task)}>
                     {startBusyTaskId === task.id ? "Запуск…" : "Исправить"}
                   </Button>
                 {/if}
