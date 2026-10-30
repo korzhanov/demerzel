@@ -226,6 +226,20 @@ mod tests {
     }
 
     #[test]
+    fn parses_github_task_source_with_repository_and_label() {
+        let json = r#"{
+            "name": "a",
+            "type": "app",
+            "tasks": { "source": "github", "repository": "owner/name", "label": "phase-3" }
+        }"#;
+        let cfg = parse(json).unwrap();
+        let tasks = cfg.tasks.unwrap();
+        assert_eq!(tasks.source, "github");
+        assert_eq!(tasks.repository.as_deref(), Some("owner/name"));
+        assert_eq!(tasks.label.as_deref(), Some("phase-3"));
+    }
+
+    #[test]
     fn rejects_unknown_project_type() {
         let json = r#"{ "name": "a", "type": "game" }"#;
         assert!(matches!(parse(json), Err(ConfigError::Parse(_))));
