@@ -2,6 +2,7 @@
 //!
 //! Держит `Managed` по идентификатору. Команды Tauri работают через этот реестр.
 //! При старте выделяет порт из диапазона конфига и передаёт `PORT` (#13).
+//! Занятость = аренды ∪ слушающие сокеты ОС через lsof (#14).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -130,8 +131,11 @@ impl Registry {
         let cfg = super::config::load_checked(cwd)?;
         let env = cfg.as_ref().map(|c| c.env.clone()).unwrap_or_default();
         let key = cwd.to_string_lossy().into_owned();
-        // Без lsof (#14): учитываем только собственные аренды.
-        let occupied = BTreeSet::new();
+        // occupied = слушающие порты ОС; аренды Allocator учитывает отдельно.
+        let occupied: BTreeSet<u16> = super::ports::listeners()?
+            .into_iter()
+            .map(|s| s.port)
+            .collect();
         let port = if let Some(ports) = cfg.and_then(|c| c.ports) {
             let range = super::ports::PortRange::new(ports.range[0], ports.range[1])
                 .ok_or("invalid range")?;
@@ -147,7 +151,10 @@ impl Registry {
                 &occupied,
             )?)
         } else if let Some(port) = requested_port {
-            if port == 0 || self.ports.leases.contains_key(&port) {
+            if port == 0
+                || self.ports.leases.contains_key(&port)
+                || occupied.contains(&port)
+            {
                 return Err(format!("port {port} unavailable"));
             }
             Some(port)
@@ -256,5 +263,48 @@ mod tests {
         assert!(!reg.ports.leases.contains_key(&6100));
         fs::remove_dir_all(&dir).unwrap();
         fs::remove_dir_all(&dir2).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn start_configured_skips_os_listener_ports() {
+        use std::net::TcpListener;
+        let dir = tmp("lsof-skip");
+        // Высокий диапазон; держим default занятым через реальный LISTEN.
+        let bind = TcpListener::bind("127.0.0.1:48100").expect("bind 48100");
+        fs::write(
+            dir.join(super::super::config::CONFIG_FILE),
+            r#"{ "name": "api", "type": "app", "ports": { "range": [48100, 48102], "default": 48100 }, "commands": { "dev": "sleep 30" } }"#,
+        )
+        .unwrap();
+        let mut reg = Registry::default();
+        let id = reg
+            .start_configured("api", "test \"$PORT\" = 48101 && sleep 30", &dir)
+            .unwrap();
+        assert_eq!(reg.ports.leases.get(&48101), Some(&id));
+        assert!(!reg.ports.leases.contains_key(&48100));
+        reg.stop(id, Duration::from_secs(2)).unwrap();
+        drop(bind);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn requested_port_unavailable_when_os_listens() {
+        use std::net::TcpListener;
+        let dir = tmp("lsof-req");
+        let bind = TcpListener::bind("127.0.0.1:48110").expect("bind 48110");
+        fs::write(
+            dir.join(super::super::config::CONFIG_FILE),
+            r#"{ "name": "api", "type": "app", "ports": { "range": [48110, 48112] }, "commands": { "dev": "sleep 1" } }"#,
+        )
+        .unwrap();
+        let mut reg = Registry::default();
+        let err = reg
+            .start_service("api", "sleep 1", &dir, Some(48110))
+            .unwrap_err();
+        assert!(err.contains("unavailable"), "{err}");
+        drop(bind);
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
