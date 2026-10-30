@@ -34,119 +34,77 @@
       stopping = false;
     }
   }
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import * as Table from "$lib/components/ui/table/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
 </script>
 
-<section aria-labelledby="ports-title">
-  <h2 id="ports-title">Порты</h2>
-  <div class="row">
-    <button type="button" disabled={portsBusy || stopping} onclick={onRefresh}>Обновить порты</button>
-    <label
-      >Интервал опроса, секунд
-      <input type="number" min="1" max="60" bind:value={portInterval} />
-    </label>
-  </div>
-  {#if portsError}
-    <p class="error" role="alert">{portsError}</p>
-  {/if}
-  {#if confirmPort}
-    <div class="confirmation" role="alertdialog" aria-labelledby="ports-confirm-title">
-      <p id="ports-confirm-title">
-        Остановить управляемый процесс {confirmPort.command} (PID {confirmPort.pid}) проекта {confirmPort.project}?
-        Будет остановлена вся группа процесса.
-      </p>
-      <button type="button" disabled={stopping} onclick={confirmStop}>Да, остановить</button>
-      <button type="button" disabled={stopping} onclick={() => { confirmPort = null; }}>Отмена</button>
+<Card.Root aria-labelledby="ports-title">
+  <Card.Header>
+    <Card.Title id="ports-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Порты</Card.Title>
+  </Card.Header>
+  <Card.Content class="space-y-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <Button variant="outline" disabled={portsBusy || stopping} onclick={onRefresh}>Обновить порты</Button>
+      <label class="flex items-center gap-2 text-sm text-muted-foreground">
+        Интервал опроса, секунд
+        <Input class="w-20" type="number" min="1" max="60" bind:value={portInterval} />
+      </label>
     </div>
-  {/if}
-  {#if ports.length === 0}
-    <p>Слушающих портов не найдено.</p>
-  {:else}
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>Порт</th>
-            <th>Проект</th>
-            <th>Процесс</th>
-            <th>PID</th>
-            <th>Статус</th>
-            <th>Действие</th>
-          </tr>
-        </thead>
-        <tbody>
+    {#if portsError}
+      <p class="break-words text-sm text-destructive" role="alert">{portsError}</p>
+    {/if}
+    {#if confirmPort}
+      <div class="space-y-2 rounded-md border border-destructive p-3 text-sm" role="alertdialog" aria-labelledby="ports-confirm-title">
+        <p id="ports-confirm-title">
+          Остановить управляемый процесс {confirmPort.command} (PID {confirmPort.pid}) проекта {confirmPort.project}?
+          Будет остановлена вся группа процесса.
+        </p>
+        <div class="flex gap-2">
+          <Button variant="destructive" disabled={stopping} onclick={confirmStop}>Да, остановить</Button>
+          <Button variant="outline" disabled={stopping} onclick={() => { confirmPort = null; }}>Отмена</Button>
+        </div>
+      </div>
+    {/if}
+    {#if ports.length === 0}
+      <p class="text-sm text-muted-foreground">Слушающих портов не найдено.</p>
+    {:else}
+      <Table.Root>
+        <Table.Header>
+          <Table.Row>
+            <Table.Head>Порт</Table.Head>
+            <Table.Head>Проект</Table.Head>
+            <Table.Head>Процесс</Table.Head>
+            <Table.Head>PID</Table.Head>
+            <Table.Head>Статус</Table.Head>
+            <Table.Head>Действие</Table.Head>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
           {#each ports as port (`${port.pid}:${port.port}`)}
-            <tr class:conflict={port.status === "conflict"} class:foreign={port.status === "foreign"}>
-              <td>{port.port}</td>
-              <td>{port.project ?? "—"}</td>
-              <td>{port.command}</td>
-              <td>{port.pid}</td>
-              <td>{portStatusLabel(port.status)}</td>
-              <td>
+            <Table.Row>
+              <Table.Cell class="font-mono">{port.port}</Table.Cell>
+              <Table.Cell>{port.project ?? "—"}</Table.Cell>
+              <Table.Cell class="font-mono text-xs">{port.command}</Table.Cell>
+              <Table.Cell>{port.pid}</Table.Cell>
+              <Table.Cell>
+                <Badge variant={port.status === "conflict" ? "destructive" : port.status === "foreign" ? "outline" : "secondary"}>
+                  {portStatusLabel(port.status)}
+                </Badge>
+              </Table.Cell>
+              <Table.Cell>
                 {#if canStopManagedPort(port)}
-                  <button
-                    type="button"
-                    disabled={stopping}
-                    onclick={() => {
-                      confirmPort = port;
-                    }}>Остановить…</button
-                  >
+                  <Button size="sm" variant="outline" disabled={stopping} onclick={() => { confirmPort = port; }}>Остановить…</Button>
                 {:else}
-                  Только просмотр
+                  <span class="text-xs text-muted-foreground">Только просмотр</span>
                 {/if}
-              </td>
-            </tr>
+              </Table.Cell>
+            </Table.Row>
           {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
-</section>
-
-<style>
-  .row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin: 8px 0;
-    flex-wrap: wrap;
-  }
-  label {
-    flex: 1;
-    min-width: 240px;
-  }
-  input {
-    width: 100%;
-    font: inherit;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  th,
-  td {
-    text-align: left;
-    padding: 4px 8px;
-    border-bottom: 1px solid #ddd;
-  }
-  .error {
-    color: #b00020;
-    overflow-wrap: anywhere;
-  }
-  .table-scroll {
-    overflow-x: auto;
-  }
-  .conflict {
-    background: #ffebee;
-  }
-  .foreign {
-    background: #fff8e1;
-  }
-  .confirmation {
-    padding: 12px;
-    border: 1px solid #b00020;
-    margin-bottom: 12px;
-  }
-  .confirmation button {
-    margin-right: 8px;
-  }
-</style>
+        </Table.Body>
+      </Table.Root>
+    {/if}
+  </Card.Content>
+</Card.Root>

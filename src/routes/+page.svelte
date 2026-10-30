@@ -26,6 +26,16 @@
   import PortsPanel from "$lib/components/PortsPanel.svelte";
   import TasksPanel from "$lib/components/TasksPanel.svelte";
   import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import * as Table from "$lib/components/ui/table/index.js";
+  import * as Tabs from "$lib/components/ui/tabs/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Textarea } from "$lib/components/ui/textarea/index.js";
+  import { ScrollArea } from "$lib/components/ui/scroll-area/index.js";
+  import * as Resizable from "$lib/components/ui/resizable/index.js";
 
   let roots = $state("");
   let projects = $state<Project[]>([]);
@@ -331,14 +341,16 @@
       /* без хранилища режим не запоминается */
     }
   }
-  const shown = (t: Tab) => view === "columns" || tab === t;
 </script>
 
 {#snippet tree(list: Project[], depth: number)}
   {#each list as p (p.path)}
-    <li style="padding-left: {depth * 16}px" class={{ 'focus-project': focusProject === p.name }}>
-      <span>{p.name}</span>
-      <button type="button" onclick={() => start(p)}>запустить</button>
+    <li
+      style="padding-left: {depth * 16}px"
+      class={["flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent", focusProject === p.name && "bg-accent ring-1 ring-primary"]}
+    >
+      <span class="flex-1 truncate text-sm">{p.name}</span>
+      <Button size="sm" variant="outline" onclick={() => start(p)}>Запустить</Button>
     </li>
     {#if p.children.length}
       {@render tree(p.children, depth + 1)}
@@ -346,95 +358,71 @@
   {/each}
 {/snippet}
 
-<main class={view}>
-  <header>
-    <h1>DEMERZEL</h1>
-    <div class="seg" role="group" aria-label="Вид окна">
-      <button type="button" class:on={view === "columns"} onclick={() => setView("columns")}>Колонки</button>
-      <button type="button" class:on={view === "tabs"} onclick={() => setView("tabs")}>Вкладки</button>
-    </div>
-    {#if focusProject}
-      <p class="notify-focus" role="status">Открыто из уведомления: {focusProject}</p>
-    {/if}
-  </header>
+{#snippet projectsView()}
+  <Card.Root class="h-full">
+    <Card.Header>
+      <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Проекты</Card.Title>
+    </Card.Header>
+    <Card.Content class="space-y-3">
+      <Textarea aria-label="Корневые папки сканирования" bind:value={roots} rows={2} placeholder="/Users/you/code" />
+      <div class="flex flex-wrap items-center gap-2">
+        <Button onclick={scan} disabled={scanBusy}>Сканировать</Button>
+        <Input class="min-w-48 flex-1" bind:value={commandOverride} placeholder="команда (пусто = из orchestrator.json)" />
+      </div>
+      <ul class="space-y-0.5">
+        {@render tree(projects, 0)}
+      </ul>
+    </Card.Content>
+  </Card.Root>
+{/snippet}
 
-  {#if error}
-    <p class="error">{error}</p>
-  {/if}
+{#snippet processesView()}
+  <Card.Root>
+    <Card.Header>
+      <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Процессы</Card.Title>
+    </Card.Header>
+    <Card.Content>
+      {#if processes.length === 0}
+        <p class="text-sm text-muted-foreground">Нет запущенных процессов.</p>
+      {:else}
+        <Table.Root>
+          <Table.Header>
+            <Table.Row>
+              <Table.Head>Проект</Table.Head>
+              <Table.Head>Команда</Table.Head>
+              <Table.Head>Статус</Table.Head>
+              <Table.Head></Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {#each processes as row (row.id)}
+              <Table.Row data-state={row.id === selectedId ? "selected" : undefined}>
+                <Table.Cell>
+                  <Button variant="link" class="h-auto p-0" onclick={() => select(row.id)} aria-pressed={row.id === selectedId}>{row.project}</Button>
+                </Table.Cell>
+                <Table.Cell class="font-mono text-xs">{row.command}</Table.Cell>
+                <Table.Cell>
+                  <Badge variant={isRunning(row.status) ? "default" : "secondary"}>{statusLabel(row.status)}</Badge>
+                </Table.Cell>
+                <Table.Cell class="text-right">
+                  {#if isRunning(row.status)}
+                    <Button size="sm" variant="outline" onclick={(e) => { e.stopPropagation(); stop(row.id); }}>Стоп</Button>
+                  {/if}
+                </Table.Cell>
+              </Table.Row>
+            {/each}
+          </Table.Body>
+        </Table.Root>
+      {/if}
+    </Card.Content>
+  </Card.Root>
+{/snippet}
 
-  {#if view === "tabs"}
-    <nav class="tabs" aria-label="Разделы">
-      {#each TABS as [id, label] (id)}
-        <button type="button" class:on={tab === id} onclick={() => (tab = id)}>{label}</button>
-      {/each}
-    </nav>
-  {/if}
+{#snippet portsView()}
+  <PortsPanel {ports} {portsError} {portsBusy} bind:portInterval onRefresh={refreshPorts} onStopManaged={stopManagedFromPorts} />
+{/snippet}
 
-  <div class="layout">
-  {#if shown("projects")}
-  <section class="area-projects">
-    <h2>Корневые папки</h2>
-    <textarea aria-label="Корневые папки сканирования" bind:value={roots} rows="2" placeholder="/Users/you/code"></textarea>
-    <div class="row">
-      <button type="button" onclick={scan} disabled={scanBusy}>Сканировать</button>
-      <label
-        >команда (пусто = из orchestrator.json / package.json):
-        <input bind:value={commandOverride} placeholder="авто" />
-      </label>
-    </div>
-    <ul class="tree">
-      {@render tree(projects, 0)}
-    </ul>
-  </section>
-  {/if}
-
-  <div class="area-center">
-  {#if shown("processes")}
-  <section>
-    <h2>Процессы</h2>
-    {#if processes.length === 0}
-      <p>Нет запущенных процессов.</p>
-    {:else}
-      <table>
-        <thead>
-          <tr><th>проект</th><th>команда</th><th>статус</th><th></th></tr>
-        </thead>
-        <tbody>
-          {#each processes as row (row.id)}
-            <tr class={{ selected: row.id === selectedId }}>
-              <td><button type="button" onclick={() => select(row.id)} aria-pressed={row.id === selectedId}>{row.project}</button></td>
-              <td>{row.command}</td>
-              <td>{statusLabel(row.status)}</td>
-              <td>
-                {#if isRunning(row.status)}
-                  <button
-                    type="button"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      stop(row.id);
-                    }}>стоп</button
-                  >
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-  </section>
-  {/if}
-  {#if shown("ports")}
-  <PortsPanel
-    {ports}
-    {portsError}
-    {portsBusy}
-    bind:portInterval
-    onRefresh={refreshPorts}
-    onStopManaged={stopManagedFromPorts}
-  />
-  {/if}
-
-  {#if shown("tasks")}
+{#snippet tasksView()}
   <TasksPanel
     {tasks}
     {taskErrors}
@@ -447,9 +435,9 @@
     onOpen={openTask}
     onStartAgent={startAgentFromTask}
   />
-  {/if}
+{/snippet}
 
-  {#if shown("agents")}
+{#snippet agentsView()}
   <AgentRunsPanel
     runs={agentRuns}
     runsError={agentRunsError}
@@ -463,53 +451,81 @@
     onAccept={acceptAgentRun}
     onDiscard={discardAgentRun}
   />
-  {/if}
-  </div>
+{/snippet}
 
-  {#if shown("logs")}
-  <section class="area-logs">
-    <h2>Логи {selectedId !== null ? `#${selectedId}` : ""}</h2>
-    <pre class="logs">{#each logs as line, i (i)}<span class={{ err: line.stream === "stderr" }}>{line.text}
+{#snippet logsView()}
+  <Card.Root class="h-full">
+    <Card.Header>
+      <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Логи {selectedId !== null ? `#${selectedId}` : ""}
+      </Card.Title>
+    </Card.Header>
+    <Card.Content>
+      <ScrollArea class="h-96 rounded-md border bg-background">
+        <pre class="p-3 font-mono text-xs leading-relaxed text-muted-foreground">{#each logs as line, i (i)}<span class={line.stream === "stderr" ? "text-destructive" : ""}>{line.text}
 </span>{/each}</pre>
-  </section>
-  {/if}
-  </div>
-</main>
+      </ScrollArea>
+    </Card.Content>
+  </Card.Root>
+{/snippet}
 
-<style>
-  :global(body) { margin: 0; background: #14110d; }
-  main {
-    --bg: #14110d; --pn: #1d1812; --ln: #3a2f1f; --tx: #efe3c8; --mu: #8f8266; --gold: #e0a83a; --red: #d9553a;
-    font-family: system-ui, sans-serif; padding: 16px; min-height: 100vh; box-sizing: border-box;
-    background: var(--bg); color: var(--tx);
-  }
-  main.tabs { max-width: 960px; margin: 0 auto; }
-  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  h1 { margin: 0; font-size: 1.1rem; font-weight: 500; letter-spacing: 0.08em; color: var(--gold); }
-  h2 { font-size: 0.7rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mu); }
-  .seg { margin-left: auto; display: flex; border: 1px solid var(--ln); border-radius: 8px; overflow: hidden; }
-  .seg button, .tabs button { border: 0; background: transparent; color: var(--mu); padding: 5px 12px; cursor: pointer; font: inherit; }
-  .seg button.on, .tabs button.on { background: var(--gold); color: #241a08; font-weight: 500; }
-  .tabs { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
-  .tabs button { border: 1px solid var(--ln); border-radius: 7px; }
-  .layout { display: block; }
-  main.columns .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr) 320px; gap: 0; margin-top: 12px; border: 1px solid var(--ln); border-radius: 12px; overflow: hidden; background: var(--pn); }
-  main.columns .layout > * { padding: 12px 16px; margin: 0; min-width: 0; }
-  main.columns .area-projects { border-right: 1px solid var(--ln); }
-  main.columns .area-logs { border-left: 1px solid var(--ln); }
-  section { margin-bottom: 24px; }
-  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-  textarea, input { width: 100%; font: inherit; background: var(--bg); color: var(--tx); border: 1px solid var(--ln); border-radius: 6px; box-sizing: border-box; }
-  label { flex: 1; min-width: 240px; color: var(--mu); }
-  main :global(button) { font: inherit; }
-  .tree { list-style: none; padding: 0; }
-  .tree li { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--ln); }
-  tr.selected { background: #2a2216; }
-  .focus-project { background: #2a2216; outline: 1px solid var(--gold); }
-  .notify-focus { margin: 0.25rem 0 0; font-size: 0.9rem; color: var(--gold); }
-  .logs { background: #0d0b08; color: #b5a888; padding: 12px; min-height: 120px; max-height: 480px; overflow: auto; font-size: 11.5px; }
-  .err { color: #ff7b72; }
-  .error { color: var(--red); overflow-wrap: anywhere; }
-</style>
+<main class="mx-auto min-h-screen max-w-[1400px] space-y-3 p-4">
+  <header class="flex flex-wrap items-center gap-3">
+    <h1 class="text-base font-medium tracking-widest text-primary">DEMERZEL</h1>
+    {#if focusProject}
+      <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
+    {/if}
+    <ToggleGroup.Root
+      type="single"
+      variant="outline"
+      class="ml-auto"
+      aria-label="Вид окна"
+      value={view}
+      onValueChange={(v) => v && setView(v as ViewMode)}
+    >
+      <ToggleGroup.Item value="columns">Колонки</ToggleGroup.Item>
+      <ToggleGroup.Item value="tabs">Вкладки</ToggleGroup.Item>
+    </ToggleGroup.Root>
+  </header>
+
+  {#if error}
+    <p class="break-words text-sm text-destructive">{error}</p>
+  {/if}
+
+  {#if view === "columns"}
+    <Resizable.PaneGroup direction="horizontal" class="min-h-[560px] rounded-xl border">
+      <Resizable.Pane defaultSize={24} minSize={16}>
+        <div class="h-full p-2">{@render projectsView()}</div>
+      </Resizable.Pane>
+      <Resizable.Handle withHandle />
+      <Resizable.Pane defaultSize={48} minSize={25}>
+        <div class="space-y-3 p-2">
+          {@render processesView()}
+          {@render portsView()}
+          {@render tasksView()}
+          {@render agentsView()}
+        </div>
+      </Resizable.Pane>
+      <Resizable.Handle withHandle />
+      <Resizable.Pane defaultSize={28} minSize={16}>
+        <div class="h-full p-2">{@render logsView()}</div>
+      </Resizable.Pane>
+    </Resizable.PaneGroup>
+  {:else}
+    <Tabs.Root value={tab} onValueChange={(v) => (tab = v as Tab)}>
+      <Tabs.List>
+        {#each TABS as [id, label] (id)}
+          <Tabs.Trigger value={id}>{label}</Tabs.Trigger>
+        {/each}
+      </Tabs.List>
+    </Tabs.Root>
+    <div class="space-y-3">
+      {#if tab === "projects"}{@render projectsView()}{/if}
+      {#if tab === "processes"}{@render processesView()}{/if}
+      {#if tab === "ports"}{@render portsView()}{/if}
+      {#if tab === "tasks"}{@render tasksView()}{/if}
+      {#if tab === "agents"}{@render agentsView()}{/if}
+      {#if tab === "logs"}{@render logsView()}{/if}
+    </div>
+  {/if}
+</main>

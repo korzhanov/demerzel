@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.41.0 — 2026-10-30
+
+- UI на shadcn-svelte (Tailwind v4, bits-ui, paneforge): Button, Card, Table, Tabs, Badge, Input, Textarea, ToggleGroup, ScrollArea, Resizable; тема в палитре мозаики. Колонки — с перетаскиваемыми границами. Панели портов, задач и ревью агентов переведены на компоненты. Исходники компонентов взяты с GitHub (shadcn-svelte@1.0.0): реестр сайта недоступен из песочницы, поэтому `components.json` написан вручную.
+
 ## 0.40.0 — 2026-10-30
 
 - Имя пользователя для озвучки: `alerts.voice.user_name` и `user_pronunciation`, плейсхолдер `{user}` в фразах по умолчанию (по умолчанию «Олег»). UI-поля пока нет. Закрывает #99.

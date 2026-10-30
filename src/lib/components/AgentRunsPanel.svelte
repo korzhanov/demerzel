@@ -65,185 +65,102 @@
       actionBusy = false;
     }
   }
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import * as Table from "$lib/components/ui/table/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
 </script>
 
-<section aria-labelledby="agent-runs-title">
-  <h2 id="agent-runs-title">Ревью агентов</h2>
-  <div class="row">
-    <button type="button" disabled={runsBusy || actionBusy} onclick={onRefresh}
-      >{runsBusy ? "Загрузка…" : "Обновить runs"}</button
-    >
-  </div>
-  {#if runsError}
-    <p class="error" role="alert">{runsError}</p>
-  {/if}
-  {#if mergeCommand}
-    <div class="merge-box" role="status">
-      <p>Принято. Слейте ветку вручную:</p>
-      <pre class="merge-cmd">{mergeCommand}</pre>
-    </div>
-  {/if}
-  {#if confirmDiscardId}
-    <div class="confirmation" role="alertdialog" aria-labelledby="agent-discard-title">
-      <p id="agent-discard-title">
-        Отклонить run «{confirmDiscardId}» и удалить worktree? Ветка агента будет удалена.
-      </p>
-      <button type="button" disabled={actionBusy} onclick={discardConfirmed}>Да, отклонить</button>
-      <button type="button" disabled={actionBusy} onclick={() => { confirmDiscardId = null; }}
-        >Отмена</button
-      >
-    </div>
-  {/if}
-  {#if runs.length === 0}
-    <p>Нет запусков агента. Появятся после старта из задачи.</p>
-  {:else}
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>Run</th>
-            <th>Проект</th>
-            <th>Раннер</th>
-            <th>Статус</th>
-            <th>База</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each runs as run (run.id)}
-            <tr class:selected={run.id === selectedId}>
-              <td>
-                <button type="button" onclick={() => select(run.id)} aria-pressed={run.id === selectedId}
-                  >{run.id}</button
-                >
-              </td>
-              <td>{run.project}</td>
-              <td>{agentRunnerLabel(run.runner)}</td>
-              <td>{agentRunStatusLabel(run.status)}</td>
-              <td>{run.base_ref}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
-
-  {#if selected}
-    <article class="detail" aria-label="Детали run {selected.id}">
-      <header class="detail-head">
-        <h3>{selected.id}</h3>
-        <p
-          >{agentRunStatusLabel(selected.status)} · {agentRunnerLabel(selected.runner)} ·
-          {selected.project_path}</p
-        >
-        <div class="row">
-          {#if canAcceptAgentRun(selected.status)}
-            <button type="button" disabled={actionBusy} onclick={acceptSelected}
-              >Принять</button
-            >
-          {/if}
-          {#if canDiscardAgentRun(selected.status)}
-            <button
-              type="button"
-              disabled={actionBusy}
-              onclick={() => {
-                confirmDiscardId = selected.id;
-              }}>Отклонить</button
-            >
-          {/if}
+<Card.Root aria-labelledby="agent-runs-title">
+  <Card.Header>
+    <Card.Title id="agent-runs-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Ревью агентов</Card.Title>
+  </Card.Header>
+  <Card.Content class="space-y-3">
+    <Button variant="outline" disabled={runsBusy || actionBusy} onclick={onRefresh}>
+      {runsBusy ? "Загрузка…" : "Обновить runs"}
+    </Button>
+    {#if runsError}
+      <p class="break-words text-sm text-destructive" role="alert">{runsError}</p>
+    {/if}
+    {#if mergeCommand}
+      <div class="space-y-1 rounded-md border border-primary p-3 text-sm" role="status">
+        <p>Принято. Слейте ветку вручную:</p>
+        <pre class="overflow-x-auto font-mono text-xs">{mergeCommand}</pre>
+      </div>
+    {/if}
+    {#if confirmDiscardId}
+      <div class="space-y-2 rounded-md border border-destructive p-3 text-sm" role="alertdialog" aria-labelledby="agent-discard-title">
+        <p id="agent-discard-title">Отклонить run «{confirmDiscardId}» и удалить worktree? Ветка агента будет удалена.</p>
+        <div class="flex gap-2">
+          <Button variant="destructive" disabled={actionBusy} onclick={discardConfirmed}>Да, отклонить</Button>
+          <Button variant="outline" disabled={actionBusy} onclick={() => { confirmDiscardId = null; }}>Отмена</Button>
         </div>
-      </header>
-      {#if hasAgentRunReviewPayload(selected)}
-        <h4>Diff</h4>
-        <pre class="diff">{selected.diff ?? "(пусто)"}</pre>
-        <h4>Лог тестов</h4>
-        <pre class="log">{selected.tests?.log ?? "(нет лога)"}</pre>
-        {#if selected.tests}
-          <p class="meta">
-            {#if selected.tests.skipped}
-              тесты пропущены
-            {:else}
-              exit {selected.tests.exit_code ?? "—"} · {selected.tests.duration_ms} мс ·
-              {selected.tests.command || "—"}
-            {/if}
-          </p>
-        {/if}
-      {:else}
-        <p>Diff и лог ещё не собраны для этого run.</p>
-      {/if}
-    </article>
-  {/if}
-</section>
+      </div>
+    {/if}
+    {#if runs.length === 0}
+      <p class="text-sm text-muted-foreground">Нет запусков агента. Появятся после старта из задачи.</p>
+    {:else}
+      <Table.Root>
+        <Table.Header>
+          <Table.Row>
+            <Table.Head>Run</Table.Head>
+            <Table.Head>Проект</Table.Head>
+            <Table.Head>Раннер</Table.Head>
+            <Table.Head>Статус</Table.Head>
+            <Table.Head>База</Table.Head>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {#each runs as run (run.id)}
+            <Table.Row data-state={run.id === selectedId ? "selected" : undefined}>
+              <Table.Cell>
+                <Button variant="link" class="h-auto p-0" onclick={() => select(run.id)} aria-pressed={run.id === selectedId}>{run.id}</Button>
+              </Table.Cell>
+              <Table.Cell>{run.project}</Table.Cell>
+              <Table.Cell>{agentRunnerLabel(run.runner)}</Table.Cell>
+              <Table.Cell><Badge variant="secondary">{agentRunStatusLabel(run.status)}</Badge></Table.Cell>
+              <Table.Cell class="font-mono text-xs">{run.base_ref}</Table.Cell>
+            </Table.Row>
+          {/each}
+        </Table.Body>
+      </Table.Root>
+    {/if}
 
-<style>
-  .row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin: 8px 0;
-    flex-wrap: wrap;
-  }
-  .error {
-    color: #b00020;
-    overflow-wrap: anywhere;
-  }
-  .table-scroll {
-    overflow-x: auto;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  th,
-  td {
-    text-align: left;
-    padding: 4px 8px;
-    border-bottom: 1px solid #ddd;
-  }
-  tr.selected {
-    background: #f0f0ff;
-  }
-  .confirmation {
-    background: #fff4e5;
-    border: 1px solid #e0a800;
-    border-radius: 6px;
-    padding: 12px;
-    margin: 8px 0;
-  }
-  .merge-box {
-    background: #e8f5e9;
-    border: 1px solid #81c784;
-    border-radius: 6px;
-    padding: 12px;
-    margin: 8px 0;
-  }
-  .merge-cmd,
-  .diff,
-  .log {
-    background: #0d0d12;
-    color: #ddd;
-    padding: 12px;
-    overflow: auto;
-    max-height: 280px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font-size: 0.85rem;
-  }
-  .detail {
-    margin-top: 16px;
-    border-top: 1px solid #ddd;
-    padding-top: 12px;
-  }
-  .detail-head h3 {
-    margin: 0 0 4px;
-  }
-  .detail-head p {
-    margin: 0 0 8px;
-    color: #555;
-    font-size: 0.9rem;
-    overflow-wrap: anywhere;
-  }
-  .meta {
-    color: #555;
-    font-size: 0.85rem;
-  }
-</style>
+    {#if selected}
+      <article class="space-y-2 rounded-lg border p-3" aria-label="Детали run {selected.id}">
+        <header class="space-y-1">
+          <h3 class="font-medium">{selected.id}</h3>
+          <p class="text-xs text-muted-foreground">
+            {agentRunStatusLabel(selected.status)} · {agentRunnerLabel(selected.runner)} · {selected.project_path}
+          </p>
+          <div class="flex gap-2">
+            {#if canAcceptAgentRun(selected.status)}
+              <Button disabled={actionBusy} onclick={acceptSelected}>Принять</Button>
+            {/if}
+            {#if canDiscardAgentRun(selected.status)}
+              <Button variant="outline" disabled={actionBusy} onclick={() => { confirmDiscardId = selected.id; }}>Отклонить</Button>
+            {/if}
+          </div>
+        </header>
+        {#if hasAgentRunReviewPayload(selected)}
+          <h4 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Diff</h4>
+          <pre class="max-h-72 overflow-auto rounded-md bg-background p-3 font-mono text-xs">{selected.diff ?? "(пусто)"}</pre>
+          <h4 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Лог тестов</h4>
+          <pre class="max-h-72 overflow-auto rounded-md bg-background p-3 font-mono text-xs">{selected.tests?.log ?? "(нет лога)"}</pre>
+          {#if selected.tests}
+            <p class="text-xs text-muted-foreground">
+              {#if selected.tests.skipped}
+                тесты пропущены
+              {:else}
+                exit {selected.tests.exit_code ?? "—"} · {selected.tests.duration_ms} мс · {selected.tests.command || "—"}
+              {/if}
+            </p>
+          {/if}
+        {:else}
+          <p class="text-sm text-muted-foreground">Diff и лог ещё не собраны для этого run.</p>
+        {/if}
+      </article>
+    {/if}
+  </Card.Content>
+</Card.Root>
