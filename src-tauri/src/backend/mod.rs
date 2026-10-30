@@ -17,6 +17,7 @@ pub mod widget;
 pub mod widget_refresh;
 
 pub mod github_tasks;
+pub mod notion_tasks;
 pub mod ecosystem;
 pub mod docker;
 pub mod cli;

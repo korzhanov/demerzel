@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.36.0 — 2026-10-30
+
+- Адаптер Notion `NotionSource`: REST через `curl` + `NOTION_TOKEN`, query database, маппинг title/status/select/checkbox, кэш 60 с, пагинация. Поля `database_id` / `title_property` / `status_property` в схеме; docs в `tasks-format.md`. При старте агента remote page не меняется. Закрывает #36.
+
 ## 0.35.1 — 2026-10-30
 
 - README: что это, запуск, `orchestrator.json`, ссылки на docs. Указатель `docs/README.md` (ADR, схемы, форматы, фазы). Закрывает #35.

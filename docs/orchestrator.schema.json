@@ -40,7 +40,7 @@
       "required": ["source"],
       "additionalProperties": false,
       "properties": {
-        "source": { "enum": ["todo", "tasks-json", "github"] },
+        "source": { "enum": ["todo", "tasks-json", "github", "notion"] },
         "repository": {
           "type": "string",
           "description": "owner/name для source=github (#18)"
@@ -48,6 +48,18 @@
         "label": {
           "type": "string",
           "description": "Опциональный фильтр метки GitHub Issues"
+        },
+        "database_id": {
+          "type": "string",
+          "description": "UUID Notion database для source=notion (#36)"
+        },
+        "title_property": {
+          "type": "string",
+          "description": "Имя title-property Notion (по умолчанию Name)"
+        },
+        "status_property": {
+          "type": "string",
+          "description": "Имя status/select/checkbox property Notion (по умолчанию Status)"
         }
       }
     },

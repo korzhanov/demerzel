@@ -60,6 +60,6 @@
 | 4 | Алерты | #20–#23 |
 | 5 | Виджет / summary | #25–#26 |
 | 6 | Агенты (worktree → ревью) | #27–#33 |
-| 7 | Later / fallback | #36 Notion, #37 iCloud summary, #38 Swift WidgetKit |
+| 7 | Later / fallback | #36 Notion (0.36.0), #37 iCloud summary, #38 Swift WidgetKit |
 
 Правила доски и статусов — в [CONVENTIONS.md](CONVENTIONS.md#github-project).

@@ -46,6 +46,15 @@ pub struct TasksConfig {
     pub repository: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
+    /// Notion database id (`source: "notion"`, #36).
+    #[serde(default)]
+    pub database_id: Option<String>,
+    /// Notion title property name (default `Name`).
+    #[serde(default)]
+    pub title_property: Option<String>,
+    /// Notion status property name (default `Status`).
+    #[serde(default)]
+    pub status_property: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -88,7 +97,7 @@ impl std::fmt::Display for ConfigError {
     }
 }
 
-const TASK_SOURCES: &[&str] = &["todo", "tasks-json", "github"];
+const TASK_SOURCES: &[&str] = &["todo", "tasks-json", "github", "notion"];
 
 /// Разбирает и валидирует конфиг. Путь к файлу добавляется вызывающим кодом.
 pub fn parse(json: &str) -> Result<ProjectConfig, ConfigError> {
@@ -301,6 +310,29 @@ mod tests {
         assert_eq!(tasks.source, "github");
         assert_eq!(tasks.repository.as_deref(), Some("owner/name"));
         assert_eq!(tasks.label.as_deref(), Some("phase-3"));
+    }
+
+    #[test]
+    fn parses_notion_task_source_with_database_and_properties() {
+        let json = r#"{
+            "name": "a",
+            "type": "app",
+            "tasks": {
+                "source": "notion",
+                "database_id": "01234567-89ab-cdef-0123-456789abcdef",
+                "title_property": "Задача",
+                "status_property": "Статус"
+            }
+        }"#;
+        let cfg = parse(json).unwrap();
+        let tasks = cfg.tasks.unwrap();
+        assert_eq!(tasks.source, "notion");
+        assert_eq!(
+            tasks.database_id.as_deref(),
+            Some("01234567-89ab-cdef-0123-456789abcdef")
+        );
+        assert_eq!(tasks.title_property.as_deref(), Some("Задача"));
+        assert_eq!(tasks.status_property.as_deref(), Some("Статус"));
     }
 
     #[test]

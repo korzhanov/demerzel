@@ -7,11 +7,12 @@ Demerzel читает задачи проекта из файлов в корн�
 | `todo` | `TODO.md` | `FileSource { json: false }` |
 | `tasks-json` | `tasks.json` | `FileSource { json: true }` |
 | `github` | — | GitHub Issues (#18) |
+| `notion` | — | Notion database (#36) |
 
 Нормализованная модель — `Task` (#16): `id`, `project`, `title`, `status`, `source`, `url?`.
 Статусы на проводе: `todo`, `in_progress`, `done`, `blocked`.
 
-При старте агента из задачи (#33) статус переводится в `in_progress` (`mark_task_in_progress`): для `todo` / `tasks-json` пишется в файл; для GitHub remote не меняется. Закрытие (`done`) после ревью агента — только вручную.
+При старте агента из задачи (#33) статус переводится в `in_progress` (`mark_task_in_progress`): для `todo` / `tasks-json` пишется в файл; для GitHub / Notion remote не меняется. Закрытие (`done`) после ревью агента — только вручную.
 
 ## TODO.md
 
@@ -108,3 +109,38 @@ Demerzel читает задачи проекта из файлов в корн�
 - Id: `github:{owner}/{name}#{number}`; `source` = `github`; `url` = `html_url`.
 - Кэш: ETag + `If-None-Match` (ответ `304` → кэш); повторный REST не чаще раза в 60 с на endpoint (лимит запросов).
 - Пагинация до 100 страниц; иначе ошибка с просьбой сузить `label`.
+
+## Notion database (`source: "notion"`)
+
+Адаптер `NotionSource` в `notion_tasks.rs` (#36). REST через `curl` к `api.notion.com`. Токен — переменная окружения `NOTION_TOKEN` (integration secret); в `orchestrator.json` не хранится.
+
+В `orchestrator.json`:
+
+```json
+{
+  "name": "demerzel",
+  "type": "app",
+  "tasks": {
+    "source": "notion",
+    "database_id": "01234567-89ab-cdef-0123-456789abcdef",
+    "title_property": "Name",
+    "status_property": "Status"
+  }
+}
+```
+
+| Поле | Обязательно | Описание |
+|---|---|---|
+| `database_id` | да (при fetch) | UUID БД (с дефисами или без); путь/URL отклоняются |
+| `title_property` | нет | имя `title`-property; по умолчанию `Name`, иначе первое title-поле |
+| `status_property` | нет | имя `status` / `select` / `checkbox`; по умолчанию `Status` |
+
+Поведение:
+
+- Запрос: `POST /v1/databases/{id}/query` (`Notion-Version: 2022-06-28`, `page_size=100`).
+- Заголовок: plain text из title-property; пустой title пропускается.
+- Статус: `status`/`select` по имени (в т.ч. `In progress`, `Done`, `Blocked`, русские алиасы); `checkbox` true → `done`; `archived` → `done`.
+- Id: `notion:{database_id_compact}:{page_id}`; `source` = `notion`; `url` = page `url`.
+- Кэш: повторный REST не чаще раза в 60 с на страницу пагинации.
+- Пагинация по `start_cursor` до 100 страниц; иначе ошибка.
+- При старте агента remote page не обновляется (как GitHub).
