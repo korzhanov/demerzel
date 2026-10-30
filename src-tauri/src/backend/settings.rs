@@ -112,6 +112,8 @@ mod tests {
                 max_concurrent: 2,
                 min_free_memory_mb: 1024,
                 ollama_reserve_mb: 2048,
+                runner: crate::backend::agents::AgentRunner::Ollama,
+                ollama_model: "qwen2.5-coder:7b".into(),
             },
             ..Settings::default()
         };
@@ -120,6 +122,8 @@ mod tests {
         assert_eq!(loaded.agents.max_concurrent, 2);
         assert_eq!(loaded.agents.min_free_memory_mb, 1024);
         assert_eq!(loaded.agents.ollama_reserve_mb, 2048);
+        assert_eq!(loaded.agents.runner, crate::backend::agents::AgentRunner::Ollama);
+        assert_eq!(loaded.agents.ollama_model, "qwen2.5-coder:7b");
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

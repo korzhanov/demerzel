@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.0 — 2026-10-30
+
+- Опциональный раннер Ollama (`ollama run qwen2.5-coder:7b`) рядом с Claude CLI: выбор в `agents.runner` / селект на доске задач, модель в `agents.ollama_model`, тот же worktree + `collect_review`. Claude остаётся путём по умолчанию. Документ `docs/agents.md`. Закрывает #30.
+
 ## 0.34.1 — 2026-10-30
 
 - Сканер: `MAX_DEPTH` 6→3, nesting подпроектов ≤1, расширен ignore-лист (`vendor`, `coverage`, `venv`, …). «Обновить задачи» не обходит глубокие nested `package.json`. Реальные top-level + один уровень (dashboard / parsers/news) сохраняются. Закрывает #85.

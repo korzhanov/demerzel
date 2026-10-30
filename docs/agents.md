@@ -1,6 +1,6 @@
-# Агенты: git worktree, Claude CLI, лимиты и ревью
+# Агенты: git worktree, Claude CLI, Ollama, лимиты и ревью
 
-Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #30 (Ollama, опционально), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -39,7 +39,7 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 
 1. **Concurrency** — одновременно не больше `agents.max_concurrent` (по умолчанию **1**). Иначе `StartDecision::Queue(ConcurrencyLimit)`.
 2. **Память** — `vm_stat`: доступно ≈ `(Pages free + inactive + speculative) × page size`. Если меньше `agents.min_free_memory_mb` (по умолчанию **2048** МиБ) — очередь `InsufficientMemory`.
-3. **Ollama** — если процесс `ollama` уже запущен (`pgrep -x`), к порогу добавляется `agents.ollama_reserve_mb` (по умолчанию **4096** МиБ). Сам раннер Ollama — #30.
+3. **Ollama (память)** — если процесс `ollama` уже запущен (`pgrep -x`), к порогу добавляется `agents.ollama_reserve_mb` (по умолчанию **4096** МиБ).
 
 Слот освобождается `release(run_id)` после завершения / fail / discard. Повторный `try_acquire` того же `run_id` идемпотентен.
 
@@ -50,12 +50,24 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
   "agents": {
     "max_concurrent": 1,
     "min_free_memory_mb": 2048,
-    "ollama_reserve_mb": 4096
+    "ollama_reserve_mb": 4096,
+    "runner": "claude",
+    "ollama_model": "qwen2.5-coder:7b"
   }
 }
 ```
 
-Отсутствующая секция → значения по умолчанию.
+Отсутствующая секция → значения по умолчанию. `runner: "claude"` — основной путь; Ollama не обязателен.
+
+## Ollama (#30)
+
+Опциональный headless-раннер для простых задач (не блокирует Claude CLI):
+
+1. **Выбор** — `agents.runner` в settings или селект «Раннер» на доске задач перед «Исправить».
+2. **Запуск** — `ollama run <model> "<prompt>"` (`cwd` = worktree), модель по умолчанию `qwen2.5-coder:7b`.
+3. **Сбор** — stdout/stderr/код/длительность; таймаут и отмена как у Claude (SIGTERM process group).
+4. **Дальше** — тот же `collect_review` (тесты + diff → `needs_review` / `failed`).
+5. Override: `DEMERZEL_OLLAMA_BIN`, `DEMERZEL_OLLAMA_MODEL`.
 
 ## Тесты и diff после агента (#31)
 
@@ -92,6 +104,8 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 - `ClaudeHandle::spawn` / `cancel` / `wait_until`
 - `run_claude(worktree, task, timeout, cancel?)` → `ClaudeRunResult`
 - `claude_bin` / `DEFAULT_CLAUDE_TIMEOUT` / `PROJECT_RULES_FILE`
+- `AgentRunner` / `OllamaHandle` / `run_ollama` / `run_agent_cli` (#30)
+- `ollama_bin` / `resolve_ollama_model` / `DEFAULT_OLLAMA_MODEL` / `DEFAULT_OLLAMA_TIMEOUT`
 - `AgentsConfig` / `AgentLimiter` / `try_acquire` / `release`
 - `available_memory_mb` / `parse_vm_stat_available_mb` / `ollama_process_running`
 - `DEFAULT_CONCURRENCY` / `DEFAULT_MIN_FREE_MEMORY_MB` / `DEFAULT_OLLAMA_RESERVE_MB`
@@ -122,7 +136,7 @@ Tauri: `list_agent_runs`, `get_agent_run`, `upsert_agent_run`, `accept_agent_run
 
 1. **Статус задачи** — `mark_task_in_progress`: TODO.md → `- [~]`, `tasks.json` → `in_progress`, GitHub — только локально в ответе (issue не закрывается).
 2. **Prepare** — `prepare_agent_from_task`: запись `queued`, `AgentLimiter::try_acquire`; при слоте — `create_worktree`, статус `running`.
-3. **Complete** (фон в UI / sync в тестах) — `complete_agent_run`: Claude CLI → `collect_review` → `needs_review` / `failed`, `release` слота.
+3. **Complete** (фон в UI / sync в тестах) — `complete_agent_run`: выбранный раннер (Claude / Ollama) → `collect_review` → `needs_review` / `failed`, `release` слота.
 4. **Очередь** — при нехватке слота/памяти run остаётся `queued` без worktree; задача уже `in_progress`.
 5. **Закрытие задачи** — после accept/discard только вручную (accept не трогает TODO/GitHub).
 

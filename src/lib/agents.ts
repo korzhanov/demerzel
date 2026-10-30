@@ -1,5 +1,19 @@
-import type { AgentRunRecord, AgentRunStatus } from "./types";
+import type { AgentRunner, AgentRunRecord, AgentRunStatus } from "./types";
 import { canTransitionAgentRun } from "./types";
+
+/** Подпись раннера для UI (#30). */
+export function agentRunnerLabel(runner: AgentRunner | undefined | null): string {
+  switch (runner ?? "claude") {
+    case "ollama":
+      return "Ollama (локально)";
+    case "claude":
+      return "Claude CLI";
+    default: {
+      const _exhaustive: never = runner as never;
+      return _exhaustive;
+    }
+  }
+}
 
 /** Подписи статусов agent run для UI (#32). */
 export function agentRunStatusLabel(status: AgentRunStatus): string {
