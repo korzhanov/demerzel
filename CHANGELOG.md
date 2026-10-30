@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.0 — 2026-10-30
+
+- Системные уведомления алертов через `tauri-plugin-notification`: короткий текст, показ только при `DeliveryDecision.notify` (тихие часы → только `critical`), клик фокусирует окно и открывает проект (`alerts:open-project`). Модуль `backend/notify`, команда `ingest_alert_event`, ADR Focus Mode (#22). Голос `say` не входит (#23).
+
 ## 0.26.0 — 2026-10-30
 
 - Политика доставки алертов: дедуп одинаковых событий в окне 10 мин, троттлинг голоса ≤1/мин, тихие часы 23:00–08:00 `Europe/Berlin` (голос выкл., notify только `critical`). `DeliveryGate` / `DeliveryDecision` поверх `AlertCandidate`, поля в `alerts` settings, доки и `bun:test`. Закрывает #21.

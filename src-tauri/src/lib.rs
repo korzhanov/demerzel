@@ -6,13 +6,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use std::path::PathBuf;
 
+use backend::alerts::{AlertEvent, DeliveryDecision, DeliveryGate};
+use backend::notify::{self, NotifyPayload, OpenProjectPayload, EXTRA_PROJECT, OPEN_PROJECT_EVENT};
 use backend::registry::{Registry, Row};
 use backend::scanner::{self, Project};
 use backend::logs::LogLine;
 use backend::summary::Summary;
 use backend::widget;
 use backend::widget_refresh::{Throttle, DEFAULT_MIN_INTERVAL_SECS};
-use tauri::Manager;
+use chrono::Utc;
+use serde::Serialize;
+use tauri::{Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_widgets::{models::WidgetConfig, WidgetExt};
 
 const APP_GROUP: &str = "group.app.demerzel.orchestrator";
@@ -22,6 +27,65 @@ pub struct Processes(pub Mutex<Registry>);
 
 /// Состояние троттлинга виджета, общее для всего приложения.
 pub struct WidgetState(pub Mutex<Throttle>);
+
+/// Stateful `DeliveryGate` для алертов (#21–#22).
+pub struct AlertGate(pub Mutex<DeliveryGate>);
+
+/// Результат приёма события алерта (для UI / тестов).
+#[derive(Debug, Clone, Serialize)]
+pub struct IngestAlertResult {
+    pub matched: bool,
+    pub decision: Option<DeliveryDecisionDto>,
+    pub notified: bool,
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeliveryDecisionDto {
+    pub emit: bool,
+    pub speak: bool,
+    pub notify: bool,
+}
+
+impl From<DeliveryDecision> for DeliveryDecisionDto {
+    fn from(d: DeliveryDecision) -> Self {
+        Self {
+            emit: d.emit,
+            speak: d.speak,
+            notify: d.notify,
+        }
+    }
+}
+
+fn show_os_notification(app: &tauri::AppHandle, payload: &NotifyPayload) -> Result<(), String> {
+    let mut builder = app
+        .notification()
+        .builder()
+        .title(payload.title.clone())
+        .body(payload.body.clone());
+    if let Some(project) = &payload.project {
+        builder = builder.extra(EXTRA_PROJECT, project);
+    }
+    builder.show().map_err(|e| e.to_string())
+}
+
+fn focus_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn handle_notification_action(app: &tauri::AppHandle, action_id: &str, project: Option<String>) {
+    if action_id != "tap" {
+        return;
+    }
+    focus_main_window(app);
+    if let Some(project) = project.filter(|p| !p.is_empty()) {
+        let _ = app.emit(OPEN_PROJECT_EVENT, OpenProjectPayload { project });
+    }
+}
 
 fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -73,8 +137,16 @@ fn get_settings(app: tauri::AppHandle) -> Result<backend::settings::Settings, St
 }
 
 #[tauri::command]
-fn save_settings(app: tauri::AppHandle, settings: backend::settings::Settings) -> Result<(), String> {
-    backend::settings::save(&settings_path(&app)?, &settings).map_err(|e| e.to_string())
+fn save_settings(
+    app: tauri::AppHandle,
+    gate: tauri::State<'_, AlertGate>,
+    settings: backend::settings::Settings,
+) -> Result<(), String> {
+    backend::settings::save(&settings_path(&app)?, &settings).map_err(|e| e.to_string())?;
+    // Новая политика доставки; история дедупа сбрасывается вместе с конфигом.
+    let mut g = gate.0.lock().map_err(|e| e.to_string())?;
+    *g = DeliveryGate::from_config(&settings.alerts);
+    Ok(())
 }
 
 #[tauri::command]
@@ -172,13 +244,67 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// Оценивает событие → gate → OS notify при `decision.notify` (#22). Без `say` (#23).
+#[tauri::command]
+fn ingest_alert_event(
+    app: tauri::AppHandle,
+    gate: tauri::State<'_, AlertGate>,
+    event: AlertEvent,
+) -> Result<IngestAlertResult, String> {
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let project = notify::project_hint(&event);
+    let Some(candidate) = backend::alerts::evaluate(&settings.alerts.rules, &event) else {
+        return Ok(IngestAlertResult {
+            matched: false,
+            decision: None,
+            notified: false,
+            project,
+        });
+    };
+    let decision = {
+        let mut g = gate.0.lock().map_err(|e| e.to_string())?;
+        g.decide(&candidate, Utc::now())
+    };
+    let notified = if let Some(payload) = notify::maybe_notify(&candidate, &decision) {
+        show_os_notification(&app, &payload)?;
+        true
+    } else {
+        false
+    };
+    Ok(IngestAlertResult {
+        matched: true,
+        decision: Some(decision.into()),
+        notified,
+        project: notify::project_hint(&candidate.event).or(project),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_widgets::init())
         .manage(WidgetState(Mutex::new(Throttle::new(DEFAULT_MIN_INTERVAL_SECS))))
         .manage(Processes(Mutex::new(Registry::default())))
+        .manage(AlertGate(Mutex::new(DeliveryGate::new_default())))
+        .setup(|app| {
+            let handle = app.handle().clone();
+            app.notification().on_action(move |performed| {
+                let project = performed
+                    .notification()
+                    .and_then(|n| notify::project_from_extra(n.extra()));
+                handle_notification_action(&handle, performed.action_id(), project);
+            })?;
+            // Подтянуть quiet/dedupe из settings при старте.
+            if let Ok(path) = settings_path(app.handle())
+                && let Ok(settings) = backend::settings::load(&path)
+                && let Ok(mut gate) = app.state::<AlertGate>().0.lock()
+            {
+                *gate = DeliveryGate::from_config(&settings.alerts);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             refresh_widget_from_summary,
@@ -191,7 +317,8 @@ pub fn run() {
             list_processes,
             process_logs,
             list_ports,
-            project_tasks
+            project_tasks,
+            ingest_alert_event
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

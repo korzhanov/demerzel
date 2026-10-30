@@ -8,6 +8,7 @@
 - `tasks.md`: черновик задач по ассетам (иконки, обложки).
 - `alerts-rules-wireframe.md`: контракт движка правил алертов (#20).
 - `alerts-delivery-wireframe.md`: дедуп / троттлинг / тихие часы (#21).
+- `alerts-notify-wireframe.md`: OS notify + клик → проект (#22).
 - `ports-tasks-wireframe.md`: порты и доска задач.
 
 Правила: см. [docs/CONVENTIONS.md](../docs/CONVENTIONS.md#референсы-и-ассеты).

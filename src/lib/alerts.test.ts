@@ -4,8 +4,11 @@ import {
   deliveryFlags,
   isQuietHours,
   isQuietHoursLocal,
+  notifyTitle,
   parseHhMmToMinutes,
+  processIdForProject,
   severityLabel,
+  shouldDeliverNotify,
   shouldNotify,
   shouldSpeak,
 } from "./alerts";
@@ -86,5 +89,33 @@ describe("deliveryFlags", () => {
       speak: true,
       notify: true,
     });
+  });
+});
+
+describe("notify delivery (#22)", () => {
+  test("titles by severity", () => {
+    expect(notifyTitle("critical")).toBe("Demerzel · Критично");
+    expect(notifyTitle("important")).toBe("Demerzel · Важно");
+    expect(notifyTitle("info")).toBe("Demerzel");
+  });
+
+  test("shouldDeliverNotify follows gate flag only", () => {
+    expect(shouldDeliverNotify({ notify: true })).toBe(true);
+    expect(shouldDeliverNotify({ notify: false })).toBe(false);
+    expect(
+      shouldDeliverNotify(deliveryFlags("important", { quiet: true })),
+    ).toBe(false);
+    expect(
+      shouldDeliverNotify(deliveryFlags("critical", { quiet: true })),
+    ).toBe(true);
+  });
+
+  test("processIdForProject picks running row by name", () => {
+    const rows = [
+      { id: 1, project: "api" },
+      { id: 2, project: "web" },
+    ];
+    expect(processIdForProject(rows, "web")).toBe(2);
+    expect(processIdForProject(rows, "missing")).toBeNull();
   });
 });

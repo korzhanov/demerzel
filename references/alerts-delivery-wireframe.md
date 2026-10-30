@@ -1,6 +1,6 @@
 # Wireframe: политика доставки алертов (#21)
 
-Поверх `AlertCandidate` из #20. Без реальных push (#22) и `say` (#23).
+Поверх `AlertCandidate` из #20. Реальный push — #22 (`alerts-notify-wireframe.md`); `say` — #23.
 
 ```
 ┌─ AlertCandidate ──────────────────┐

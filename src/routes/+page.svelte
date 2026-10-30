@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
   import type { Settings, PortRow, Task } from "$lib/types";
@@ -10,6 +11,7 @@
     type Project,
     type ProcessRow,
   } from "$lib/types";
+  import { OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
   import { clampPortPollInterval } from "$lib/ports";
   import { canOpenTask } from "$lib/tasks";
   import PortsPanel from "$lib/components/PortsPanel.svelte";
@@ -19,6 +21,8 @@
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
   let selectedId = $state<number | null>(null);
+  /** Проект из клика по системному уведомлению (#22). */
+  let focusProject = $state<string | null>(null);
   let logs = $state<LogLine[]>([]);
   /** Переопределение: если пусто — берём commands.dev / scripts.dev с диска. */
   let commandOverride = $state("");
@@ -167,9 +171,26 @@
     refresh();
   }
 
+  function openProjectFromNotify(project: string) {
+    focusProject = project;
+    const id = processIdForProject(processes, project);
+    if (id !== null) select(id);
+    const match = flatProjects.find((p) => p.name === project);
+    if (match) projectFilter = match.path;
+  }
+
   onMount(() => {
     mounted = true;
+    let unlistenOpen: (() => void) | undefined;
     void (async () => {
+      try {
+        unlistenOpen = await listen<{ project: string }>(OPEN_PROJECT_EVENT, (ev) => {
+          if (!mounted) return;
+          openProjectFromNotify(ev.payload.project);
+        });
+      } catch (e) {
+        if (mounted) error = String(e);
+      }
       try {
         const s = await invoke<Settings>("get_settings");
         if (!mounted) return;
@@ -193,13 +214,14 @@
       taskGeneration++;
       clearInterval(poll);
       clearInterval(portPoll);
+      unlistenOpen?.();
     };
   });
 </script>
 
 {#snippet tree(list: Project[], depth: number)}
   {#each list as p (p.path)}
-    <li style="padding-left: {depth * 16}px">
+    <li style="padding-left: {depth * 16}px" class={{ 'focus-project': focusProject === p.name }}>
       <span>{p.name}</span>
       <button type="button" onclick={() => start(p)}>запустить</button>
     </li>
@@ -212,6 +234,9 @@
 <main>
   <header>
     <h1>Demerzel</h1>
+    {#if focusProject}
+      <p class="notify-focus" role="status">Открыто из уведомления: {focusProject}</p>
+    {/if}
   </header>
 
   {#if error}
@@ -244,7 +269,7 @@
         </thead>
         <tbody>
           {#each processes as row (row.id)}
-            <tr class:selected={row.id === selectedId}>
+            <tr class={{ selected: row.id === selectedId }}>
               <td><button type="button" onclick={() => select(row.id)} aria-pressed={row.id === selectedId}>{row.project}</button></td>
               <td>{row.command}</td>
               <td>{statusLabel(row.status)}</td>
@@ -268,7 +293,7 @@
 
   <section>
     <h2>Логи {selectedId !== null ? `#${selectedId}` : ""}</h2>
-    <pre class="logs">{#each logs as line, i (i)}<span class:err={line.stream === "stderr"}>{line.text}
+    <pre class="logs">{#each logs as line, i (i)}<span class={{ err: line.stream === "stderr" }}>{line.text}
 </span>{/each}</pre>
   </section>
   <PortsPanel
@@ -302,6 +327,8 @@
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #ddd; }
   tr.selected { background: #f0f0ff; }
+  .focus-project { background: #f5f0e6; outline: 1px solid #c4a574; }
+  .notify-focus { margin: 0.25rem 0 0; font-size: 0.9rem; color: #5c4a32; }
   .logs { background: #0d0d12; color: #ddd; padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; }
   .err { color: #ff7b72; }
   .error { color: #b00020; overflow-wrap: anywhere; }
