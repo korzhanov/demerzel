@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.32.0 — 2026-10-30
+
+- После агента: прогон `commands.test` в worktree, сбор exit/лога и `git diff` к базовой ветке; статусы run `queued`…`accepted`, переход в `needs_review` / `failed`. Документ `docs/agents.md`. Закрывает #31.
+
 ## 0.31.0 — 2026-10-30
 
 - Лимит параллельных агентов и проверка памяти перед стартом: `AgentLimiter` (по умолчанию 1 слот), `vm_stat` → доступная RAM, очередь при нехватке; запас `ollama_reserve_mb` если процесс `ollama` запущен. Конфиг `settings.json` → `agents`, доки в `docs/agents.md`. Закрывает #29.

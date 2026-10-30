@@ -1,5 +1,5 @@
-//! Запуски агентов: статусы run, git worktree (#27), Claude Code CLI (#28)
-//! и лимит параллелизма / памяти (#29).
+//! Запуски агентов: статусы run, git worktree (#27), Claude Code CLI (#28),
+//! лимит параллелизма / памяти (#29), прогон тестов и diff (#31).
 //!
 //! На каждый баг — отдельный worktree в `~/.orchestrator/worktrees/<project>/<run-id>`
 //! с веткой `agent/<run-id>`, чтобы правки агента не попадали в основную ветку.
@@ -11,6 +11,9 @@
 //!
 //! Параллелизм (#29): по умолчанию 1 агент; перед стартом — свободная память
 //! (`vm_stat`), с запасом под Ollama если процесс запущен (сам раннер — #30).
+//!
+//! После агента (#31): `commands.test` в worktree, `git diff` к базовой ветке,
+//! статус `needs_review` / `failed`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -22,8 +25,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Статусы прогона агента (#27–#31).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Статусы прогона агента (#27–#31). Строки для SQLite / UI: snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RunStatus {
     Queued,
     Running,
@@ -31,6 +35,31 @@ pub enum RunStatus {
     Failed,
     Discarded,
     Accepted,
+}
+
+impl RunStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::NeedsReview => "needs_review",
+            Self::Failed => "failed",
+            Self::Discarded => "discarded",
+            Self::Accepted => "accepted",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        match raw.trim() {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "needs_review" => Ok(Self::NeedsReview),
+            "failed" => Ok(Self::Failed),
+            "discarded" => Ok(Self::Discarded),
+            "accepted" => Ok(Self::Accepted),
+            other => Err(format!("unknown agent run status '{other}'")),
+        }
+    }
 }
 
 /// Допустимые переходы. Accepted только после NeedsReview: слияние всегда вручную.
@@ -46,6 +75,17 @@ pub fn can_transition(from: RunStatus, to: RunStatus) -> bool {
             | (Failed, Discarded)
             | (Queued, Discarded)
     )
+}
+
+/// Переход Running → NeedsReview / Failed по результату тестов (#31).
+///
+/// Нет `commands.test` или exit 0 → `needs_review`; иначе → `failed`.
+pub fn status_after_tests(tests: &TestRunResult) -> RunStatus {
+    if tests.skipped || tests.exit_code == Some(0) {
+        RunStatus::NeedsReview
+    } else {
+        RunStatus::Failed
+    }
 }
 
 /// Лимит параллельных агентов по умолчанию (#29).
@@ -716,6 +756,115 @@ pub fn run_claude(
     handle.wait_until(deadline, cancel)
 }
 
+// --- Tests + diff after agent (#31) ---
+
+/// Сообщение, когда `commands.test` нет или пусто.
+pub const TEST_SKIPPED: &str = "no commands.test; skipped";
+
+/// Итог прогона `commands.test` в каталоге worktree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestRunResult {
+    /// Команда из конфига (пустая, если skipped).
+    pub command: String,
+    pub exit_code: Option<i32>,
+    /// Объединённый stdout + stderr.
+    pub log: String,
+    pub skipped: bool,
+    pub duration_ms: u64,
+}
+
+/// Пакет для ревью: тесты, diff, следующий статус run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentReviewBundle {
+    pub tests: TestRunResult,
+    pub diff: String,
+    pub base_ref: String,
+    pub status: RunStatus,
+}
+
+/// Запускает shell-команду тестов в worktree (`sh -c`).
+///
+/// `command == None` / пустая → `skipped` без spawn.
+pub fn run_project_tests(
+    worktree: &Path,
+    command: Option<&str>,
+) -> Result<TestRunResult, String> {
+    if !worktree.is_dir() {
+        return Err(format!("worktree is not a directory: {}", worktree.display()));
+    }
+
+    let trimmed = command.map(str::trim).filter(|s| !s.is_empty());
+    let Some(cmd) = trimmed else {
+        return Ok(TestRunResult {
+            command: String::new(),
+            exit_code: None,
+            log: TEST_SKIPPED.to_string(),
+            skipped: true,
+            duration_ms: 0,
+        });
+    };
+
+    let started = Instant::now();
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(worktree)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("run commands.test ({cmd}): {e}"))?;
+
+    let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        if !log.is_empty() && !log.ends_with('\n') {
+            log.push('\n');
+        }
+        log.push_str(&stderr);
+    }
+
+    Ok(TestRunResult {
+        command: cmd.to_string(),
+        exit_code: output.status.code(),
+        log,
+        skipped: false,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
+/// `git diff` worktree относительно базовой ветки/рефа (включая незакоммиченное).
+pub fn capture_diff(worktree: &Path, base_ref: &str) -> Result<String, String> {
+    if !worktree.is_dir() {
+        return Err(format!("worktree is not a directory: {}", worktree.display()));
+    }
+    let base = base_ref.trim();
+    if base.is_empty() {
+        return Err("base_ref must not be empty".into());
+    }
+
+    let output = run_git(worktree, &["diff", "--no-ext-diff", "--binary", base])?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Прогон тестов + diff + целевой статус (`needs_review` / `failed`).
+pub fn collect_review(
+    worktree: &Path,
+    test_command: Option<&str>,
+    base_ref: &str,
+) -> Result<AgentReviewBundle, String> {
+    let tests = run_project_tests(worktree, test_command)?;
+    let diff = capture_diff(worktree, base_ref)?;
+    let status = status_after_tests(&tests);
+    debug_assert!(can_transition(RunStatus::Running, status));
+    Ok(AgentReviewBundle {
+        tests,
+        diff,
+        base_ref: base_ref.trim().to_string(),
+        status,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1144,5 +1293,127 @@ Pages wired down:                         9000.
         assert_eq!(gate.try_acquire("same").unwrap(), StartDecision::Start);
         assert_eq!(gate.try_acquire("same").unwrap(), StartDecision::Start);
         assert_eq!(gate.running_count(), 1);
+    }
+
+    // --- tests + diff (#31) ---
+
+    #[test]
+    fn run_status_roundtrip_snake_case() {
+        for s in [
+            Queued,
+            Running,
+            NeedsReview,
+            Failed,
+            Discarded,
+            Accepted,
+        ] {
+            assert_eq!(RunStatus::parse(s.as_str()).unwrap(), s);
+            let json = serde_json::to_string(&s).unwrap();
+            assert_eq!(json, format!("\"{}\"", s.as_str()));
+            assert_eq!(serde_json::from_str::<RunStatus>(&json).unwrap(), s);
+        }
+        assert!(RunStatus::parse("NeedsReview").is_err());
+        assert!(RunStatus::parse("").is_err());
+    }
+
+    #[test]
+    fn status_after_tests_maps_exit_and_skip() {
+        let skip = TestRunResult {
+            command: String::new(),
+            exit_code: None,
+            log: TEST_SKIPPED.to_string(),
+            skipped: true,
+            duration_ms: 0,
+        };
+        assert_eq!(status_after_tests(&skip), NeedsReview);
+        assert!(can_transition(Running, NeedsReview));
+
+        let ok = TestRunResult {
+            command: "bun test".into(),
+            exit_code: Some(0),
+            log: "ok\n".into(),
+            skipped: false,
+            duration_ms: 10,
+        };
+        assert_eq!(status_after_tests(&ok), NeedsReview);
+
+        let fail = TestRunResult {
+            command: "bun test".into(),
+            exit_code: Some(1),
+            log: "fail\n".into(),
+            skipped: false,
+            duration_ms: 10,
+        };
+        assert_eq!(status_after_tests(&fail), Failed);
+        assert!(can_transition(Running, Failed));
+    }
+
+    #[test]
+    fn run_project_tests_skips_without_command() {
+        let dir = std::env::temp_dir().join(format!("demerzel-test-skip-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let r = run_project_tests(&dir, None).unwrap();
+        assert!(r.skipped);
+        assert_eq!(r.log, TEST_SKIPPED);
+        assert!(r.exit_code.is_none());
+        let blank = run_project_tests(&dir, Some("  ")).unwrap();
+        assert!(blank.skipped);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_project_tests_captures_exit_and_log() {
+        let dir = std::env::temp_dir().join(format!("demerzel-test-run-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let r = run_project_tests(&dir, Some("echo hello-out; echo hello-err >&2; exit 7")).unwrap();
+        assert!(!r.skipped);
+        assert_eq!(r.exit_code, Some(7));
+        assert!(r.log.contains("hello-out"), "{}", r.log);
+        assert!(r.log.contains("hello-err"), "{}", r.log);
+        assert_eq!(r.command, "echo hello-out; echo hello-err >&2; exit 7");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn capture_diff_relative_to_base() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let repo = std::env::temp_dir().join(format!("demerzel-diff-repo-{pid}"));
+        let wt_root = std::env::temp_dir().join(format!("demerzel-diff-wt-{pid}"));
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        init_repo(&repo);
+        unsafe { std::env::set_var("DEMERZEL_WORKTREES_DIR", &wt_root) };
+
+        let handle = create_worktree(&repo, "app", "diff-1", Some("main")).unwrap();
+        fs::write(handle.path.join("agent-change.txt"), "from agent\n").unwrap();
+        run_git(&handle.path, &["add", "agent-change.txt"]).unwrap();
+        run_git(&handle.path, &["commit", "-m", "agent change"]).unwrap();
+        fs::write(handle.path.join("README.md"), "main\nagent edit\n").unwrap();
+
+        let diff = capture_diff(&handle.path, "main").unwrap();
+        assert!(
+            diff.contains("agent-change.txt") || diff.contains("from agent"),
+            "expected new file in diff: {diff}"
+        );
+        assert!(
+            diff.contains("agent edit") || diff.contains("README.md"),
+            "expected working-tree edit in diff: {diff}"
+        );
+
+        let bundle = collect_review(&handle.path, Some("exit 0"), "main").unwrap();
+        assert_eq!(bundle.status, NeedsReview);
+        assert!(!bundle.diff.is_empty());
+        assert_eq!(bundle.tests.exit_code, Some(0));
+
+        let failed = collect_review(&handle.path, Some("exit 2"), "main").unwrap();
+        assert_eq!(failed.status, Failed);
+
+        remove_worktree(&repo, "app", "diff-1").unwrap();
+        unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
     }
 }

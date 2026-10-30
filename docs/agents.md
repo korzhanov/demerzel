@@ -1,6 +1,6 @@
-# Агенты: git worktree, Claude CLI и лимиты
+# Агенты: git worktree, Claude CLI, лимиты и ревью
 
-Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #31 (тесты + diff). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -57,6 +57,30 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 
 Отсутствующая секция → значения по умолчанию.
 
+## Тесты и diff после агента (#31)
+
+После headless-прогона (ещё в worktree, статус `running`):
+
+1. **Тесты** — `commands.test` из `orchestrator.json` (`resolve_test_command`), `sh -c` в каталоге worktree. Нет поля / пусто → skip (`TEST_SKIPPED`), без spawn.
+2. **Результат** — `TestRunResult`: команда, `exit_code`, объединённый лог (stdout+stderr), `skipped`, `duration_ms`.
+3. **Diff** — `capture_diff(worktree, base_ref)` → `git diff --no-ext-diff <base>` (коммиты агента + незакоммиченное относительно базы).
+4. **Статус** — `status_after_tests`: skip или exit 0 → `needs_review`; иначе → `failed`. Accepted только вручную из `needs_review` (#32 UI).
+
+Сборка пакета: `collect_review(worktree, test_command, base_ref)` → `AgentReviewBundle { tests, diff, base_ref, status }`.
+
+Статусы run (snake_case для SQLite / UI):
+
+| Статус | Значение |
+|--------|----------|
+| `queued` | ждёт слот / старт |
+| `running` | агент или пост-обработка |
+| `needs_review` | тесты ок / skip — ждёт человека |
+| `failed` | тесты упали (или агент) |
+| `discarded` | отброшено |
+| `accepted` | принято (merge вручную) |
+
+Переходы: `can_transition` / `RunStatus::as_str` / `parse`.
+
 ## API (Rust)
 
 Модуль `backend/agents`:
@@ -71,9 +95,13 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 - `AgentsConfig` / `AgentLimiter` / `try_acquire` / `release`
 - `available_memory_mb` / `parse_vm_stat_available_mb` / `ollama_process_running`
 - `DEFAULT_CONCURRENCY` / `DEFAULT_MIN_FREE_MEMORY_MB` / `DEFAULT_OLLAMA_RESERVE_MB`
+- `RunStatus` / `can_transition` / `status_after_tests` / `as_str` / `parse`
+- `run_project_tests` / `capture_diff` / `collect_review`
+- `TestRunResult` / `AgentReviewBundle` / `TEST_SKIPPED`
+- `config::resolve_test_command`
 
-Тесты/diff (#31) и UI (#32–#33) поверх этого слоя.
+UI ревью (#32) и запуск из задачи (#33) поверх этого слоя.
 
 ## Связь со схемой
 
-В SQLite `agent_runs.worktree` хранит путь к каталогу run (см. миграцию `0001_init.sql`).
+В SQLite `agent_runs.worktree` хранит путь к каталогу run (см. миграцию `0001_init.sql`); `status` — snake_case из `RunStatus`.

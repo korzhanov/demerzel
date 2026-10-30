@@ -107,6 +107,64 @@ export function requiredFreeMemoryMb(
     : cfg.min_free_memory_mb;
 }
 
+/** Статусы `agent_runs` (#31), зеркало Rust `RunStatus`. */
+export type AgentRunStatus =
+  | "queued"
+  | "running"
+  | "needs_review"
+  | "failed"
+  | "discarded"
+  | "accepted";
+
+export const AGENT_RUN_STATUSES: readonly AgentRunStatus[] = [
+  "queued",
+  "running",
+  "needs_review",
+  "failed",
+  "discarded",
+  "accepted",
+] as const;
+
+/** Допустимые переходы (зеркало `can_transition`). */
+export function canTransitionAgentRun(
+  from: AgentRunStatus,
+  to: AgentRunStatus,
+): boolean {
+  const edges: Record<AgentRunStatus, readonly AgentRunStatus[]> = {
+    queued: ["running", "discarded"],
+    running: ["needs_review", "failed"],
+    needs_review: ["accepted", "discarded"],
+    failed: ["discarded"],
+    discarded: [],
+    accepted: [],
+  };
+  return edges[from].includes(to);
+}
+
+/** Running → needs_review / failed по тесту (#31). */
+export function statusAfterTests(opts: {
+  skipped: boolean;
+  exitCode: number | null;
+}): AgentRunStatus {
+  if (opts.skipped || opts.exitCode === 0) return "needs_review";
+  return "failed";
+}
+
+export interface AgentTestRunResult {
+  command: string;
+  exit_code: number | null;
+  log: string;
+  skipped: boolean;
+  duration_ms: number;
+}
+
+export interface AgentReviewBundle {
+  tests: AgentTestRunResult;
+  diff: string;
+  base_ref: string;
+  status: AgentRunStatus;
+}
+
 export interface Settings {
   scan_roots: string[];
   alerts?: AlertsConfig;
