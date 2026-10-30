@@ -2,7 +2,7 @@
 
 Проект сообщает прогресс длинной работы (парсер, сборка). Demerzel опрашивает источник по интервалу, хранит последнюю успешную запись и кладёт снимок в `summary.json` для виджета ([#98](https://github.com/korzhanov/demerzel/issues/98), [widget-macos.md](widget-macos.md)).
 
-CLI `dem pulse` / локальный API — отдельно ([#102](https://github.com/korzhanov/demerzel/issues/102)).
+CLI `dem pulse` / `dem restart` и локальный Unix-сокет — [cli.md](cli.md) ([#102](https://github.com/korzhanov/demerzel/issues/102)).
 
 ## Конфиг (`orchestrator.json`)
 

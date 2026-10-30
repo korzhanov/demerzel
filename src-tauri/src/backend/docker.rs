@@ -2,6 +2,7 @@
 //!
 //! - `dem up` → `docker compose -f <file> up -d <service>`
 //! - `dem down` → `docker compose stop <service>`
+//! - `dem restart` → `docker compose restart <service>` (#102)
 //! - status via `docker compose ps --all --format json` (array or JSON lines)
 //! - контейнерный `Health` из Compose; опциональный YAML `healthcheck` — на стороне CLI
 
@@ -78,6 +79,9 @@ pub fn command(svc: &Service, action: &str) -> Result<String, String> {
         }
         "down" => {
             cmd.args(["stop", service]);
+        }
+        "restart" => {
+            cmd.args(["restart", service]);
         }
         "status" => {
             cmd.args(["ps", "--all", "--format", "json", service]);

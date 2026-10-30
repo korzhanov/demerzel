@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.45.0 — 2026-10-31
+
+- CLI `dem pulse [проект] [--json]` и `dem restart <проект> [--json]` через supervisor `dem.sock` (локальный API для App Intents, без сети). Опрос пульса через `PulseStore` (#97); compose — `docker compose restart`. Docs `cli.md` / `pulse.md`. Закрывает #102.
+
 ## 0.44.0 — 2026-10-31
 
 - Контракт пульса проекта (#97): `pulse` в `orchestrator.json` (`command` или `file`, `interval_secs`, `timeout_secs`), JSON `{summary, metrics?, eta_seconds?, state?}`, модуль `backend/pulse` с таймаутом команды и `PulseStore` (последняя запись). Схема, docs `pulse.md`, пример `examples/parser/`. Снимок совместим с виджетом (#98); CLI `dem pulse` — #102. Закрывает #97.

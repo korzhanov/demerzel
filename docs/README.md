@@ -24,7 +24,7 @@
 
 | Документ | О чём |
 |---|---|
-| [cli.md](cli.md) | CLI `dem` / `demerzel`: status, up, down, sync, watch |
+| [cli.md](cli.md) | CLI `dem` / `demerzel`: status, up, down, sync, watch, pulse, restart (#102) |
 | [agents.md](agents.md) | Worktree, Claude CLI, Ollama, лимиты, ревью (#27–#33) |
 | [alerts.md](alerts.md) | Правила алертов, notify / speak, quiet hours (#20–#23) |
 | [icloud-summary.md](icloud-summary.md) | `summary.json` → iCloud Drive для iPhone (#37) |
