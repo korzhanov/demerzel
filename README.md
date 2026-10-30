@@ -28,6 +28,7 @@ bun run tauri dev
 ## Документация
 
 - [docs/CONVENTIONS.md](docs/CONVENTIONS.md): ветки, коммиты, версии, маркетинговый лог
+- [docs/agents.md](docs/agents.md): git worktree для запусков агентов
 - [references/](references/README.md): мокапы, вайрфреймы, маркетинговые ассеты
 - [CHANGELOG.md](CHANGELOG.md): технический журнал изменений
 - [MARKETING.md](MARKETING.md): лог для публикаций в соцсетях

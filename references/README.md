@@ -11,5 +11,6 @@
 - `alerts-notify-wireframe.md`: OS notify + клик → проект (#22).
 - `alerts-speak-wireframe.md`: голос `say` + шаблоны фраз (#23).
 - `ports-tasks-wireframe.md`: порты и доска задач.
+- Агенты / worktree: контракт в [docs/agents.md](../docs/agents.md) (#27).
 
 Правила: см. [docs/CONVENTIONS.md](../docs/CONVENTIONS.md#референсы-и-ассеты).
