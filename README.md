@@ -15,7 +15,7 @@ The Shadow Orchestrator of Your Local Stack Empire.
 
 ## Статус
 
-Ранняя разработка. План работ: [issues](https://github.com/korzhanov/demerzel/issues), фазы через метки `phase-0` … `phase-7`.
+Ранняя разработка. Каркас приложения готов (0.1.0), сборка Rust проверяется на macOS в CI. План работ: [issues](https://github.com/korzhanov/demerzel/issues), фазы через метки `phase-0` … `phase-7`.
 
 ## Документация
 
