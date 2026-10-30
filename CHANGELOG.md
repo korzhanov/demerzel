@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-10-30
+
+- Хранилище SQLite: миграции через `user_version` в транзакциях, таблицы projects, processes, port_leases, tasks, agent_runs, alerts. Уникальность аренды порта. Закрывает #7.
+
 ## 0.6.0 — 2026-10-30
 
 - Сканер проектов: находит проекты по маркерам (`package.json`, `.git`, `orchestrator.json`) и вложенные подпроекты. Игнорирует `node_modules`, `target`, скрытые папки, глубина до 6. Закрывает #6.
