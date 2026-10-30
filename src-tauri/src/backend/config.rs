@@ -42,6 +42,10 @@ pub struct PortsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TasksConfig {
     pub source: String,
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -288,6 +292,16 @@ pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
         Ok(text) => parse(&text)
             .map(Some)
             .map_err(|e| format!("{}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+/// Missing configuration is allowed; malformed or unreadable configuration is not.
+pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
+    let path = dir.join(CONFIG_FILE);
+    match fs::read_to_string(&path) {
+        Ok(text) => parse(&text).map(Some).map_err(|e| format!("{}: {e}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }

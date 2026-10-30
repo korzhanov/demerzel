@@ -158,6 +158,30 @@ impl Registry {
             .map_err(|e| e.to_string())
     }
 
+    pub fn port_inventory(&mut self) -> Result<Vec<super::ports::PortRow>, String> {
+        self.list().map_err(|e| e.to_string())?;
+        let sockets = super::ports::listeners()?;
+        let mut managed = BTreeMap::new();
+        // Resolve child listeners through process groups, never through cwd alone:
+        // another process in the same directory is still foreign.
+        for socket in &sockets {
+            let pgid = std::process::Command::new("ps")
+                .args(["-o", "pgid=", "-p", &socket.pid.to_string()])
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            for (id, e) in &self.entries {
+                if let Some(pid) = e.managed.pid() {
+                    if socket.pid == pid || pgid == Some(pid) {
+                        managed.insert(socket.pid, (*id, e.path.to_string_lossy().into_owned()));
+                    }
+                }
+            }
+        }
+        Ok(super::ports::inventory(sockets, &managed, &self.ports.ranges))
+    }
+
     pub fn logs(&self, id: u64) -> Option<Vec<LogLine>> {
         self.entries.get(&id).map(|e| e.managed.logs())
     }

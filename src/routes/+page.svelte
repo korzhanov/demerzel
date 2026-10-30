@@ -1,7 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { onDestroy, onMount } from "svelte";
-  import type { Settings } from "$lib/types";
+  import { onMount } from "svelte";
+  import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+  import type { Settings, PortRow, Task, TaskStatus } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -19,7 +20,73 @@
   let commandOverride = $state("");
   let error = $state("");
 
-  let poll: ReturnType<typeof setInterval> | undefined;
+  let ports = $state<PortRow[]>([]);
+  let portsError = $state("");
+  let portsBusy = $state(false);
+  let portInterval = $state(5);
+  let confirmPort = $state<PortRow | null>(null);
+  let tasks = $state<Task[]>([]);
+  let taskErrors = $state<string[]>([]);
+  let tasksBusy = $state(false);
+  let projectFilter = $state("");
+  let mounted = false;
+  let processBusy = false;
+  let scanBusy = $state(false);
+  let taskGeneration = 0;
+  const columns: { status: TaskStatus; label: string }[] = [
+    { status: "todo", label: "К выполнению" },
+    { status: "in_progress", label: "В работе" },
+    { status: "done", label: "Готово" },
+    { status: "blocked", label: "Заблокировано" },
+  ];
+  const flatProjects = $derived(flatten(projects));
+  const visibleTasks = $derived(tasks.filter((task) => !projectFilter || task.project === projectFilter));
+
+  function flatten(list: Project[]): Project[] {
+    return [...new Map(list.flatMap((p) => [p, ...flatten(p.children)]).map((p) => [p.path, p])).values()];
+  }
+
+  async function refreshPorts() {
+    if (!mounted || portsBusy) return;
+    portsBusy = true;
+    try {
+      const result = await invoke<PortRow[]>("list_ports");
+      if (mounted) { ports = result; portsError = ""; }
+    } catch (e) {
+      if (mounted) portsError = String(e);
+    } finally { portsBusy = false; }
+  }
+
+  async function refreshTasks() {
+    const generation = ++taskGeneration;
+    tasksBusy = true;
+    const results = await Promise.all(flatProjects.map(async (p) => {
+      try {
+        return { tasks: await invoke<Task[]>("project_tasks", { path: p.path }), error: "" };
+      } catch (e) { return { tasks: [] as Task[], error: `${p.name} (${p.path}): ${String(e)}` }; }
+    }));
+    if (!mounted || generation !== taskGeneration) return;
+    tasks = results.flatMap((result) => result.tasks);
+    taskErrors = results.map((result) => result.error).filter(Boolean);
+    tasksBusy = false;
+  }
+
+  async function openTask(task: Task) {
+    if (!task.url) return;
+    try {
+      if (/^https?:\/\//.test(task.url)) await openUrl(task.url);
+      else if (task.url.startsWith("/")) await openPath(task.url);
+      else throw new Error("Неподдерживаемая ссылка задачи");
+    } catch (e) { taskErrors = [...taskErrors, String(e)]; }
+  }
+
+  async function confirmStop() {
+    const row = confirmPort;
+    if (!row || row.managed_id === null) return;
+    confirmPort = null;
+    await stop(row.managed_id);
+    await refreshPorts();
+  }
 
   function rootList(): string[] {
     return roots
@@ -38,15 +105,23 @@
 
   async function scan() {
     error = "";
+    if (scanBusy) return;
+    scanBusy = true;
     await saveRoots();
     try {
-      projects = await invoke<Project[]>("scan_projects", { roots: rootList() });
+      const found = await invoke<Project[]>("scan_projects", { roots: rootList() });
+      if (!mounted) return;
+      projects = found;
+      if (!flatProjects.some((p) => p.path === projectFilter)) projectFilter = "";
+      await refreshTasks();
     } catch (e) {
       error = String(e);
-    }
+    } finally { scanBusy = false; }
   }
 
   async function refresh() {
+    if (!mounted || processBusy) return;
+    processBusy = true;
     try {
       processes = await invoke<ProcessRow[]>("list_processes");
       if (selectedId !== null) {
@@ -55,7 +130,7 @@
       }
     } catch (e) {
       error = String(e);
-    }
+    } finally { processBusy = false; }
   }
 
   async function start(p: Project) {
@@ -98,20 +173,33 @@
     refresh();
   }
 
-  onMount(async () => {
-    try {
-      const s = await invoke<Settings>("get_settings");
-      roots = s.scan_roots.join("\n");
-      if (roots) await scan();
-    } catch (e) {
-      error = String(e);
-    }
-    refresh();
-    poll = setInterval(refresh, 1000);
-  });
-
-  onDestroy(() => {
-    if (poll) clearInterval(poll);
+  onMount(() => {
+    mounted = true;
+    void (async () => {
+      try {
+        const s = await invoke<Settings>("get_settings");
+        if (!mounted) return;
+        roots = s.scan_roots.join("\n");
+        if (roots) await scan();
+      } catch (e) { if (mounted) error = String(e); }
+    })();
+    void refresh();
+    void refreshPorts();
+    const poll = setInterval(() => { void refresh(); }, 1000);
+    let nextPortPoll = Date.now();
+    const portPoll = setInterval(() => {
+      const interval = Math.max(1, Math.min(60, Number(portInterval) || 5));
+      if (Date.now() >= nextPortPoll) {
+        nextPortPoll = Date.now() + interval * 1000;
+        void refreshPorts();
+      }
+    }, 1000);
+    return () => {
+      mounted = false;
+      taskGeneration++;
+      clearInterval(poll);
+      clearInterval(portPoll);
+    };
   });
 </script>
 
@@ -138,9 +226,9 @@
 
   <section>
     <h2>Корневые папки</h2>
-    <textarea bind:value={roots} rows="2" placeholder="/Users/you/code"></textarea>
+    <textarea aria-label="Корневые папки сканирования" bind:value={roots} rows="2" placeholder="/Users/you/code"></textarea>
     <div class="row">
-      <button type="button" onclick={scan}>Сканировать</button>
+      <button type="button" onclick={scan} disabled={scanBusy}>Сканировать</button>
       <label
         >команда (пусто = из orchestrator.json / package.json):
         <input bind:value={commandOverride} placeholder="авто" />
@@ -162,8 +250,8 @@
         </thead>
         <tbody>
           {#each processes as row (row.id)}
-            <tr class:selected={row.id === selectedId} onclick={() => select(row.id)}>
-              <td>{row.project}</td>
+            <tr class:selected={row.id === selectedId}>
+              <td><button type="button" onclick={() => select(row.id)} aria-pressed={row.id === selectedId}>{row.project}</button></td>
               <td>{row.command}</td>
               <td>{statusLabel(row.status)}</td>
               <td>
@@ -189,6 +277,59 @@
     <pre class="logs">{#each logs as line, i (i)}<span class:err={line.stream === "stderr"}>{line.text}
 </span>{/each}</pre>
   </section>
+  <section aria-labelledby="ports-title">
+    <h2 id="ports-title">Порты</h2>
+    <div class="row">
+      <button type="button" disabled={portsBusy} onclick={refreshPorts}>Обновить порты</button>
+      <label>Интервал опроса, секунд <input type="number" min="1" max="60" bind:value={portInterval} /></label>
+    </div>
+    {#if portsError}<p class="error" role="alert">{portsError}</p>{/if}
+    {#if confirmPort}
+      <div class="confirmation" role="alert">
+        <p>Остановить управляемый процесс {confirmPort.command} (PID {confirmPort.pid}) проекта {confirmPort.project}? Будет остановлена вся группа процесса.</p>
+        <button type="button" onclick={confirmStop}>Да, остановить</button>
+        <button type="button" onclick={() => { confirmPort = null; }}>Отмена</button>
+      </div>
+    {/if}
+    {#if ports.length === 0}<p>Слушающих портов не найдено.</p>
+    {:else}
+      <div class="table-scroll"><table>
+        <thead><tr><th>Порт</th><th>Проект</th><th>Процесс</th><th>PID</th><th>Статус</th><th>Действие</th></tr></thead>
+        <tbody>{#each ports as port (`${port.pid}:${port.port}`)}
+          <tr class:conflict={port.status === "conflict"} class:foreign={port.status === "foreign"}>
+            <td>{port.port}</td><td>{port.project ?? "—"}</td><td>{port.command}</td><td>{port.pid}</td><td>{port.status}</td>
+            <td>{#if port.managed_id !== null}<button type="button" onclick={() => { confirmPort = port; }}>Остановить…</button>{:else}Только просмотр{/if}</td>
+          </tr>
+        {/each}</tbody>
+      </table></div>
+    {/if}
+  </section>
+
+  <section aria-labelledby="tasks-title">
+    <h2 id="tasks-title">Задачи</h2>
+    <div class="row">
+      <label>Проект <select bind:value={projectFilter}>
+        <option value="">Все проекты</option>
+        {#each flatProjects as p (p.path)}<option value={p.path}>{p.name} — {p.path}</option>{/each}
+      </select></label>
+      <button type="button" disabled={tasksBusy || flatProjects.length === 0} onclick={refreshTasks}>{tasksBusy ? "Загрузка…" : "Обновить задачи"}</button>
+    </div>
+    {#each taskErrors as message, i (i)}<p class="error" role="alert">{message}</p>{/each}
+    {#if flatProjects.length === 0}<p>Сначала выберите корневые папки и выполните сканирование.</p>{/if}
+    <div class="task-board">
+      {#each columns as column (column.status)}
+        <section class="task-column" aria-label={column.label}>
+          <h3>{column.label}</h3>
+          {#each visibleTasks.filter((task) => task.status === column.status) as task (task.id)}
+            <article class="task-card">
+              <strong>{task.title}</strong><p>{task.project}</p><small>{task.source}</small>
+              {#if task.url}<button type="button" onclick={() => openTask(task)}>Открыть источник</button>{/if}
+            </article>
+          {:else}<p class="empty">Нет задач</p>{/each}
+        </section>
+      {/each}
+    </div>
+  </section>
 </main>
 
 <style>
@@ -204,5 +345,20 @@
   tr.selected { background: #f0f0ff; }
   .logs { background: #0d0d12; color: #ddd; padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; }
   .err { color: #ff7b72; }
-  .error { color: #b00020; }
+  .error { color: #b00020; overflow-wrap: anywhere; }
+  .table-scroll { overflow-x: auto; }
+  .conflict { background: #ffebee; }
+  .foreign { background: #fff8e1; }
+  .confirmation { padding: 12px; border: 1px solid #b00020; margin-bottom: 12px; }
+  .confirmation button { margin-right: 8px; }
+  .task-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .task-column { background: #f4f5f8; border-radius: 8px; padding: 12px; }
+  .task-column h3 { margin-top: 0; font-size: 1rem; }
+  .task-card { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 10px; margin-bottom: 10px; overflow-wrap: anywhere; }
+  .task-card p { font-size: 0.8rem; color: #555; }
+  .task-card button { display: block; margin-top: 8px; }
+  select { max-width: 100%; font: inherit; }
+  .empty { color: #555; }
+  @media (max-width: 760px) { .task-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 440px) { .task-board { grid-template-columns: 1fr; } }
 </style>
