@@ -50,6 +50,25 @@ mod tests {
         }
     }
 
+    struct StubSource {
+        tasks: Vec<Task>,
+    }
+
+    impl TaskSource for StubSource {
+        fn name(&self) -> &str {
+            "stub"
+        }
+
+        fn fetch(&self, project: &str) -> Result<Vec<Task>, String> {
+            Ok(self
+                .tasks
+                .iter()
+                .filter(|t| t.project == project)
+                .cloned()
+                .collect())
+        }
+    }
+
     #[test]
     fn counts_each_status() {
         let tasks = vec![
@@ -57,8 +76,72 @@ mod tests {
             task(TaskStatus::InProgress),
             task(TaskStatus::Done),
             task(TaskStatus::Done),
+            task(TaskStatus::Blocked),
         ];
-        assert_eq!(count_by_status(&tasks), (1, 1, 2, 0));
+        assert_eq!(count_by_status(&tasks), (1, 1, 2, 1));
+    }
+
+    #[test]
+    fn model_serializes_wire_statuses() {
+        assert_eq!(serde_json::to_string(&TaskStatus::Todo).unwrap(), "\"todo\"");
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::InProgress).unwrap(),
+            "\"in_progress\""
+        );
+        assert_eq!(serde_json::to_string(&TaskStatus::Done).unwrap(), "\"done\"");
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Blocked).unwrap(),
+            "\"blocked\""
+        );
+        assert!(serde_json::from_str::<TaskStatus>("\"unknown\"").is_err());
+    }
+
+    #[test]
+    fn task_roundtrips_optional_url() {
+        let with_url = Task {
+            id: "a/b#1".into(),
+            project: "/proj".into(),
+            title: "Fix".into(),
+            status: TaskStatus::InProgress,
+            source: "github".into(),
+            url: Some("https://example.test/1".into()),
+        };
+        let json = serde_json::to_string(&with_url).unwrap();
+        assert_eq!(serde_json::from_str::<Task>(&json).unwrap(), with_url);
+
+        let bare = task(TaskStatus::Todo);
+        let bare_json = serde_json::to_string(&bare).unwrap();
+        assert!(bare_json.contains("\"url\":null") || !bare_json.contains("\"url\""));
+        assert_eq!(serde_json::from_str::<Task>(&bare_json).unwrap().url, None);
+    }
+
+    #[test]
+    fn task_source_trait_filters_by_project() {
+        let source = StubSource {
+            tasks: vec![
+                Task {
+                    id: "1".into(),
+                    project: "alpha".into(),
+                    title: "one".into(),
+                    status: TaskStatus::Todo,
+                    source: "stub".into(),
+                    url: None,
+                },
+                Task {
+                    id: "2".into(),
+                    project: "beta".into(),
+                    title: "two".into(),
+                    status: TaskStatus::Done,
+                    source: "stub".into(),
+                    url: None,
+                },
+            ],
+        };
+        assert_eq!(source.name(), "stub");
+        let alpha = source.fetch("alpha").unwrap();
+        assert_eq!(alpha.len(), 1);
+        assert_eq!(alpha[0].title, "one");
+        assert!(source.fetch("missing").unwrap().is_empty());
     }
 }
 
@@ -131,10 +214,5 @@ mod file_tests {
         assert_eq!(count_by_status(&tasks), (1, 1, 1, 1));
         assert_eq!(tasks[0].title, "Привет");
         assert_ne!(tasks[0].id, parse_markdown("- [ ] Привет", "b", "/b/TODO.md")[0].id);
-    }
-    #[test]
-    fn model_serializes_wire_statuses() {
-        assert_eq!(serde_json::to_string(&TaskStatus::InProgress).unwrap(), "\"in_progress\"");
-        assert!(serde_json::from_str::<TaskStatus>("\"unknown\"").is_err());
     }
 }
