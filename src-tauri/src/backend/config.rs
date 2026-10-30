@@ -105,6 +105,18 @@ pub fn load_from_dir(dir: &Path) -> Option<ProjectConfig> {
     parse(&raw).ok()
 }
 
+/// Missing configuration is allowed; malformed or unreadable configuration is not.
+pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
+    let path = dir.join(CONFIG_FILE);
+    match fs::read_to_string(&path) {
+        Ok(text) => parse(&text)
+            .map(Some)
+            .map_err(|e| format!("{}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
 /// Команда запуска для UI / менеджера процессов.
 ///
 /// Порядок:
@@ -282,27 +294,5 @@ mod tests {
         fs::write(dir.join(CONFIG_FILE), "{").unwrap();
         assert!(load_checked(&dir).is_err());
         fs::remove_dir_all(&dir).unwrap();
-    }
-}
-
-/// Missing configuration is allowed; malformed or unreadable configuration is not.
-pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
-    let path = dir.join(CONFIG_FILE);
-    match fs::read_to_string(&path) {
-        Ok(text) => parse(&text)
-            .map(Some)
-            .map_err(|e| format!("{}: {e}", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("{}: {e}", path.display())),
-    }
-}
-
-/// Missing configuration is allowed; malformed or unreadable configuration is not.
-pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
-    let path = dir.join(CONFIG_FILE);
-    match fs::read_to_string(&path) {
-        Ok(text) => parse(&text).map(Some).map_err(|e| format!("{}: {e}", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("{}: {e}", path.display())),
     }
 }
