@@ -1,6 +1,6 @@
 {
   "name": "demerzel",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "The Shadow Orchestrator of Your Local Stack Empire",
   "type": "module",
   "scripts": {
