@@ -303,6 +303,35 @@
       unlistenOpen?.();
     };
   });
+
+  type ViewMode = "columns" | "tabs";
+  type Tab = "projects" | "processes" | "ports" | "tasks" | "agents" | "logs";
+  const TABS: [Tab, string][] = [
+    ["projects", "Проекты"],
+    ["processes", "Процессы"],
+    ["ports", "Порты"],
+    ["tasks", "Задачи"],
+    ["agents", "Агенты"],
+    ["logs", "Логи"],
+  ];
+  function readPref(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+  let view = $state<ViewMode>(readPref("demerzel.view") === "tabs" ? "tabs" : "columns");
+  let tab = $state<Tab>("projects");
+  function setView(v: ViewMode) {
+    view = v;
+    try {
+      localStorage.setItem("demerzel.view", v);
+    } catch {
+      /* без хранилища режим не запоминается */
+    }
+  }
+  const shown = (t: Tab) => view === "columns" || tab === t;
 </script>
 
 {#snippet tree(list: Project[], depth: number)}
@@ -317,9 +346,13 @@
   {/each}
 {/snippet}
 
-<main>
+<main class={view}>
   <header>
-    <h1>Demerzel</h1>
+    <h1>DEMERZEL</h1>
+    <div class="seg" role="group" aria-label="Вид окна">
+      <button type="button" class:on={view === "columns"} onclick={() => setView("columns")}>Колонки</button>
+      <button type="button" class:on={view === "tabs"} onclick={() => setView("tabs")}>Вкладки</button>
+    </div>
     {#if focusProject}
       <p class="notify-focus" role="status">Открыто из уведомления: {focusProject}</p>
     {/if}
@@ -329,7 +362,17 @@
     <p class="error">{error}</p>
   {/if}
 
-  <section>
+  {#if view === "tabs"}
+    <nav class="tabs" aria-label="Разделы">
+      {#each TABS as [id, label] (id)}
+        <button type="button" class:on={tab === id} onclick={() => (tab = id)}>{label}</button>
+      {/each}
+    </nav>
+  {/if}
+
+  <div class="layout">
+  {#if shown("projects")}
+  <section class="area-projects">
     <h2>Корневые папки</h2>
     <textarea aria-label="Корневые папки сканирования" bind:value={roots} rows="2" placeholder="/Users/you/code"></textarea>
     <div class="row">
@@ -343,7 +386,10 @@
       {@render tree(projects, 0)}
     </ul>
   </section>
+  {/if}
 
+  <div class="area-center">
+  {#if shown("processes")}
   <section>
     <h2>Процессы</h2>
     {#if processes.length === 0}
@@ -376,12 +422,8 @@
       </table>
     {/if}
   </section>
-
-  <section>
-    <h2>Логи {selectedId !== null ? `#${selectedId}` : ""}</h2>
-    <pre class="logs">{#each logs as line, i (i)}<span class={{ err: line.stream === "stderr" }}>{line.text}
-</span>{/each}</pre>
-  </section>
+  {/if}
+  {#if shown("ports")}
   <PortsPanel
     {ports}
     {portsError}
@@ -390,7 +432,9 @@
     onRefresh={refreshPorts}
     onStopManaged={stopManagedFromPorts}
   />
+  {/if}
 
+  {#if shown("tasks")}
   <TasksPanel
     {tasks}
     {taskErrors}
@@ -403,7 +447,9 @@
     onOpen={openTask}
     onStartAgent={startAgentFromTask}
   />
+  {/if}
 
+  {#if shown("agents")}
   <AgentRunsPanel
     runs={agentRuns}
     runsError={agentRunsError}
@@ -417,22 +463,53 @@
     onAccept={acceptAgentRun}
     onDiscard={discardAgentRun}
   />
+  {/if}
+  </div>
+
+  {#if shown("logs")}
+  <section class="area-logs">
+    <h2>Логи {selectedId !== null ? `#${selectedId}` : ""}</h2>
+    <pre class="logs">{#each logs as line, i (i)}<span class={{ err: line.stream === "stderr" }}>{line.text}
+</span>{/each}</pre>
+  </section>
+  {/if}
+  </div>
 </main>
 
 <style>
-  main { font-family: system-ui, sans-serif; padding: 16px; max-width: 960px; margin: 0 auto; }
+  :global(body) { margin: 0; background: #14110d; }
+  main {
+    --bg: #14110d; --pn: #1d1812; --ln: #3a2f1f; --tx: #efe3c8; --mu: #8f8266; --gold: #e0a83a; --red: #d9553a;
+    font-family: system-ui, sans-serif; padding: 16px; min-height: 100vh; box-sizing: border-box;
+    background: var(--bg); color: var(--tx);
+  }
+  main.tabs { max-width: 960px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.1rem; font-weight: 500; letter-spacing: 0.08em; color: var(--gold); }
+  h2 { font-size: 0.7rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mu); }
+  .seg { margin-left: auto; display: flex; border: 1px solid var(--ln); border-radius: 8px; overflow: hidden; }
+  .seg button, .tabs button { border: 0; background: transparent; color: var(--mu); padding: 5px 12px; cursor: pointer; font: inherit; }
+  .seg button.on, .tabs button.on { background: var(--gold); color: #241a08; font-weight: 500; }
+  .tabs { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--ln); border-radius: 7px; }
+  .layout { display: block; }
+  main.columns .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr) 320px; gap: 0; margin-top: 12px; border: 1px solid var(--ln); border-radius: 12px; overflow: hidden; background: var(--pn); }
+  main.columns .layout > * { padding: 12px 16px; margin: 0; min-width: 0; }
+  main.columns .area-projects { border-right: 1px solid var(--ln); }
+  main.columns .area-logs { border-left: 1px solid var(--ln); }
   section { margin-bottom: 24px; }
   .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-  textarea, input { width: 100%; font: inherit; }
-  label { flex: 1; min-width: 240px; }
+  textarea, input { width: 100%; font: inherit; background: var(--bg); color: var(--tx); border: 1px solid var(--ln); border-radius: 6px; box-sizing: border-box; }
+  label { flex: 1; min-width: 240px; color: var(--mu); }
+  main :global(button) { font: inherit; }
   .tree { list-style: none; padding: 0; }
   .tree li { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #ddd; }
-  tr.selected { background: #f0f0ff; }
-  .focus-project { background: #f5f0e6; outline: 1px solid #c4a574; }
-  .notify-focus { margin: 0.25rem 0 0; font-size: 0.9rem; color: #5c4a32; }
-  .logs { background: #0d0d12; color: #ddd; padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--ln); }
+  tr.selected { background: #2a2216; }
+  .focus-project { background: #2a2216; outline: 1px solid var(--gold); }
+  .notify-focus { margin: 0.25rem 0 0; font-size: 0.9rem; color: var(--gold); }
+  .logs { background: #0d0b08; color: #b5a888; padding: 12px; min-height: 120px; max-height: 480px; overflow: auto; font-size: 11.5px; }
   .err { color: #ff7b72; }
-  .error { color: #b00020; overflow-wrap: anywhere; }
+  .error { color: var(--red); overflow-wrap: anywhere; }
 </style>
