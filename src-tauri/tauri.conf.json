@@ -31,5 +31,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "widgets": {
+      "appGroup": "group.app.demerzel.orchestrator",
+      "transport": "widgetContainer",
+      "extensionBundleId": "app.demerzel.orchestrator.widgetkit"
+    }
   }
 }
