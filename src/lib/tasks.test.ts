@@ -6,6 +6,7 @@ import {
   canStartAgentFromTask,
   countByStatus,
   filterTasksByProject,
+  formatTaskBoardSummary,
   taskStatusLabel,
   tasksForColumn,
 } from "./tasks";
@@ -102,5 +103,16 @@ describe("countByStatus", () => {
         task({ status: "blocked" }),
       ]),
     ).toEqual({ todo: 1, in_progress: 1, done: 2, blocked: 1 });
+  });
+});
+
+describe("formatTaskBoardSummary", () => {
+  test("matches mockup strip; omits blocked when zero", () => {
+    expect(
+      formatTaskBoardSummary({ todo: 5, in_progress: 2, done: 9, blocked: 0 }),
+    ).toBe("В работе 2 · Todo 5 · Готово 9");
+    expect(
+      formatTaskBoardSummary({ todo: 1, in_progress: 0, done: 0, blocked: 3 }),
+    ).toBe("В работе 0 · Todo 1 · Готово 0 · Заблок. 3");
   });
 });

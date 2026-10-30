@@ -74,3 +74,16 @@ export function countByStatus(tasks: readonly Pick<Task, "status">[]): {
   }
   return out;
 }
+
+/** Компактная строка сводки доски (мокup: «В работе N · Todo N · Готово N»). */
+export function formatTaskBoardSummary(
+  counts: ReturnType<typeof countByStatus>,
+): string {
+  const parts = [
+    `В работе ${counts.in_progress}`,
+    `Todo ${counts.todo}`,
+    `Готово ${counts.done}`,
+  ];
+  if (counts.blocked > 0) parts.push(`Заблок. ${counts.blocked}`);
+  return parts.join(" · ");
+}

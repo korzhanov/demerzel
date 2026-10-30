@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.42.1 — 2026-10-31
+
+- UI доски: карточки задач не вылезают из колонок (`min-w-0` / `overflow-hidden` / `break-words`); проекты в узкой панели — truncate + `title` с полным путём; сводка «В работе · Todo · Готово» как на мокапе. Закрывает #104.
+
 ## 0.42.0 — 2026-10-31
 
 - Виджет macOS снова встраивается в бандл: `src-tauri/macos-widget/` (xcodegen → `.appex`), `beforeBundleCommand` + `bundle.macOS.files` → `Contents/PlugIns/`, ad-hoc `sign:macos` / `widget:install`, `tauri-plugin-widgets-api` + postinstall-патч Swift Package. Docs: `docs/widget-macos.md`. Закрывает #103 (разрыв со спайком: плагин был, `.appex` — нет).
