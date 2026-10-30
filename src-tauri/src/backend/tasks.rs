@@ -1,4 +1,4 @@
-//! Модель задачи и трейт источника (#16).
+//! Модель задачи и трейт источника (#16); файловый адаптер TODO.md / tasks.json (#17).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -145,7 +145,7 @@ mod tests {
     }
 }
 
-/// File-backed sources preserve project-qualified identities across projects.
+/// Файловый источник: `TODO.md` или `tasks.json` (#17). Id квалифицируются проектом.
 pub struct FileSource {
     pub root: std::path::PathBuf,
     pub json: bool,
@@ -153,17 +153,28 @@ pub struct FileSource {
 
 impl TaskSource for FileSource {
     fn name(&self) -> &str {
-        if self.json { "tasks-json" } else { "todo" }
+        if self.json {
+            "tasks-json"
+        } else {
+            "todo"
+        }
     }
 
     fn fetch(&self, project: &str) -> Result<Vec<Task>, String> {
-        let path = self.root.join(if self.json { "tasks.json" } else { "TODO.md" });
-        let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let path = self
+            .root
+            .join(if self.json { "tasks.json" } else { "TODO.md" });
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         if self.json {
-            let mut tasks: Vec<Task> = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+            let mut tasks: Vec<Task> = serde_json::from_str(&text)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
             let mut ids = std::collections::HashSet::new();
             for task in &mut tasks {
-                if task.id.trim().is_empty() || task.title.trim().is_empty() || !ids.insert(task.id.clone()) {
+                if task.id.trim().is_empty()
+                    || task.title.trim().is_empty()
+                    || !ids.insert(task.id.clone())
+                {
                     return Err(format!("{}: empty title/id or duplicate id", path.display()));
                 }
                 task.project = project.into();
@@ -178,41 +189,127 @@ impl TaskSource for FileSource {
     }
 }
 
+/// Парсер чекбоксов Markdown: `- [ ]` / `- [~]` / `- [x]` / `- [!]`. См. `docs/tasks-format.md`.
 pub fn parse_markdown(text: &str, project: &str, path: &str) -> Vec<Task> {
     let mut fenced = false;
-    text.lines().enumerate().filter_map(|(line, raw)| {
-        let raw = raw.trim_start();
-        if raw.starts_with("```") || raw.starts_with("~~~") {
-            fenced = !fenced;
-            return None;
-        }
-        if fenced { return None; }
-        let item = raw.strip_prefix("- [")?;
-        let (mark, title) = item.split_once("] ")?;
-        let status = match mark {
-            " " => TaskStatus::Todo,
-            "x" | "X" => TaskStatus::Done,
-            "~" => TaskStatus::InProgress,
-            "!" => TaskStatus::Blocked,
-            _ => return None,
-        };
-        if title.trim().is_empty() { return None; }
-        Some(Task {
-            id: format!("{project}:todo:{}", line + 1),
-            project: project.into(), title: title.trim().into(), status,
-            source: "todo".into(), url: Some(path.into()),
+    text.lines()
+        .enumerate()
+        .filter_map(|(line, raw)| {
+            let raw = raw.trim_start();
+            if raw.starts_with("```") || raw.starts_with("~~~") {
+                fenced = !fenced;
+                return None;
+            }
+            if fenced {
+                return None;
+            }
+            let item = raw.strip_prefix("- [")?;
+            let (mark, title) = item.split_once("] ")?;
+            let status = match mark {
+                " " => TaskStatus::Todo,
+                "x" | "X" => TaskStatus::Done,
+                "~" => TaskStatus::InProgress,
+                "!" => TaskStatus::Blocked,
+                _ => return None,
+            };
+            if title.trim().is_empty() {
+                return None;
+            }
+            Some(Task {
+                id: format!("{project}:todo:{}", line + 1),
+                project: project.into(),
+                title: title.trim().into(),
+                status,
+                source: "todo".into(),
+                url: Some(path.into()),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 #[cfg(test)]
 mod file_tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const FIXTURE_TODO: &str = include_str!("fixtures/tasks/TODO.md");
+    const FIXTURE_JSON: &str = include_str!("fixtures/tasks/tasks.json");
+
+    fn temp_root(label: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("demerzel-tasks-{label}-{nanos}"));
+        fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
     #[test]
-    fn markdown_handles_statuses_unicode_and_code_blocks() {
-        let tasks = parse_markdown("- [ ] Привет\n  - [~] running\n- [x] done\n- [!] blocked\n```md\n- [ ] example\n```\n- [] invalid", "a", "/a/TODO.md");
+    fn markdown_fixture_handles_statuses_unicode_and_code_blocks() {
+        let tasks = parse_markdown(FIXTURE_TODO, "a", "/a/TODO.md");
         assert_eq!(count_by_status(&tasks), (1, 1, 1, 1));
         assert_eq!(tasks[0].title, "Привет");
-        assert_ne!(tasks[0].id, parse_markdown("- [ ] Привет", "b", "/b/TODO.md")[0].id);
+        assert_eq!(tasks[0].id, "a:todo:3");
+        assert_ne!(
+            tasks[0].id,
+            parse_markdown("- [ ] Привет", "b", "/b/TODO.md")[0].id
+        );
+    }
+
+    #[test]
+    fn file_source_reads_todo_fixture() {
+        let root = temp_root("todo");
+        fs::write(root.join("TODO.md"), FIXTURE_TODO).unwrap();
+        let source = FileSource {
+            root: root.clone(),
+            json: false,
+        };
+        assert_eq!(source.name(), "todo");
+        let tasks = source.fetch("/proj").unwrap();
+        assert_eq!(count_by_status(&tasks), (1, 1, 1, 1));
+        assert!(tasks.iter().all(|t| t.project == "/proj" && t.source == "todo"));
+        assert!(tasks[0]
+            .url
+            .as_deref()
+            .unwrap()
+            .ends_with("TODO.md"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn file_source_reads_tasks_json_fixture() {
+        let root = temp_root("json");
+        fs::write(root.join("tasks.json"), FIXTURE_JSON).unwrap();
+        let source = FileSource {
+            root: root.clone(),
+            json: true,
+        };
+        assert_eq!(source.name(), "tasks-json");
+        let tasks = source.fetch("demo").unwrap();
+        assert_eq!(count_by_status(&tasks), (1, 1, 1, 1));
+        assert_eq!(tasks[0].id, "demo:json:setup");
+        assert_eq!(tasks[1].title, "Парсер чекбоксов");
+        assert!(tasks.iter().all(|t| t.source == "tasks-json"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn tasks_json_rejects_duplicate_or_empty_ids() {
+        let root = temp_root("bad-json");
+        fs::write(
+            root.join("tasks.json"),
+            r#"[{"id":"a","project":"","title":"one","status":"todo","source":"","url":null},{"id":"a","project":"","title":"two","status":"done","source":"","url":null}]"#,
+        )
+        .unwrap();
+        let err = FileSource {
+            root: root.clone(),
+            json: true,
+        }
+        .fetch("p")
+        .unwrap_err();
+        assert!(err.contains("duplicate") || err.contains("empty"));
+        let _ = fs::remove_dir_all(root);
     }
 }

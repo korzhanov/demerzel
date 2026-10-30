@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.0 — 2026-10-30
+
+- Файловый адаптер `FileSource`: парсер чекбоксов `TODO.md` (`parse_markdown`, статус `in_progress` через `- [~]`) и чтение `tasks.json` с квалификацией id по проекту. Документ `docs/tasks-format.md`, тесты на фикстурах. Закрывает #17.
+
 ## 0.17.0 — 2026-10-30
 
 - Нормализованная модель задачи `Task { id, project, title, status, source, url? }` и статусы `todo` / `in_progress` / `done` / `blocked`. Трейт `TaskSource::fetch(project)`, сводка `count_by_status`, зеркало хелперов и `bun:test` на фронте. Закрывает #16.

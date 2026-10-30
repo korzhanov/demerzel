@@ -1,0 +1,34 @@
+[
+  {
+    "id": "setup",
+    "project": "",
+    "title": "Настроить сканер",
+    "status": "todo",
+    "source": "",
+    "url": null
+  },
+  {
+    "id": "parse",
+    "project": "",
+    "title": "Парсер чекбоксов",
+    "status": "in_progress",
+    "source": "",
+    "url": null
+  },
+  {
+    "id": "done-item",
+    "project": "",
+    "title": "Модель Task",
+    "status": "done",
+    "source": "",
+    "url": null
+  },
+  {
+    "id": "blocked-item",
+    "project": "",
+    "title": "Ждём ключ",
+    "status": "blocked",
+    "source": "",
+    "url": null
+  }
+]
