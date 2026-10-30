@@ -43,6 +43,7 @@ use std::time::{Duration, Instant};
 pub struct Managed {
     child: Option<Child>,
     status: Status,
+    log: super::logs::SharedLog,
 }
 
 impl Managed {
@@ -66,14 +67,26 @@ impl Managed {
         if let Some(p) = port {
             cmd.env("PORT", p.to_string());
         }
-        let child = cmd.spawn()?;
+        let mut child = cmd.spawn()?;
+        let log = super::logs::new_shared(super::logs::DEFAULT_CAPACITY);
+        if let Some(out) = child.stdout.take() {
+            super::logs::spawn_reader(out, super::logs::Stream::Stdout, log.clone());
+        }
+        if let Some(err) = child.stderr.take() {
+            super::logs::spawn_reader(err, super::logs::Stream::Stderr, log.clone());
+        }
         let status = next(Status::Stopped, Event::Start);
         let status = next(status, Event::Started);
-        Ok(Self { child: Some(child), status })
+        Ok(Self { child: Some(child), status, log })
     }
 
     pub fn status(&self) -> Status {
         self.status
+    }
+
+    /// Последние строки логов процесса.
+    pub fn logs(&self) -> Vec<super::logs::LogLine> {
+        self.log.lock().map(|b| b.snapshot()).unwrap_or_default()
     }
 
     pub fn pid(&self) -> Option<u32> {
