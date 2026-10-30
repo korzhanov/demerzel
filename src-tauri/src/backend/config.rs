@@ -131,6 +131,17 @@ pub fn resolve_migrate_command(commands: &Commands) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+/// Команда тестов проекта из `orchestrator.json` (#31).
+///
+/// Пустая строка / пробелы → `None` (прогон после агента пропускается).
+pub fn resolve_test_command(commands: &Commands) -> Option<&str> {
+    commands
+        .test
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
 /// Команда запуска для UI / менеджера процессов.
 ///
 /// Порядок:
@@ -242,6 +253,22 @@ mod tests {
 
         let missing = parse(r#"{ "name": "api", "type": "service" }"#).unwrap();
         assert!(resolve_migrate_command(&missing.commands).is_none());
+    }
+
+    #[test]
+    fn resolve_test_reads_nonempty_and_skips_blank() {
+        let with = parse(
+            r#"{ "name": "api", "type": "service", "commands": { "test": "bun test" } }"#,
+        )
+        .unwrap();
+        assert_eq!(resolve_test_command(&with.commands), Some("bun test"));
+
+        let blank = parse(
+            r#"{ "name": "api", "type": "service", "commands": { "test": "   " } }"#,
+        )
+        .unwrap();
+        assert!(resolve_test_command(&blank.commands).is_none());
+        assert!(resolve_test_command(&Commands::default()).is_none());
     }
 
     #[test]

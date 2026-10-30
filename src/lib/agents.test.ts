@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  AGENT_RUN_STATUSES,
   DEFAULT_AGENT_CONCURRENCY,
   DEFAULT_MIN_FREE_MEMORY_MB,
   DEFAULT_OLLAMA_RESERVE_MB,
   agentsConfigOrDefault,
+  canTransitionAgentRun,
   requiredFreeMemoryMb,
+  statusAfterTests,
 } from "./types";
 
 describe("agents config defaults (#29)", () => {
@@ -36,5 +39,35 @@ describe("agents config defaults (#29)", () => {
         true,
       ),
     ).toBe(1536);
+  });
+});
+
+describe("agent run status + tests (#31)", () => {
+  test("status set is snake_case and complete", () => {
+    expect([...AGENT_RUN_STATUSES]).toEqual([
+      "queued",
+      "running",
+      "needs_review",
+      "failed",
+      "discarded",
+      "accepted",
+    ]);
+  });
+
+  test("cannot accept without review", () => {
+    expect(canTransitionAgentRun("running", "accepted")).toBe(false);
+    expect(canTransitionAgentRun("needs_review", "accepted")).toBe(true);
+    expect(canTransitionAgentRun("running", "needs_review")).toBe(true);
+    expect(canTransitionAgentRun("running", "failed")).toBe(true);
+  });
+
+  test("statusAfterTests mirrors Rust", () => {
+    expect(statusAfterTests({ skipped: true, exitCode: null })).toBe(
+      "needs_review",
+    );
+    expect(statusAfterTests({ skipped: false, exitCode: 0 })).toBe(
+      "needs_review",
+    );
+    expect(statusAfterTests({ skipped: false, exitCode: 1 })).toBe("failed");
   });
 });
