@@ -11,6 +11,7 @@ use std::path::Path;
 use super::agents::AgentsConfig;
 use super::alerts::AlertsConfig;
 use super::icloud_sync::ICloudSyncConfig;
+use super::widgetkit_fallback::WidgetKitFallbackConfig;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
@@ -27,6 +28,9 @@ pub struct Settings {
     /// Синхронизация `summary.json` в iCloud Drive для iPhone (#37).
     #[serde(default)]
     pub icloud: ICloudSyncConfig,
+    /// Запасной нативный WidgetKit: запись `summary.json` в App Group (#38).
+    #[serde(default)]
+    pub widgetkit: WidgetKitFallbackConfig,
 }
 
 /// Убирает пустые строки и дубликаты, сохраняя порядок.
@@ -104,6 +108,25 @@ mod tests {
         assert_eq!(loaded.alerts, AlertsConfig::default());
         assert_eq!(loaded.agents, crate::backend::agents::AgentsConfig::default());
         assert_eq!(loaded.icloud, crate::backend::icloud_sync::ICloudSyncConfig::default());
+        assert_eq!(
+            loaded.widgetkit,
+            crate::backend::widgetkit_fallback::WidgetKitFallbackConfig::default()
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn widgetkit_section_roundtrip() {
+        use crate::backend::widgetkit_fallback::WidgetKitFallbackConfig;
+        let path = tmp_file("widgetkit");
+        let s = Settings {
+            scan_roots: vec!["/p".into()],
+            widgetkit: WidgetKitFallbackConfig { enabled: true },
+            ..Settings::default()
+        };
+        save(&path, &s).unwrap();
+        let loaded = load(&path).unwrap();
+        assert!(loaded.widgetkit.enabled);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

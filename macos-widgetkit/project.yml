@@ -1,0 +1,35 @@
+# xcodegen project for native WidgetKit fallback (#38).
+# Requires: brew install xcodegen, Xcode, Apple Team ID for App Groups in production.
+# Primary widget path remains tauri-plugin-widgets (ADR-001).
+
+name: DemerzelWidgetKit
+
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+targets:
+  DemerzelWidgetExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Demerzel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.demerzel.orchestrator.widgetkit
+        PRODUCT_NAME: DemerzelWidgetExtension
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_ENTITLEMENTS: DemerzelWidget.entitlements
+        MARKETING_VERSION: "0.38.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SKIP_INSTALL: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Demerzel
+        MACOSX_DEPLOYMENT_TARGET: "14.0"

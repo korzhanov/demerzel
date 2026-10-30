@@ -52,4 +52,4 @@
 
 ## Alternatives considered
 
-- **Swift WidgetKit (#38)** — отложен; использовать, если ad-hoc/plugin окажется неприемлемым для релиза или App Groups не заведутся с Team ID.
+- **Swift WidgetKit (#38)** — scaffold готов (`macos-widgetkit/`, `widgetkit_fallback`, `docs/widgetkit-fallback.md`): читает `summary.json` из App Group. Primary остаётся плагин; fallback включается `settings.widgetkit.enabled` или автоматически при ошибке `tauri-plugin-widgets`. App Store / iOS Widget Extension не входят в scope.
