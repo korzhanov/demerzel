@@ -7,3 +7,4 @@ pub mod scanner;
 pub mod storage;
 pub mod summary;
 pub mod tasks;
+pub mod widget;
