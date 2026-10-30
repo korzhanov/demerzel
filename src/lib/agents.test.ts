@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentRunnerLabel,
   agentRunStatusLabel,
   canAcceptAgentRun,
   canDiscardAgentRun,
@@ -9,25 +10,34 @@ import {
 } from "./agents";
 import {
   AGENT_RUN_STATUSES,
+  AGENT_RUNNERS,
   DEFAULT_AGENT_CONCURRENCY,
+  DEFAULT_AGENT_RUNNER,
   DEFAULT_MIN_FREE_MEMORY_MB,
+  DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_RESERVE_MB,
   agentsConfigOrDefault,
   canTransitionAgentRun,
+  parseAgentRunner,
   requiredFreeMemoryMb,
   statusAfterTests,
   type AgentRunRecord,
 } from "./types";
 
-describe("agents config defaults (#29)", () => {
+describe("agents config defaults (#29 / #30)", () => {
   test("defaults match Rust AgentsConfig", () => {
     expect(DEFAULT_AGENT_CONCURRENCY).toBe(1);
     expect(DEFAULT_MIN_FREE_MEMORY_MB).toBe(2048);
     expect(DEFAULT_OLLAMA_RESERVE_MB).toBe(4096);
+    expect(DEFAULT_AGENT_RUNNER).toBe("claude");
+    expect(DEFAULT_OLLAMA_MODEL).toBe("qwen2.5-coder:7b");
+    expect([...AGENT_RUNNERS]).toEqual(["claude", "ollama"]);
     expect(agentsConfigOrDefault(undefined)).toEqual({
       max_concurrent: 1,
       min_free_memory_mb: 2048,
       ollama_reserve_mb: 4096,
+      runner: "claude",
+      ollama_model: "qwen2.5-coder:7b",
     });
   });
 
@@ -36,6 +46,8 @@ describe("agents config defaults (#29)", () => {
       max_concurrent: 2,
       min_free_memory_mb: 2048,
       ollama_reserve_mb: 4096,
+      runner: "claude",
+      ollama_model: "qwen2.5-coder:7b",
     });
   });
 
@@ -48,6 +60,14 @@ describe("agents config defaults (#29)", () => {
         true,
       ),
     ).toBe(1536);
+  });
+
+  test("parseAgentRunner and labels (#30)", () => {
+    expect(parseAgentRunner("ollama")).toBe("ollama");
+    expect(parseAgentRunner("Claude")).toBe("claude");
+    expect(parseAgentRunner(undefined)).toBe("claude");
+    expect(agentRunnerLabel("ollama")).toBe("Ollama (локально)");
+    expect(agentRunnerLabel(undefined)).toBe("Claude CLI");
   });
 });
 

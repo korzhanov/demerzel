@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { Project, Task } from "$lib/types";
+  import type { AgentRunner, Project, Task } from "$lib/types";
+  import { AGENT_RUNNERS } from "$lib/types";
   import {
     TASK_BOARD_COLUMNS,
     canOpenTask,
@@ -7,6 +8,7 @@
     filterTasksByProject,
     tasksForColumn,
   } from "$lib/tasks";
+  import { agentRunnerLabel } from "$lib/agents";
 
   interface Props {
     tasks: Task[];
@@ -14,6 +16,8 @@
     tasksBusy: boolean;
     projectFilter: string;
     projects: Project[];
+    /** Раннер для «Исправить» (#30); Claude по умолчанию. */
+    agentRunner?: AgentRunner;
     startBusyTaskId?: string | null;
     onRefresh: () => void;
     onOpen: (task: Task) => void | Promise<void>;
@@ -26,6 +30,7 @@
     tasksBusy,
     projectFilter = $bindable(""),
     projects,
+    agentRunner = $bindable("claude"),
     startBusyTaskId = null,
     onRefresh,
     onOpen,
@@ -44,6 +49,14 @@
         <option value="">Все проекты</option>
         {#each projects as p (p.path)}
           <option value={p.path}>{p.name} — {p.path}</option>
+        {/each}
+      </select></label
+    >
+    <label
+      >Раннер
+      <select bind:value={agentRunner} aria-label="Раннер агента">
+        {#each AGENT_RUNNERS as runner (runner)}
+          <option value={runner}>{agentRunnerLabel(runner)}</option>
         {/each}
       </select></label
     >

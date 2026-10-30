@@ -72,7 +72,12 @@ export interface AlertsConfig {
   timezone?: string;
 }
 
-/** Лимит параллельных агентов и порог памяти (#29). */
+/** Раннер агента (#28 / #30). Claude — основной путь. */
+export type AgentRunner = "claude" | "ollama";
+
+export const AGENT_RUNNERS: readonly AgentRunner[] = ["claude", "ollama"] as const;
+
+/** Лимит параллельных агентов и порог памяти (#29); раннер Ollama (#30). */
 export interface AgentsConfig {
   /** Одновременно Running; по умолчанию 1. */
   max_concurrent?: number;
@@ -80,11 +85,17 @@ export interface AgentsConfig {
   min_free_memory_mb?: number;
   /** Запас под Ollama, МиБ, если процесс запущен; по умолчанию 4096. */
   ollama_reserve_mb?: number;
+  /** Раннер по умолчанию; `claude` если не задан. */
+  runner?: AgentRunner;
+  /** Модель `ollama run`; по умолчанию qwen2.5-coder:7b. */
+  ollama_model?: string;
 }
 
 export const DEFAULT_AGENT_CONCURRENCY = 1;
 export const DEFAULT_MIN_FREE_MEMORY_MB = 2048;
 export const DEFAULT_OLLAMA_RESERVE_MB = 4096;
+export const DEFAULT_AGENT_RUNNER: AgentRunner = "claude";
+export const DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b";
 
 export function agentsConfigOrDefault(
   agents?: AgentsConfig | null,
@@ -93,7 +104,15 @@ export function agentsConfigOrDefault(
     max_concurrent: agents?.max_concurrent ?? DEFAULT_AGENT_CONCURRENCY,
     min_free_memory_mb: agents?.min_free_memory_mb ?? DEFAULT_MIN_FREE_MEMORY_MB,
     ollama_reserve_mb: agents?.ollama_reserve_mb ?? DEFAULT_OLLAMA_RESERVE_MB,
+    runner: agents?.runner ?? DEFAULT_AGENT_RUNNER,
+    ollama_model: agents?.ollama_model ?? DEFAULT_OLLAMA_MODEL,
   };
+}
+
+export function parseAgentRunner(raw: string | null | undefined): AgentRunner {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "ollama") return "ollama";
+  return "claude";
 }
 
 /** Требуемая свободная RAM с учётом Ollama (зеркало `AgentLimiter::required_free_mb`). */
@@ -165,7 +184,7 @@ export interface AgentReviewBundle {
   status: AgentRunStatus;
 }
 
-/** Запись agent run для UI ревью (#32). */
+/** Запись agent run для UI ревью (#32 / #30). */
 export interface AgentRunRecord {
   id: string;
   project: string;
@@ -174,6 +193,8 @@ export interface AgentRunRecord {
   status: AgentRunStatus;
   worktree: string | null;
   base_ref: string;
+  /** Какой CLI; отсутствует → claude. */
+  runner?: AgentRunner;
   tests: AgentTestRunResult | null;
   diff: string | null;
   started_at: string | null;

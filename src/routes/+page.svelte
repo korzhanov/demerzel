@@ -6,11 +6,13 @@
   import type {
     AcceptAgentRunResult,
     AgentRunRecord,
+    AgentRunner,
     Settings,
     PortRow,
     StartAgentRunResult,
     Task,
   } from "$lib/types";
+  import { DEFAULT_AGENT_RUNNER, parseAgentRunner } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -50,6 +52,8 @@
   let selectedAgentRunId = $state<string | null>(null);
   let agentMergeCommand = $state("");
   let startBusyTaskId = $state<string | null>(null);
+  /** Раннер для «Исправить» (#30); Claude — основной путь. */
+  let agentRunner = $state<AgentRunner>(DEFAULT_AGENT_RUNNER);
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
@@ -99,14 +103,17 @@
     if (!canStartAgentFromTask(task) || startBusyTaskId) return;
     startBusyTaskId = task.id;
     try {
-      const result = await invoke<StartAgentRunResult>("start_agent_from_task", { task });
+      const result = await invoke<StartAgentRunResult>("start_agent_from_task", {
+        task,
+        runner: agentRunner,
+      });
       tasks = tasks.map((t) => (t.id === result.task.id ? result.task : t));
       if (result.queued && result.queue_reason) {
         taskErrors = [...taskErrors, `Агент в очереди: ${result.queue_reason}`];
       }
       selectedAgentRunId = result.run.id;
       await refreshAgentRuns();
-      // Claude может ещё работать в фоне — подтянуть статус через пару секунд.
+      // Раннер может ещё работать в фоне — подтянуть статус через пару секунд.
       if (!result.queued) {
         setTimeout(() => {
           void refreshAgentRuns();
@@ -272,6 +279,7 @@
         const s = await invoke<Settings>("get_settings");
         if (!mounted) return;
         roots = s.scan_roots.join("\n");
+        agentRunner = parseAgentRunner(s.agents?.runner);
         if (roots) await scan();
       } catch (e) { if (mounted) error = String(e); }
     })();
@@ -388,6 +396,7 @@
     {taskErrors}
     {tasksBusy}
     bind:projectFilter
+    bind:agentRunner
     projects={flatProjects}
     {startBusyTaskId}
     onRefresh={refreshTasks}

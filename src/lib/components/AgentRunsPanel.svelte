@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AgentRunRecord } from "$lib/types";
   import {
+    agentRunnerLabel,
     agentRunStatusLabel,
     canAcceptAgentRun,
     canDiscardAgentRun,
@@ -102,6 +103,7 @@
           <tr>
             <th>Run</th>
             <th>Проект</th>
+            <th>Раннер</th>
             <th>Статус</th>
             <th>База</th>
           </tr>
@@ -115,6 +117,7 @@
                 >
               </td>
               <td>{run.project}</td>
+              <td>{agentRunnerLabel(run.runner)}</td>
               <td>{agentRunStatusLabel(run.status)}</td>
               <td>{run.base_ref}</td>
             </tr>
@@ -128,7 +131,10 @@
     <article class="detail" aria-label="Детали run {selected.id}">
       <header class="detail-head">
         <h3>{selected.id}</h3>
-        <p>{agentRunStatusLabel(selected.status)} · {selected.project_path}</p>
+        <p
+          >{agentRunStatusLabel(selected.status)} · {agentRunnerLabel(selected.runner)} ·
+          {selected.project_path}</p
+        >
         <div class="row">
           {#if canAcceptAgentRun(selected.status)}
             <button type="button" disabled={actionBusy} onclick={acceptSelected}

@@ -299,18 +299,31 @@ fn discard_agent_run(
     reg.discard(&id)
 }
 
-/// Запуск агента из задачи (#33): статус `in_progress`, worktree; Claude в фоне.
+/// Запуск агента из задачи (#33 / #30): статус `in_progress`, worktree; CLI в фоне.
 #[tauri::command]
 fn start_agent_from_task(
     app: tauri::AppHandle,
     runs: tauri::State<'_, AgentRuns>,
     limit: tauri::State<'_, AgentLimit>,
     task: backend::tasks::Task,
+    runner: Option<String>,
 ) -> Result<backend::agents::StartAgentRunResult, String> {
     use backend::agents::{
-        complete_agent_run, prepare_agent_from_task, task_prompt_text, DEFAULT_CLAUDE_TIMEOUT,
+        complete_agent_run, prepare_agent_from_task, task_prompt_text, AgentRunner,
+        DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT,
     };
     use std::thread;
+
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let runner = match runner.as_deref() {
+        Some(raw) => AgentRunner::parse(raw)?,
+        None => settings.agents.runner,
+    };
+    let ollama_model = settings.agents.ollama_model.clone();
+    let timeout = match runner {
+        AgentRunner::Claude => DEFAULT_CLAUDE_TIMEOUT,
+        AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
+    };
 
     let project_path = PathBuf::from(&task.project);
     let prompt = task_prompt_text(&task);
@@ -324,6 +337,7 @@ fn start_agent_from_task(
             &mut lim,
             Some("HEAD"),
             None,
+            runner,
         )?
     };
 
@@ -347,8 +361,9 @@ fn start_agent_from_task(
             &prompt,
             &mut reg,
             &mut lim,
-            DEFAULT_CLAUDE_TIMEOUT,
+            timeout,
             None,
+            Some(ollama_model.as_str()),
         ) {
             eprintln!("[agents] complete_agent_run failed: {e}");
         }

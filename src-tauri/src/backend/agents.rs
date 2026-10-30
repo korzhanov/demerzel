@@ -1,5 +1,5 @@
 //! Запуски агентов: статусы run, git worktree (#27), Claude Code CLI (#28),
-//! лимит параллелизма / памяти (#29), прогон тестов и diff (#31).
+//! лимит параллелизма / памяти (#29), Ollama (#30), прогон тестов и diff (#31).
 //!
 //! На каждый баг — отдельный worktree в `~/.orchestrator/worktrees/<project>/<run-id>`
 //! с веткой `agent/<run-id>`, чтобы правки агента не попадали в основную ветку.
@@ -10,7 +10,11 @@
 //! Бинарник: `claude` или `DEMERZEL_CLAUDE_BIN` (для тестов — фейковый скрипт).
 //!
 //! Параллелизм (#29): по умолчанию 1 агент; перед стартом — свободная память
-//! (`vm_stat`), с запасом под Ollama если процесс запущен (сам раннер — #30).
+//! (`vm_stat`), с запасом под Ollama если процесс запущен.
+//!
+//! Опциональный раннер Ollama (#30): `ollama run <model> "<prompt>"` (по умолчанию
+//! `qwen2.5-coder:7b`); выбор в `agents.runner` / UI задачи. Claude остаётся
+//! основным путём. Override: `DEMERZEL_OLLAMA_BIN`, `DEMERZEL_OLLAMA_MODEL`.
 //!
 //! После агента (#31): `commands.test` в worktree, `git diff` к базовой ветке,
 //! статус `needs_review` / `failed`.
@@ -19,7 +23,7 @@
 //! ручного merge (без git merge), discard → `remove_worktree`.
 //!
 //! Запуск из задачи (#33): `start_agent_from_task` — статус задачи `in_progress`,
-//! worktree + limiter + Claude + `collect_review` → registry.
+//! worktree + limiter + выбранный раннер + `collect_review` → registry.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -103,8 +107,40 @@ pub const DEFAULT_CONCURRENCY: usize = 1;
 /// Минимум доступной памяти (МиБ) перед стартом по умолчанию.
 pub const DEFAULT_MIN_FREE_MEMORY_MB: u64 = 2048;
 
-/// Запас под Ollama (МиБ), если процесс `ollama` запущен. Раннер Ollama — #30.
+/// Запас под Ollama (МиБ), если процесс `ollama` запущен (#29 / #30).
 pub const DEFAULT_OLLAMA_RESERVE_MB: u64 = 4096;
+
+/// Модель Ollama по умолчанию (#30).
+pub const DEFAULT_OLLAMA_MODEL: &str = "qwen2.5-coder:7b";
+
+/// Таймаут прогона Ollama по умолчанию (как у Claude — 30 мин).
+pub const DEFAULT_OLLAMA_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+/// Какой CLI запускать для агента (#28 / #30). По умолчанию Claude.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRunner {
+    #[default]
+    Claude,
+    Ollama,
+}
+
+impl AgentRunner {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Ollama => "ollama",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "claude" => Ok(Self::Claude),
+            "ollama" => Ok(Self::Ollama),
+            other => Err(format!("unknown agent runner '{other}'")),
+        }
+    }
+}
 
 fn default_max_concurrent() -> usize {
     DEFAULT_CONCURRENCY
@@ -118,7 +154,15 @@ fn default_ollama_reserve_mb() -> u64 {
     DEFAULT_OLLAMA_RESERVE_MB
 }
 
-/// Настройки агентов в `settings.json` → `agents` (#29).
+fn default_ollama_model() -> String {
+    DEFAULT_OLLAMA_MODEL.to_string()
+}
+
+fn default_agent_runner() -> AgentRunner {
+    AgentRunner::Claude
+}
+
+/// Настройки агентов в `settings.json` → `agents` (#29 / #30).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentsConfig {
     /// Сколько агентов можно держать в Running одновременно.
@@ -130,6 +174,12 @@ pub struct AgentsConfig {
     /// Сколько МиБ резервировать, если `ollama` уже крутится.
     #[serde(default = "default_ollama_reserve_mb")]
     pub ollama_reserve_mb: u64,
+    /// Раннер по умолчанию для запуска из задачи (#30). Claude не блокируется.
+    #[serde(default = "default_agent_runner")]
+    pub runner: AgentRunner,
+    /// Модель для `ollama run` (#30).
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
 }
 
 impl Default for AgentsConfig {
@@ -138,6 +188,8 @@ impl Default for AgentsConfig {
             max_concurrent: DEFAULT_CONCURRENCY,
             min_free_memory_mb: DEFAULT_MIN_FREE_MEMORY_MB,
             ollama_reserve_mb: DEFAULT_OLLAMA_RESERVE_MB,
+            runner: AgentRunner::Claude,
+            ollama_model: DEFAULT_OLLAMA_MODEL.to_string(),
         }
     }
 }
@@ -765,6 +817,214 @@ pub fn run_claude(
     handle.wait_until(deadline, cancel)
 }
 
+// --- Ollama CLI runner (#30) ---
+
+/// Путь к бинарнику Ollama.
+pub fn ollama_bin() -> PathBuf {
+    if let Some(override_bin) = std::env::var_os("DEMERZEL_OLLAMA_BIN") {
+        return PathBuf::from(override_bin);
+    }
+    PathBuf::from("ollama")
+}
+
+/// Имя модели: `DEMERZEL_OLLAMA_MODEL` → иначе `DEFAULT_OLLAMA_MODEL`.
+pub fn resolve_ollama_model(configured: Option<&str>) -> String {
+    if let Ok(env_model) = std::env::var("DEMERZEL_OLLAMA_MODEL") {
+        let trimmed = env_model.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    configured
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_OLLAMA_MODEL)
+        .to_string()
+}
+
+/// Итог headless-прогона Ollama (те же поля, что у Claude).
+pub type OllamaRunResult = ClaudeRunResult;
+
+/// Живой процесс `ollama run <model> <prompt>`; отмена — SIGTERM process group.
+pub struct OllamaHandle {
+    child: Option<Child>,
+    started: Instant,
+    stdout_buf: Arc<Mutex<String>>,
+    stderr_buf: Arc<Mutex<String>>,
+}
+
+impl OllamaHandle {
+    /// Запускает `ollama run <model> <prompt>` в `worktree`.
+    #[cfg(unix)]
+    pub fn spawn(worktree: &Path, model: &str, prompt: &str) -> Result<Self, String> {
+        use std::os::unix::process::CommandExt;
+
+        if !worktree.is_dir() {
+            return Err(format!("worktree is not a directory: {}", worktree.display()));
+        }
+        let model = model.trim();
+        if model.is_empty() {
+            return Err("ollama model must not be empty".into());
+        }
+        if prompt.trim().is_empty() {
+            return Err("prompt must not be empty".into());
+        }
+
+        let bin = ollama_bin();
+        let mut cmd = Command::new(&bin);
+        cmd.arg("run")
+            .arg(model)
+            .arg(prompt)
+            .current_dir(worktree)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0);
+
+        let mut child = cmd.spawn().map_err(|e| {
+            format!("spawn {}: {e}", bin.display())
+        })?;
+
+        let stdout_buf = Arc::new(Mutex::new(String::new()));
+        let stderr_buf = Arc::new(Mutex::new(String::new()));
+        if let Some(out) = child.stdout.take() {
+            spawn_pipe_reader(out, stdout_buf.clone());
+        }
+        if let Some(err) = child.stderr.take() {
+            spawn_pipe_reader(err, stderr_buf.clone());
+        }
+
+        Ok(Self {
+            child: Some(child),
+            started: Instant::now(),
+            stdout_buf,
+            stderr_buf,
+        })
+    }
+
+    pub fn pid(&self) -> Option<u32> {
+        self.child.as_ref().map(|c| c.id())
+    }
+
+    #[cfg(unix)]
+    pub fn cancel(&mut self) -> Result<(), String> {
+        let Some(child) = self.child.as_mut() else {
+            return Ok(());
+        };
+        let pgid = format!("-{}", child.id());
+        signal_group(&pgid, "TERM")?;
+        let deadline = Instant::now() + CANCEL_GRACE;
+        while Instant::now() < deadline {
+            if child.try_wait().map_err(|e| e.to_string())?.is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        if child.try_wait().map_err(|e| e.to_string())?.is_none() {
+            let _ = signal_group(&pgid, "KILL");
+            let _ = child.wait();
+        }
+        self.child = None;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    pub fn wait_until(
+        &mut self,
+        deadline: Instant,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<OllamaRunResult, String> {
+        let mut timed_out = false;
+        let mut cancelled = false;
+
+        loop {
+            if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+                cancelled = true;
+                self.cancel()?;
+                break;
+            }
+            if Instant::now() >= deadline {
+                timed_out = true;
+                self.cancel()?;
+                break;
+            }
+
+            let Some(child) = self.child.as_mut() else {
+                break;
+            };
+            match child.try_wait().map_err(|e| e.to_string())? {
+                Some(status) => {
+                    let exit_code = status.code();
+                    self.child = None;
+                    return Ok(self.finish(exit_code, false, false));
+                }
+                None => thread::sleep(Duration::from_millis(50)),
+            }
+        }
+
+        Ok(self.finish(None, timed_out, cancelled))
+    }
+
+    fn finish(
+        &self,
+        exit_code: Option<i32>,
+        timed_out: bool,
+        cancelled: bool,
+    ) -> OllamaRunResult {
+        thread::sleep(Duration::from_millis(20));
+        let stdout = self
+            .stdout_buf
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let stderr = self
+            .stderr_buf
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        OllamaRunResult {
+            stdout,
+            stderr,
+            exit_code,
+            duration_ms: self.started.elapsed().as_millis() as u64,
+            timed_out,
+            cancelled,
+        }
+    }
+}
+
+/// Собирает промпт и запускает Ollama headless с таймаутом и опциональной отменой.
+#[cfg(unix)]
+pub fn run_ollama(
+    worktree: &Path,
+    task: &str,
+    model: &str,
+    timeout: Duration,
+    cancel: Option<&AtomicBool>,
+) -> Result<OllamaRunResult, String> {
+    let prompt = build_prompt(task, worktree)?;
+    let model = resolve_ollama_model(Some(model));
+    let mut handle = OllamaHandle::spawn(worktree, &model, &prompt)?;
+    let deadline = Instant::now() + timeout;
+    handle.wait_until(deadline, cancel)
+}
+
+/// Диспетчер раннера: Claude (основной) или Ollama (опционально, #30).
+#[cfg(unix)]
+pub fn run_agent_cli(
+    runner: AgentRunner,
+    worktree: &Path,
+    task: &str,
+    ollama_model: &str,
+    timeout: Duration,
+    cancel: Option<&AtomicBool>,
+) -> Result<ClaudeRunResult, String> {
+    match runner {
+        AgentRunner::Claude => run_claude(worktree, task, timeout, cancel),
+        AgentRunner::Ollama => run_ollama(worktree, task, ollama_model, timeout, cancel),
+    }
+}
+
 // --- Tests + diff after agent (#31) ---
 
 /// Сообщение, когда `commands.test` нет или пусто.
@@ -803,6 +1063,9 @@ pub struct AgentRunRecord {
     pub status: RunStatus,
     pub worktree: Option<String>,
     pub base_ref: String,
+    /// Какой CLI использовали (#30); отсутствует в старых записях → Claude.
+    #[serde(default)]
+    pub runner: AgentRunner,
     pub tests: Option<TestRunResult>,
     pub diff: Option<String>,
     pub started_at: Option<String>,
@@ -1112,10 +1375,14 @@ pub struct StartAgentParams<'a, M: MemoryProbe, O: OllamaProbe> {
     pub cancel: Option<&'a AtomicBool>,
     /// Зафиксированный run_id (тесты); иначе `new_run_id()`.
     pub run_id: Option<String>,
+    /// Раннер CLI (#30); по умолчанию Claude.
+    pub runner: AgentRunner,
+    /// Модель Ollama, если `runner == Ollama`.
+    pub ollama_model: Option<&'a str>,
 }
 
 /// Готовит run из задачи: `in_progress`, limiter, worktree при слоте.
-/// Claude не запускает — см. `complete_agent_run` / `start_agent_from_task`.
+/// CLI не запускает — см. `complete_agent_run` / `start_agent_from_task`.
 pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
     task: &Task,
     project_path: &Path,
@@ -1123,6 +1390,7 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
     limiter: &mut AgentLimiter<M, O>,
     base_ref: Option<&str>,
     run_id: Option<String>,
+    runner: AgentRunner,
 ) -> Result<StartAgentRunResult, String> {
     if task.title.trim().is_empty() {
         return Err("task title must not be empty".into());
@@ -1154,6 +1422,7 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         status: RunStatus::Queued,
         worktree: None,
         base_ref: base.clone(),
+        runner,
         tests: None,
         diff: None,
         started_at: Some(now_rfc3339()),
@@ -1195,7 +1464,7 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
     })
 }
 
-/// Claude + `collect_review` для уже `running` run; освобождает limiter.
+/// Раннер (Claude / Ollama) + `collect_review` для уже `running` run; освобождает limiter.
 pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
     run_id: &str,
     task_title_prompt: &str,
@@ -1203,6 +1472,7 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
     limiter: &mut AgentLimiter<M, O>,
     timeout: Duration,
     cancel: Option<&AtomicBool>,
+    ollama_model: Option<&str>,
 ) -> Result<AgentRunRecord, String> {
     let snapshot = registry
         .get(run_id)
@@ -1220,27 +1490,37 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
         .ok_or("running run has no worktree")?;
     let project_path_owned = snapshot.project_path.clone();
     let base = snapshot.base_ref.clone();
+    let runner = snapshot.runner;
+    let model = resolve_ollama_model(ollama_model);
 
     let mut record = snapshot;
     let result = (|| -> Result<(), String> {
         let worktree_path = Path::new(&worktree_owned);
-        let claude = run_claude(worktree_path, task_title_prompt, timeout, cancel)?;
-        if claude.timed_out || claude.cancelled {
+        let cli = run_agent_cli(
+            runner,
+            worktree_path,
+            task_title_prompt,
+            &model,
+            timeout,
+            cancel,
+        )?;
+        let cmd_label = runner.as_str();
+        if cli.timed_out || cli.cancelled {
             record.status = RunStatus::Failed;
             record.finished_at = Some(now_rfc3339());
             record.tests = Some(TestRunResult {
-                command: "claude".into(),
-                exit_code: claude.exit_code,
+                command: cmd_label.into(),
+                exit_code: cli.exit_code,
                 log: format!(
-                    "claude timed_out={} cancelled={} exit={:?}\n{}{}",
-                    claude.timed_out,
-                    claude.cancelled,
-                    claude.exit_code,
-                    claude.stdout,
-                    claude.stderr
+                    "{cmd_label} timed_out={} cancelled={} exit={:?}\n{}{}",
+                    cli.timed_out,
+                    cli.cancelled,
+                    cli.exit_code,
+                    cli.stdout,
+                    cli.stderr
                 ),
                 skipped: false,
-                duration_ms: claude.duration_ms,
+                duration_ms: cli.duration_ms,
             });
             registry.upsert(record.clone())?;
             return Ok(());
@@ -1250,7 +1530,19 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
             .as_ref()
             .and_then(|c| resolve_test_command(&c.commands).map(str::to_string));
         let bundle = collect_review(worktree_path, test_cmd.as_deref(), &base)?;
-        record.tests = Some(bundle.tests);
+        // Лог раннера сохраняем в tests.log префиксом, если тесты skipped/есть.
+        let mut tests = bundle.tests;
+        if !cli.stdout.trim().is_empty() || !cli.stderr.trim().is_empty() {
+            let prefix = format!(
+                "[{cmd_label} exit={:?} duration_ms={}]\n{}{}\n---\n",
+                cli.exit_code, cli.duration_ms, cli.stdout, cli.stderr
+            );
+            tests.log = format!("{prefix}{}", tests.log);
+            if tests.command.is_empty() {
+                tests.command = cmd_label.into();
+            }
+        }
+        record.tests = Some(tests);
         record.diff = Some(bundle.diff);
         record.status = bundle.status;
         record.finished_at = Some(now_rfc3339());
@@ -1272,7 +1564,7 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
 
 /// Полный синхронный путь: prepare + complete (тесты).
 ///
-/// Если limiter вернул Queue — Claude не стартует. Accept задачу не закрывает (#33).
+/// Если limiter вернул Queue — CLI не стартует. Accept задачу не закрывает (#33).
 pub fn start_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
     params: StartAgentParams<'_, M, O>,
 ) -> Result<StartAgentRunResult, String> {
@@ -1285,10 +1577,19 @@ pub fn start_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         base_ref,
         cancel,
         run_id,
+        runner,
+        ollama_model,
     } = params;
     let prompt = task_prompt_text(task);
-    let prepared =
-        prepare_agent_from_task(task, project_path, registry, limiter, base_ref, run_id)?;
+    let prepared = prepare_agent_from_task(
+        task,
+        project_path,
+        registry,
+        limiter,
+        base_ref,
+        run_id,
+        runner,
+    )?;
     if prepared.queued {
         return Ok(prepared);
     }
@@ -1299,6 +1600,7 @@ pub fn start_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         limiter,
         timeout,
         cancel,
+        ollama_model,
     )?;
     Ok(StartAgentRunResult {
         run,
@@ -1624,6 +1926,7 @@ mod tests {
             max_concurrent: max,
             min_free_memory_mb: 2048,
             ollama_reserve_mb: 4096,
+            ..AgentsConfig::default()
         };
         AgentLimiter::with_probes(cfg, FixedMemory(free_mb), FixedOllama(ollama))
     }
@@ -1634,6 +1937,8 @@ mod tests {
         assert_eq!(cfg.max_concurrent, 1);
         assert_eq!(cfg.min_free_memory_mb, 2048);
         assert_eq!(cfg.ollama_reserve_mb, 4096);
+        assert_eq!(cfg.runner, AgentRunner::Claude);
+        assert_eq!(cfg.ollama_model, DEFAULT_OLLAMA_MODEL);
     }
 
     #[test]
@@ -1869,6 +2174,7 @@ Pages wired down:                         9000.
             status: NeedsReview,
             worktree: Some(wt.display().to_string()),
             base_ref: "main".into(),
+            runner: AgentRunner::Claude,
             tests: Some(TestRunResult {
                 command: "exit 0".into(),
                 exit_code: Some(0),
@@ -1967,10 +2273,103 @@ Pages wired down:                         9000.
                 max_concurrent: 2,
                 min_free_memory_mb: 1,
                 ollama_reserve_mb: 0,
+                ..AgentsConfig::default()
             },
             FixedMemory(8192),
             FixedOllama(false),
         )
+    }
+
+    /// Пишет исполняемый фейковый `ollama` и выставляет `DEMERZEL_OLLAMA_BIN`.
+    fn install_fake_ollama(dir: &Path, body: &str) -> PathBuf {
+        let bin = dir.join("fake-ollama");
+        fs::write(&bin, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&bin, perms).unwrap();
+        }
+        unsafe { std::env::set_var("DEMERZEL_OLLAMA_BIN", &bin) };
+        bin
+    }
+
+    #[test]
+    fn agent_runner_parse_and_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("DEMERZEL_OLLAMA_MODEL") };
+        assert_eq!(AgentRunner::default(), AgentRunner::Claude);
+        assert_eq!(AgentRunner::parse("ollama").unwrap(), AgentRunner::Ollama);
+        assert_eq!(AgentRunner::parse("Claude").unwrap(), AgentRunner::Claude);
+        assert!(AgentRunner::parse("gpt").is_err());
+        assert_eq!(DEFAULT_OLLAMA_MODEL, "qwen2.5-coder:7b");
+        assert_eq!(
+            resolve_ollama_model(Some("  custom:tag  ")),
+            "custom:tag"
+        );
+        assert_eq!(resolve_ollama_model(None), DEFAULT_OLLAMA_MODEL);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn ollama_runner_collects_stdout_and_exit() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("demerzel-ollama-ok-{pid}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        install_fake_ollama(
+            &dir,
+            "#!/bin/sh\necho \"args:$*\"\necho hi-from-ollama\nexit 0\n",
+        );
+        fs::write(dir.join("CLAUDE.md"), "Be concise.\n").unwrap();
+
+        let result = run_ollama(
+            &dir,
+            "Say hello",
+            DEFAULT_OLLAMA_MODEL,
+            Duration::from_secs(5),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.exit_code, Some(0));
+        assert!(!result.timed_out);
+        assert!(!result.cancelled);
+        assert!(result.stdout.contains("hi-from-ollama"), "{}", result.stdout);
+        assert!(result.stdout.contains("run"), "{}", result.stdout);
+        assert!(result.stdout.contains(DEFAULT_OLLAMA_MODEL), "{}", result.stdout);
+        assert!(result.duration_ms < 5000);
+
+        unsafe { std::env::remove_var("DEMERZEL_OLLAMA_BIN") };
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn ollama_runner_times_out_and_kills() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("demerzel-ollama-to-{pid}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        install_fake_ollama(&dir, "#!/bin/sh\nsleep 30\n");
+
+        let started = Instant::now();
+        let result = run_ollama(
+            &dir,
+            "slow task",
+            "tiny",
+            Duration::from_millis(300),
+            None,
+        )
+        .unwrap();
+        assert!(result.timed_out);
+        assert!(!result.cancelled);
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        unsafe { std::env::remove_var("DEMERZEL_OLLAMA_BIN") };
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2018,12 +2417,15 @@ Pages wired down:                         9000.
             base_ref: Some("main"),
             cancel: None,
             run_id: Some("start-1".into()),
+            runner: AgentRunner::Claude,
+            ollama_model: None,
         })
         .unwrap();
 
         assert!(!result.queued);
         assert_eq!(result.task.status, super::super::tasks::TaskStatus::InProgress);
         assert_eq!(result.run.status, NeedsReview);
+        assert_eq!(result.run.runner, AgentRunner::Claude);
         assert_eq!(result.run.project, "demo-app");
         assert!(result.run.diff.as_ref().is_some_and(|d| d.contains("agent-out")));
         assert!(fs::read_to_string(&todo_path).unwrap().contains("- [~]"));
@@ -2033,6 +2435,74 @@ Pages wired down:                         9000.
         remove_worktree(&repo, "demo-app", "start-1").unwrap();
         unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
         unsafe { std::env::remove_var("DEMERZEL_CLAUDE_BIN") };
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        let _ = fs::remove_dir_all(&fake_dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn start_agent_from_task_with_ollama_runner() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let repo = std::env::temp_dir().join(format!("demerzel-start-ollama-{pid}"));
+        let wt_root = std::env::temp_dir().join(format!("demerzel-start-ollama-wt-{pid}"));
+        let fake_dir = std::env::temp_dir().join(format!("demerzel-start-ollama-fake-{pid}"));
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        let _ = fs::remove_dir_all(&fake_dir);
+        init_repo(&repo);
+        fs::write(
+            repo.join("orchestrator.json"),
+            r#"{"name":"ollama-app","type":"app","commands":{"test":"exit 0"}}"#,
+        )
+        .unwrap();
+        let todo_path = repo.join("TODO.md");
+        fs::write(&todo_path, "- [ ] Simple fix\n").unwrap();
+        unsafe { std::env::set_var("DEMERZEL_WORKTREES_DIR", &wt_root) };
+        fs::create_dir_all(&fake_dir).unwrap();
+        install_fake_ollama(
+            &fake_dir,
+            "#!/bin/sh\necho ollama-suggestion\nexit 0\n",
+        );
+
+        let task = Task {
+            id: format!("{}:todo:1", repo.display()),
+            project: repo.display().to_string(),
+            title: "Simple fix".into(),
+            status: super::super::tasks::TaskStatus::Todo,
+            source: "todo".into(),
+            url: Some(todo_path.display().to_string()),
+        };
+        let mut reg = AgentRunRegistry::new();
+        let mut limiter = always_free_limiter();
+        let result = start_agent_from_task(StartAgentParams {
+            task: &task,
+            project_path: &repo,
+            registry: &mut reg,
+            limiter: &mut limiter,
+            timeout: Duration::from_secs(5),
+            base_ref: Some("main"),
+            cancel: None,
+            run_id: Some("ollama-1".into()),
+            runner: AgentRunner::Ollama,
+            ollama_model: Some(DEFAULT_OLLAMA_MODEL),
+        })
+        .unwrap();
+
+        assert!(!result.queued);
+        assert_eq!(result.run.runner, AgentRunner::Ollama);
+        assert_eq!(result.run.status, NeedsReview);
+        assert!(result
+            .run
+            .tests
+            .as_ref()
+            .is_some_and(|t| t.log.contains("ollama-suggestion")));
+        assert_eq!(result.task.status, super::super::tasks::TaskStatus::InProgress);
+
+        remove_worktree(&repo, "ollama-app", "ollama-1").unwrap();
+        unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
+        unsafe { std::env::remove_var("DEMERZEL_OLLAMA_BIN") };
         let _ = fs::remove_dir_all(&repo);
         let _ = fs::remove_dir_all(&wt_root);
         let _ = fs::remove_dir_all(&fake_dir);
@@ -2062,6 +2532,7 @@ Pages wired down:                         9000.
                 max_concurrent: 1,
                 min_free_memory_mb: 4096,
                 ollama_reserve_mb: 0,
+                ..AgentsConfig::default()
             },
             FixedMemory(100),
             FixedOllama(false),
@@ -2075,6 +2546,8 @@ Pages wired down:                         9000.
             base_ref: Some("main"),
             cancel: None,
             run_id: Some("queued-1".into()),
+            runner: AgentRunner::Claude,
+            ollama_model: None,
         })
         .unwrap();
 
