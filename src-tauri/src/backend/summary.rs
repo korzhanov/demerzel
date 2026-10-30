@@ -1,7 +1,8 @@
-//! Экспорт summary.json для виджета (#24).
+//! Экспорт summary.json для виджета (#24) и iCloud (#37).
 //!
 //! Формат версионирован. Запись атомарная: сначала временный файл, потом rename.
 //! Если содержимое не изменилось, файл не переписывается.
+//! Копия в iCloud Drive — см. `icloud_sync` (Files на iPhone); WidgetKit (#38) отдельно.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
