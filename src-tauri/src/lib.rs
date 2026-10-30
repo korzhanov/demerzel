@@ -1,3 +1,6 @@
+// The backend modules are pure Rust and do not depend on Tauri. See backend/mod.rs.
+pub mod backend;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {

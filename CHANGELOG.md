@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5 — 2026-10-30
+
+- Бэкенд: модули `scanner`, `ports`, `process`, `tasks`, `alerts`, `agents`, `storage`, `summary` без зависимости от Tauri. Чистая логика покрыта тестами (15). Закрывает #4.
+
 ## 0.1.4 — 2026-10-30
 
 - Доска GitHub Projects #13: все issues/PR синкаются со Status (workflow + `scripts/sync-project-board.mjs`). Конвенции обновлены.
