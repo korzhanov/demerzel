@@ -36,8 +36,32 @@ export function isRunning(s: ProcessStatus): boolean {
   return s === "Running" || s === "Starting";
 }
 
+export type AlertSeverity = "info" | "important" | "critical";
+export type AlertEventKind =
+  | "process_exited"
+  | "port_conflict"
+  | "agent_failed"
+  | "tests_failed";
+
+export interface AlertRuleWhen {
+  op: "always" | "exit_code_non_zero";
+}
+
+export interface AlertRule {
+  id: string;
+  kind: AlertEventKind;
+  when?: AlertRuleWhen;
+  severity: AlertSeverity;
+  enabled?: boolean;
+}
+
+export interface AlertsConfig {
+  rules: AlertRule[];
+}
+
 export interface Settings {
   scan_roots: string[];
+  alerts?: AlertsConfig;
 }
 
 export interface PortRow {

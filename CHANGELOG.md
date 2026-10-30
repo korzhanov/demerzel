@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.0 — 2026-10-30
+
+- Движок правил алертов: модель `AlertRule` / `AlertEvent` / `AlertCandidate`, уровни `critical` / `important` / `info`, правила по умолчанию и оценка в `settings.json` → `alerts`. Кандидаты без доставки (дедуп #21, notify #22, say #23). Документ `docs/alerts.md`, wireframe `references/alerts-rules-wireframe.md`, зеркало хелперов + `bun:test`. Закрывает #20.
+
 ## 0.24.0 — 2026-10-30
 
 - Контракт `commands.migrate` в `orchestrator.json`: `dem sync` вызывает команду из конфига (ORM-агностично); без поля / пусто — `no commands.migrate; skipped`; результат в ответе sync и в логе `watch` как `[name migrate]`. Хелпер `resolve_migrate_command`, доки в `docs/cli.md`, описание в JSON Schema. Закрывает #43.
