@@ -2,31 +2,44 @@
 
 Цель: подтвердить, что плагин выводит виджет на macOS и умеет обновлять его из Rust по событию. Это решает, остаётся ли плагин или переходим на Swift WidgetKit (#38).
 
-Требуется: macOS, Xcode, Bun 1.4.4, Rust stable.
+Требуется: macOS, Xcode, Bun 1.4.4, Rust stable, `xcodegen` (`brew install xcodegen`).
 
 ## Шаги
 
-1. Превью без сборки:
+1. Превью без сборки (CLI живёт в `tauri-plugin-widgets-api`, не в `tauri-widgets`):
    ```sh
-   bunx tauri-widgets preview ./widget.json --size small --watch
+   bunx tauri-plugin-widgets-api preview ./widget.json --size small --watch
    ```
    Проверить: виджет рисуется в браузере, правка JSON перезагружает превью.
 
-2. Минимальное приложение (отдельный каталог, чтобы не трогать основной проект):
+2. Минимальное приложение (каталог `spike-app/`, основной проект не трогаем):
    ```sh
    bunx create-tauri-app spike-app --template svelte-ts --manager bun --yes
    cd spike-app
-   bun run tauri add widgets   # или см. README плагина
+   bun install
+   bun run tauri add widgets
+   bun add tauri-plugin-widgets-api
    bunx tauri-widgets init
    bunx tauri-widgets signing --apply
    ```
    Группа App Group: `group.app.demerzel.orchestrator`.
 
+   Если `xcodebuild` ругается на `Tests/TauriWidgetsTests` — применить патч
+   `scripts/patch-swift-package.mjs` (уже в `spike-app` через `postinstall`).
+
 3. Регистрация в Rust: `tauri_plugin_widgets::init()` в `lib.rs`, `widgets:default` в `capabilities`.
+   Тик раз в 10 с + команда `tick` пишут конфиг через `set_widget_config` и `reload_all_timelines`.
 
-4. Установка виджета: `bun run tauri build --debug`, запустить `.app`, открыть Notification Center, добавить виджет Demerzel.
+4. Сборка и установка:
+   ```sh
+   bun run tauri build --debug
+   bun run spike:install   # codesign ad-hoc → /Applications → open
+   ```
+   Без `scripts/sign-macos.sh` host часто остаётся linker-signed → при запуске через
+   Finder/`open` запись в контейнер виджета даёт `IO error: Operation not permitted`.
 
-5. Обновление из Rust по событию: команда `tick` раз в 10 секунд меняет значение «failing» и вызывает обновление виджета через API плагина. Результат: значение в виджете меняется без перезапуска приложения.
+5. Notification Center → Edit Widgets → добавить **Demerzel**. Значение «N failing»
+   должно меняться без перезапуска приложения.
 
 ## Критерии
 
@@ -35,4 +48,5 @@
 
 ## Результат
 
-Записать в `docs/decisions/001-stack.md` (ADR-001, #2): go/no-go, версии плагина и macOS, что сломалось, если сломалось.
+- ADR: [`docs/decisions/001-stack.md`](../../docs/decisions/001-stack.md) — **go**
+- Полный отчёт (грабли, как повторить): [`docs/decisions/001-report.md`](../../docs/decisions/001-report.md)
