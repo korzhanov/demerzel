@@ -33,3 +33,7 @@ export function statusLabel(s: ProcessStatus): string {
 export function isRunning(s: ProcessStatus): boolean {
   return s === "Running" || s === "Starting";
 }
+
+export interface Settings {
+  scan_roots: string[];
+}

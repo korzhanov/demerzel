@@ -60,6 +60,23 @@ fn refresh_widget_from_summary(app: tauri::AppHandle, summary: Summary) -> Resul
     refresh_widget(&app, &summary)
 }
 
+fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|d| d.join(backend::settings::SETTINGS_FILE))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_settings(app: tauri::AppHandle) -> Result<backend::settings::Settings, String> {
+    backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_settings(app: tauri::AppHandle, settings: backend::settings::Settings) -> Result<(), String> {
+    backend::settings::save(&settings_path(&app)?, &settings).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn scan_projects(roots: Vec<String>) -> Result<Vec<Project>, String> {
     let mut all = Vec::new();
@@ -115,6 +132,8 @@ pub fn run() {
             greet,
             refresh_widget_from_summary,
             scan_projects,
+            get_settings,
+            save_settings,
             start_process,
             stop_process,
             list_processes,
