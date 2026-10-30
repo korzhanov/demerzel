@@ -223,6 +223,13 @@ fn save_settings(
     // Новая политика доставки; история дедупа сбрасывается вместе с конфигом.
     let mut g = gate.0.lock().map_err(|e| e.to_string())?;
     *g = DeliveryGate::from_config(&settings.alerts);
+    // App Intents (#101): первый scan_root → App Group siri-config.json.
+    if let Some(home) = backend::widgetkit_fallback::user_home() {
+        let root = backend::siri_config::root_from_scan_roots(&settings.scan_roots);
+        if let Err(e) = backend::siri_config::sync_ecosystem_root(&home, root) {
+            eprintln!("[demerzel] siri-config sync failed: {e}");
+        }
+    }
     Ok(())
 }
 
@@ -531,6 +538,11 @@ pub fn run() {
                 }
                 if let Ok(mut lim) = app.state::<AgentLimit>().0.lock() {
                     *lim = backend::agents::AgentLimiter::new(settings.agents);
+                }
+                // App Intents (#101): проброс ecosystem root в App Group.
+                if let Some(home) = backend::widgetkit_fallback::user_home() {
+                    let root = backend::siri_config::root_from_scan_roots(&settings.scan_roots);
+                    let _ = backend::siri_config::sync_ecosystem_root(&home, root);
                 }
             }
             Ok(())

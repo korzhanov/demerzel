@@ -15,6 +15,7 @@ pub mod summary;
 pub mod pulse;
 pub mod icloud_sync;
 pub mod widgetkit_fallback;
+pub mod siri_config;
 pub mod tasks;
 pub mod widget;
 pub mod widget_refresh;

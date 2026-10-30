@@ -7,7 +7,7 @@
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
-    "beforeBundleCommand": "./macos-widget/build-widget.sh",
+    "beforeBundleCommand": "./macos-siri/build-siri.sh && ./macos-widget/build-widget.sh",
     "frontendDist": "../build"
   },
   "app": {
@@ -35,6 +35,7 @@
     "macOS": {
       "entitlements": "./macos-widget/App.entitlements",
       "files": {
+        "PlugIns/DemerzelAppIntents.appex": "./macos-siri/build/Build/Products/Release/DemerzelAppIntents.appex",
         "PlugIns/TauriWidgetExtension.appex": "./macos-widget/build/Build/Products/Release/TauriWidgetExtension.appex"
       }
     }

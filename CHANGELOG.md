@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.47.0 — 2026-10-31
+
+- App Intents в продукте (#101): `AskDemerzelStatus` + `RestartProcess` (с подтверждением) в `DemerzelAppIntents.appex`; транспорт `dem.sock`; корень экосистемы в App Group `siri-config.json` из `scan_roots`. Сборка `macos-siri/build-siri.sh` в `beforeBundleCommand`. Контракт/тесты `siri-bridge`. Закрывает #101.
+
 ## 0.46.0 — 2026-10-31
 
 - Спайк Siri / App Intents (#100): ADR-003 **go** — Swift App Shortcut «Спроси Demerzel …», entity проект, dialog+snippet; транспорт `dem.sock` (не App Group / не CLI primary). Эталон `spikes/2-siri-app-intents/`, probe `dem-sock-probe.swift`, docs `siri-app-intents.md`, контракт+тесты `siri-bridge`. Далее #101. Закрывает #100.

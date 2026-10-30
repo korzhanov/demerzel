@@ -1,6 +1,6 @@
 # ADR-003: App Intents / Siri Shortcuts для Demerzel
 
-- **Status:** accepted (spike)
+- **Status:** accepted (spike → production #101)
 - **Date:** 2026-10-31
 - **Issues:** #100 (spike) → #101 (интенты статуса и перезапуска)
 - **Report:** [003-report.md](./003-report.md)
@@ -41,11 +41,17 @@
 - Xcode 27.2, Swift 6.4.2
 - Bun 1.4.4, Demerzel CLI с `pulse` (#102 / 0.45.0)
 
+## Production (#101)
+
+- Extension: `src-tauri/macos-siri/` → `PlugIns/DemerzelAppIntents.appex`
+- Intents: `AskDemerzelStatus`, `RestartProcess` (`requestConfirmation` перед restart; dialog-only на macOS 14+)
+- Ecosystem root: App Group `siri-config.json` from `settings.scan_roots`
+
 ## Consequences
 
-- #101 реализует интенты в основном приложении (Swift рядом с host / extension), не отдельный продукт.
-- Root экосистемы (`DEMERZEL_ROOT` / UserDefaults) нужно пробросить из настроек Tauri.
-- Не блокируем #101 ожиданием Team ID / App Store sandbox; локальный путь готов.
+- #101 встроил интенты в `DemerzelAppIntents.appex` (не отдельный продукт).
+- Root экосистемы пробрасывается из `scan_roots` в App Group `siri-config.json` (+ `DEMERZEL_ROOT` / UserDefaults).
+- Локальный путь без Team ID / App Store sandbox готов; MAS — отдельно.
 - iOS-клиент / remote Siri вне scope.
 
 ## Alternatives considered

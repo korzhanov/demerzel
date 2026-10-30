@@ -1,6 +1,6 @@
 /**
- * Контракт моста App Intents ↔ dem.sock (#100).
- * Эталон Swift: spikes/2-siri-app-intents/; live-интенты — #101.
+ * Контракт моста App Intents ↔ dem.sock (#101).
+ * Production Swift: src-tauri/macos-siri/; эталон спайка: spikes/2-siri-app-intents/.
  */
 
 export type DemSockAction = "pulse" | "restart" | "status" | "up" | "down" | "sync" | "watch";
@@ -24,6 +24,12 @@ export type PulseJsonForDialog = {
   state?: string;
 };
 
+export type RestartJsonForDialog = {
+  project: string;
+  status: string;
+  id?: number;
+};
+
 /** Placeholder Apple: phrase must include application name. */
 export const APPLICATION_NAME_PLACEHOLDER = "\\(.applicationName)" as const;
 
@@ -35,7 +41,7 @@ export type AppShortcutPhrase = {
   locale: "ru" | "en";
 };
 
-/** Каталог фраз спайка (имя приложения обязательно). */
+/** Каталог фраз AskDemerzelStatus (имя приложения обязательно). */
 export const SIRI_ASK_PHRASES: AppShortcutPhrase[] = [
   {
     swift: "Спроси \\(.applicationName) про \\(\\.$project)",
@@ -59,6 +65,28 @@ export const SIRI_ASK_PHRASES: AppShortcutPhrase[] = [
   },
 ];
 
+/** Каталог фраз RestartProcess (имя приложения обязательно). */
+export const SIRI_RESTART_PHRASES: AppShortcutPhrase[] = [
+  {
+    swift: "Перезапусти \\(.applicationName) \\(\\.$project)",
+    exampleRu: "Перезапусти Demerzel parser",
+    locale: "ru",
+  },
+  {
+    swift: "Restart \\(.applicationName) \\(\\.$project)",
+    exampleRu: "Restart Demerzel parser",
+    locale: "en",
+  },
+];
+
+/** Production intents (#101). */
+export const SIRI_PRODUCTION_INTENTS = [
+  "AskDemerzelStatus",
+  "RestartProcess",
+] as const;
+
+export type SiriProductionIntent = (typeof SIRI_PRODUCTION_INTENTS)[number];
+
 export function formatEtaRu(secs: number): string {
   if (secs < 60) return `ещё ${secs} с`;
   if (secs < 3600) return `ещё ${Math.floor((secs + 59) / 60)} мин`;
@@ -77,6 +105,13 @@ export function formatPulseDialog(
     dialog += `, ${formatEtaRu(pulse.eta_seconds)}`;
   }
   return dialog;
+}
+
+/** Текст IntentDialog после restart JSON. */
+export function formatRestartDialog(restart: RestartJsonForDialog): string {
+  const name = restart.project.trim() || "проект";
+  const status = restart.status.trim() || "restarted";
+  return `${name}: ${status}`;
 }
 
 export function buildPulseSockRequest(opts: {
@@ -123,6 +158,14 @@ export function pulseFromSockOutput(output: string): PulseJsonForDialog {
   return obj;
 }
 
+export function restartFromSockOutput(output: string): RestartJsonForDialog {
+  const obj = JSON.parse(output) as RestartJsonForDialog;
+  if (typeof obj.project !== "string" || typeof obj.status !== "string") {
+    throw new Error("dem.sock: restart JSON missing project/status");
+  }
+  return obj;
+}
+
 export function phraseIncludesApplicationName(swiftPhrase: string): boolean {
   return (
     swiftPhrase.includes("\\(.applicationName)") ||
@@ -130,6 +173,28 @@ export function phraseIncludesApplicationName(swiftPhrase: string): boolean {
   );
 }
 
+/** RestartProcess требует подтверждение (ConfirmationBehavior.required). */
+export function restartRequiresConfirmation(): boolean {
+  return true;
+}
+
+export function productionIntents(): {
+  status: SiriProductionIntent;
+  restart: SiriProductionIntent;
+  transport: "unix-socket";
+  appex: string;
+  confirmation: boolean;
+} {
+  return {
+    status: "AskDemerzelStatus",
+    restart: "RestartProcess",
+    transport: "unix-socket",
+    appex: "DemerzelAppIntents.appex",
+    confirmation: restartRequiresConfirmation(),
+  };
+}
+
+/** @deprecated spike #100 — next was #101; use productionIntents(). */
 export function spikeVerdict(): {
   status: "go" | "no-go";
   transport: "unix-socket";

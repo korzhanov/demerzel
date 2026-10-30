@@ -2,12 +2,18 @@ import { describe, expect, test } from "bun:test";
 import {
   APPLICATION_NAME_PLACEHOLDER,
   SIRI_ASK_PHRASES,
+  SIRI_PRODUCTION_INTENTS,
+  SIRI_RESTART_PHRASES,
   buildPulseSockRequest,
   buildRestartSockRequest,
   formatPulseDialog,
+  formatRestartDialog,
   parseSockEnvelope,
   phraseIncludesApplicationName,
+  productionIntents,
   pulseFromSockOutput,
+  restartFromSockOutput,
+  restartRequiresConfirmation,
   spikeVerdict,
 } from "./siri-bridge";
 
@@ -17,14 +23,34 @@ describe("SIRI_ASK_PHRASES", () => {
     for (const p of SIRI_ASK_PHRASES) {
       expect(phraseIncludesApplicationName(p.swift)).toBe(true);
       expect(p.swift).toContain(APPLICATION_NAME_PLACEHOLDER);
-      expect(p.exampleRu.toLowerCase()).toContain("demerzel");
     }
+    expect(SIRI_ASK_PHRASES.some((p) => p.exampleRu.toLowerCase().includes("demerzel"))).toBe(
+      true,
+    );
   });
 
   test("russian examples mention Demerzel and project", () => {
     const ru = SIRI_ASK_PHRASES.filter((p) => p.locale === "ru");
     expect(ru.some((p) => p.exampleRu.includes("Спроси Demerzel"))).toBe(true);
-    expect(ru.every((p) => /parser|проект/i.test(p.exampleRu) || p.exampleRu.includes("parser"))).toBe(true);
+    expect(
+      ru.every((p) => /parser|проект/i.test(p.exampleRu) || p.exampleRu.includes("parser")),
+    ).toBe(true);
+  });
+});
+
+describe("SIRI_RESTART_PHRASES", () => {
+  test("every restart phrase includes applicationName", () => {
+    expect(SIRI_RESTART_PHRASES.length).toBeGreaterThanOrEqual(2);
+    for (const p of SIRI_RESTART_PHRASES) {
+      expect(phraseIncludesApplicationName(p.swift)).toBe(true);
+      expect(p.exampleRu.toLowerCase()).toContain("demerzel");
+    }
+  });
+
+  test("ru restart example", () => {
+    expect(
+      SIRI_RESTART_PHRASES.some((p) => p.exampleRu === "Перезапусти Demerzel parser"),
+    ).toBe(true);
   });
 });
 
@@ -42,6 +68,14 @@ describe("formatPulseDialog", () => {
 
   test("without eta", () => {
     expect(formatPulseDialog({ summary: "сборка" }, "web")).toBe("web: сборка");
+  });
+});
+
+describe("formatRestartDialog", () => {
+  test("restarted status", () => {
+    expect(formatRestartDialog({ project: "parser", status: "restarted" })).toBe(
+      "parser: restarted",
+    );
   });
 });
 
@@ -80,11 +114,33 @@ describe("dem.sock request/envelope", () => {
     );
   });
 
+  test("parse restart output", () => {
+    const restart = { project: "parser", status: "restarted", id: 7 };
+    expect(formatRestartDialog(restartFromSockOutput(JSON.stringify(restart)))).toBe(
+      "parser: restarted",
+    );
+  });
+
   test("envelope with error", () => {
     const env = parseSockEnvelope(
       JSON.stringify({ output: "", error: "missing field `root`" }),
     );
     expect(env.error).toBe("missing field `root`");
+  });
+});
+
+describe("productionIntents #101", () => {
+  test("AskDemerzelStatus + RestartProcess via dem.sock appex", () => {
+    expect(SIRI_PRODUCTION_INTENTS).toContain("AskDemerzelStatus");
+    expect(SIRI_PRODUCTION_INTENTS).toContain("RestartProcess");
+    expect(productionIntents()).toEqual({
+      status: "AskDemerzelStatus",
+      restart: "RestartProcess",
+      transport: "unix-socket",
+      appex: "DemerzelAppIntents.appex",
+      confirmation: true,
+    });
+    expect(restartRequiresConfirmation()).toBe(true);
   });
 });
 
