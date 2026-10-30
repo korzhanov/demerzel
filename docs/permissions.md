@@ -13,6 +13,11 @@ Demerzel читает папки проектов. macOS защищает нек
 - Приложение показывает сообщение с путём к папке и ссылкой на этот документ.
 - При сканировании корней (`scanner`) подсказка попадает в UI; CLI `dem status` / `dem up` читают манифест в `ROOT` и печатают ошибку доступа к пути сервиса, если OS запретила чтение (см. [docs/cli.md](cli.md)).
 
+## iCloud Drive и summary (#37)
+
+Если включена синхронизация `settings.icloud.enabled`, Demerzel пишет `summary.json` в  
+`~/Library/Mobile Documents/com~apple~CloudDocs/<folder>/`. Без доступа к iCloud Drive запись вернёт ошибку; macOS-виджет при этом может продолжать работать. Подробности: [icloud-summary.md](icloud-summary.md).
+
 ## Для разработчиков
 
 - Подсказка формируется в `backend/scanner.rs::access_hint` для `io::ErrorKind::PermissionDenied`.

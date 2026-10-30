@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.37.0 — 2026-10-30
+
+- Синхронизация `summary.json` в iCloud Drive для iPhone: `settings.icloud` (`enabled`, `folder`), модуль `icloud_sync`, атомарная запись в `CloudDocs/<folder>/summary.json`, команда `sync_summary_to_icloud` (best-effort из `refresh_widget_from_summary`). Docs `docs/icloud-summary.md`. Не WidgetKit (#38). Закрывает #37.
+
 ## 0.36.0 — 2026-10-30
 
 - Адаптер Notion `NotionSource`: REST через `curl` + `NOTION_TOKEN`, query database, маппинг title/status/select/checkbox, кэш 60 с, пагинация. Поля `database_id` / `title_property` / `status_property` в схеме; docs в `tasks-format.md`. При старте агента remote page не меняется. Закрывает #36.

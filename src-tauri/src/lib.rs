@@ -12,6 +12,7 @@ use backend::speak::{self, SaySpeaker};
 use backend::registry::{Registry, Row};
 use backend::scanner::{self, Project};
 use backend::logs::LogLine;
+use backend::icloud_sync::{self, SyncResult};
 use backend::summary::Summary;
 use backend::widget;
 use backend::widget_refresh::{Throttle, DEFAULT_MIN_INTERVAL_SECS};
@@ -129,7 +130,17 @@ pub fn refresh_widget(app: &tauri::AppHandle, summary: &Summary) -> Result<bool,
 
 #[tauri::command]
 fn refresh_widget_from_summary(app: tauri::AppHandle, summary: Summary) -> Result<bool, String> {
+    // iCloud sync best-effort: ошибка не блокирует macOS-виджет (#37 ≠ #38).
+    let _ = sync_summary_to_icloud(app.clone(), summary.clone());
     refresh_widget(&app, &summary)
+}
+
+/// Пишет `summary.json` в iCloud Drive, если `settings.icloud.enabled`.
+#[tauri::command]
+fn sync_summary_to_icloud(app: tauri::AppHandle, summary: Summary) -> Result<SyncResult, String> {
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let home = icloud_sync::user_home().ok_or_else(|| "HOME is not set".to_string())?;
+    icloud_sync::sync_summary(&home, &settings.icloud, &summary).map_err(|e| e.to_string())
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -469,6 +480,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             refresh_widget_from_summary,
+            sync_summary_to_icloud,
             scan_projects,
             get_settings,
             save_settings,

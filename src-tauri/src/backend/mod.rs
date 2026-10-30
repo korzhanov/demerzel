@@ -12,6 +12,7 @@ pub mod scanner;
 pub mod settings;
 pub mod storage;
 pub mod summary;
+pub mod icloud_sync;
 pub mod tasks;
 pub mod widget;
 pub mod widget_refresh;

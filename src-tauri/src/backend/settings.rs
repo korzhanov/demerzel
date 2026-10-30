@@ -10,6 +10,7 @@ use std::path::Path;
 
 use super::agents::AgentsConfig;
 use super::alerts::AlertsConfig;
+use super::icloud_sync::ICloudSyncConfig;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
@@ -23,6 +24,9 @@ pub struct Settings {
     /// Лимит параллельных агентов и порог памяти (#29).
     #[serde(default)]
     pub agents: AgentsConfig,
+    /// Синхронизация `summary.json` в iCloud Drive для iPhone (#37).
+    #[serde(default)]
+    pub icloud: ICloudSyncConfig,
 }
 
 /// Убирает пустые строки и дубликаты, сохраняя порядок.
@@ -99,6 +103,26 @@ mod tests {
         assert_eq!(loaded.scan_roots, vec!["/proj".to_string()]);
         assert_eq!(loaded.alerts, AlertsConfig::default());
         assert_eq!(loaded.agents, crate::backend::agents::AgentsConfig::default());
+        assert_eq!(loaded.icloud, crate::backend::icloud_sync::ICloudSyncConfig::default());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn icloud_section_roundtrip() {
+        use crate::backend::icloud_sync::ICloudSyncConfig;
+        let path = tmp_file("icloud");
+        let s = Settings {
+            scan_roots: vec!["/p".into()],
+            icloud: ICloudSyncConfig {
+                enabled: true,
+                folder: "Demerzel/Status".into(),
+            },
+            ..Settings::default()
+        };
+        save(&path, &s).unwrap();
+        let loaded = load(&path).unwrap();
+        assert!(loaded.icloud.enabled);
+        assert_eq!(loaded.icloud.folder, "Demerzel/Status");
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
