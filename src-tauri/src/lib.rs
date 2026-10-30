@@ -12,10 +12,11 @@ use backend::speak::{self, SaySpeaker};
 use backend::registry::{Registry, Row};
 use backend::scanner::{self, Project};
 use backend::logs::LogLine;
-use backend::icloud_sync::{self, SyncResult};
+use backend::icloud_sync::{self, SyncResult as ICloudSyncResult};
 use backend::summary::Summary;
 use backend::widget;
 use backend::widget_refresh::{Throttle, DEFAULT_MIN_INTERVAL_SECS};
+use backend::widgetkit_fallback::{self, SyncResult as WidgetKitSyncResult};
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
@@ -130,17 +131,73 @@ pub fn refresh_widget(app: &tauri::AppHandle, summary: &Summary) -> Result<bool,
 
 #[tauri::command]
 fn refresh_widget_from_summary(app: tauri::AppHandle, summary: Summary) -> Result<bool, String> {
-    // iCloud sync best-effort: ошибка не блокирует macOS-виджет (#37 ≠ #38).
+    // iCloud sync best-effort: ошибка не блокирует macOS-виджет (#37).
     let _ = sync_summary_to_icloud(app.clone(), summary.clone());
-    refresh_widget(&app, &summary)
+    match refresh_widget(&app, &summary) {
+        Ok(updated) => {
+            // Опциональная запись в App Group для native WidgetKit (#38).
+            let _ = sync_summary_to_widgetkit(app.clone(), summary.clone());
+            Ok(updated)
+        }
+        Err(plugin_err) => {
+            // Плагин недоступен → forced write summary.json в App Group (fallback).
+            match sync_summary_to_widgetkit_forced(app, summary) {
+                Ok(r)
+                    if matches!(
+                        r.outcome,
+                        widgetkit_fallback::SyncOutcome::Written
+                            | widgetkit_fallback::SyncOutcome::Unchanged
+                    ) =>
+                {
+                    Ok(matches!(r.outcome, widgetkit_fallback::SyncOutcome::Written))
+                }
+                Ok(_) => Err(format!(
+                    "tauri-plugin-widgets unavailable ({plugin_err}); widgetkit fallback disabled"
+                )),
+                Err(e) => Err(format!(
+                    "tauri-plugin-widgets unavailable ({plugin_err}); widgetkit fallback failed: {e}"
+                )),
+            }
+        }
+    }
 }
 
 /// Пишет `summary.json` в iCloud Drive, если `settings.icloud.enabled`.
 #[tauri::command]
-fn sync_summary_to_icloud(app: tauri::AppHandle, summary: Summary) -> Result<SyncResult, String> {
+fn sync_summary_to_icloud(
+    app: tauri::AppHandle,
+    summary: Summary,
+) -> Result<ICloudSyncResult, String> {
     let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
     let home = icloud_sync::user_home().ok_or_else(|| "HOME is not set".to_string())?;
     icloud_sync::sync_summary(&home, &settings.icloud, &summary).map_err(|e| e.to_string())
+}
+
+/// Пишет `summary.json` в App Group, если `settings.widgetkit.enabled` (#38).
+#[tauri::command]
+fn sync_summary_to_widgetkit(
+    app: tauri::AppHandle,
+    summary: Summary,
+) -> Result<WidgetKitSyncResult, String> {
+    sync_widgetkit_inner(&app, &summary, false)
+}
+
+fn sync_summary_to_widgetkit_forced(
+    app: tauri::AppHandle,
+    summary: Summary,
+) -> Result<WidgetKitSyncResult, String> {
+    sync_widgetkit_inner(&app, &summary, true)
+}
+
+fn sync_widgetkit_inner(
+    app: &tauri::AppHandle,
+    summary: &Summary,
+    force: bool,
+) -> Result<WidgetKitSyncResult, String> {
+    let settings = backend::settings::load(&settings_path(app)?).map_err(|e| e.to_string())?;
+    let home = widgetkit_fallback::user_home().ok_or_else(|| "HOME is not set".to_string())?;
+    widgetkit_fallback::sync_summary(&home, &settings.widgetkit, summary, force)
+        .map_err(|e| e.to_string())
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -481,6 +538,7 @@ pub fn run() {
             greet,
             refresh_widget_from_summary,
             sync_summary_to_icloud,
+            sync_summary_to_widgetkit,
             scan_projects,
             get_settings,
             save_settings,

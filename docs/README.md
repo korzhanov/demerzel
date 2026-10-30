@@ -27,6 +27,7 @@
 | [agents.md](agents.md) | Worktree, Claude CLI, Ollama, лимиты, ревью (#27–#33) |
 | [alerts.md](alerts.md) | Правила алертов, notify / speak, quiet hours (#20–#23) |
 | [icloud-summary.md](icloud-summary.md) | `summary.json` → iCloud Drive для iPhone (#37) |
+| [widgetkit-fallback.md](widgetkit-fallback.md) | Native Swift WidgetKit fallback, App Group (#38) |
 
 ## ADR (Architecture Decision Records)
 
@@ -61,6 +62,6 @@
 | 4 | Алерты | #20–#23 |
 | 5 | Виджет / summary | #25–#26 |
 | 6 | Агенты (worktree → ревью) | #27–#33 |
-| 7 | Later / fallback | #36 Notion (0.36.0), #37 iCloud summary (0.37.0), #38 Swift WidgetKit |
+| 7 | Later / fallback | #36 Notion (0.36.0), #37 iCloud (0.37.0), #38 WidgetKit fallback (0.38.0) |
 
 Правила доски и статусов — в [CONVENTIONS.md](CONVENTIONS.md#github-project).

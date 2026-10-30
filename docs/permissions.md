@@ -18,6 +18,11 @@ Demerzel читает папки проектов. macOS защищает нек
 Если включена синхронизация `settings.icloud.enabled`, Demerzel пишет `summary.json` в  
 `~/Library/Mobile Documents/com~apple~CloudDocs/<folder>/`. Без доступа к iCloud Drive запись вернёт ошибку; macOS-виджет при этом может продолжать работать. Подробности: [icloud-summary.md](icloud-summary.md).
 
+## App Group и WidgetKit fallback (#38)
+
+При `settings.widgetkit.enabled` (или forced fallback после ошибки плагина) host пишет  
+`~/Library/Group Containers/group.app.demerzel.orchestrator/summary.json`. Для рабочего контейнера нужны подпись и App Group в Developer portal — см. [widgetkit-fallback.md](widgetkit-fallback.md).
+
 ## Для разработчиков
 
 - Подсказка формируется в `backend/scanner.rs::access_hint` для `io::ErrorKind::PermissionDenied`.

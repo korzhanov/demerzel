@@ -86,11 +86,11 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 
 Монорепо / несколько сервисов: корневой [`demerzel.yaml`](docs/demerzel-yaml.md) перечисляет сервисы; детали каждого проекта остаются в его `orchestrator.json`.
 
-Настройки приложения (алерты, лимиты агентов, Ollama, iCloud summary) — в `settings.json` приложения, не в `orchestrator.json`. Подробности: [docs/alerts.md](docs/alerts.md), [docs/agents.md](docs/agents.md), [docs/icloud-summary.md](docs/icloud-summary.md).
+Настройки приложения (алерты, лимиты агентов, Ollama, iCloud summary, WidgetKit fallback) — в `settings.json` приложения, не в `orchestrator.json`. Подробности: [docs/alerts.md](docs/alerts.md), [docs/agents.md](docs/agents.md), [docs/icloud-summary.md](docs/icloud-summary.md), [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md).
 
 ## Статус
 
-Версия: см. [`VERSION`](VERSION). План работ — [GitHub Issues](https://github.com/korzhanov/demerzel/issues); фазы через метки `phase-0` … `phase-7`. Оставшаяся later-задача phase-7: **#38** Swift WidgetKit (Notion #36 и iCloud #37 закрыты).
+Версия: см. [`VERSION`](VERSION). План работ — [GitHub Issues](https://github.com/korzhanov/demerzel/issues); фазы через метки `phase-0` … `phase-7`. Phase-7 later (#36–#38) закрыты в 0.36–0.38.
 
 ## Документация
 
@@ -104,6 +104,7 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 - [docs/agents.md](docs/agents.md) — worktree, Claude / Ollama, ревью
 - [docs/alerts.md](docs/alerts.md) — правила и доставка алертов
 - [docs/icloud-summary.md](docs/icloud-summary.md) — `summary.json` → iCloud для iPhone
+- [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md) — native WidgetKit fallback (#38)
 - [docs/permissions.md](docs/permissions.md) — доступ к папкам macOS
 - [docs/decisions/](docs/decisions/) — ADR
 - [references/](references/README.md) — мокапы и ассеты

@@ -13,6 +13,7 @@ pub mod settings;
 pub mod storage;
 pub mod summary;
 pub mod icloud_sync;
+pub mod widgetkit_fallback;
 pub mod tasks;
 pub mod widget;
 pub mod widget_refresh;

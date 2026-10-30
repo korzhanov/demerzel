@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.38.0 — 2026-10-30
+
+- Запасной Swift WidgetKit: scaffold `macos-widgetkit/` (Timeline + App Group + чтение `summary.json`), модуль `widgetkit_fallback`, `settings.widgetkit.enabled`, команда `sync_summary_to_widgetkit`; при ошибке `tauri-plugin-widgets` — forced запись в App Group. Docs `docs/widgetkit-fallback.md`. Не App Store / не iOS extension. Закрывает #38.
+
 ## 0.37.0 — 2026-10-30
 
 - Синхронизация `summary.json` в iCloud Drive для iPhone: `settings.icloud` (`enabled`, `folder`), модуль `icloud_sync`, атомарная запись в `CloudDocs/<folder>/summary.json`, команда `sync_summary_to_icloud` (best-effort из `refresh_widget_from_summary`). Docs `docs/icloud-summary.md`. Не WidgetKit (#38). Закрывает #37.

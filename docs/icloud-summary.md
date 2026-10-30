@@ -1,6 +1,6 @@
 # Синхронизация summary.json через iCloud (#37)
 
-Demerzel (macOS) может писать ту же сводку, что питает виджет, в **iCloud Drive**, чтобы файл был виден на iPhone в приложении **Файлы**. Это не Swift WidgetKit и не iOS-виджет — запасной WidgetKit остаётся в [#38](https://github.com/korzhanov/demerzel/issues/38).
+Demerzel (macOS) может писать ту же сводку, что питает виджет, в **iCloud Drive**, чтобы файл был виден на iPhone в приложении **Файлы**. Это не Swift WidgetKit и не iOS-виджет — нативный WidgetKit fallback: [widgetkit-fallback.md](widgetkit-fallback.md) (#38).
 
 ## Зачем
 
@@ -51,7 +51,7 @@ Demerzel (macOS) может писать ту же сводку, что пита
 
 1. Включить `icloud.enabled` на Mac и дождаться записи `summary.json`.
 2. На iPhone: **Файлы** → iCloud Drive → папка из `folder`.
-3. Дальше: Shortcuts / сторонний виджет / будущий iOS-клиент читают JSON. Нативный WidgetKit extension для macOS/iOS — отдельно, issue **#38**.
+3. Дальше: Shortcuts / сторонний виджет / будущий iOS-клиент читают JSON. Нативный macOS WidgetKit (App Group, не iCloud) — [widgetkit-fallback.md](widgetkit-fallback.md).
 
 ## Модуль
 
