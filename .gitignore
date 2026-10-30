@@ -12,3 +12,4 @@ vite.config.ts.timestamp-*
 # Tauri / build
 src-tauri/target
 src-tauri/gen
+bun.lock
