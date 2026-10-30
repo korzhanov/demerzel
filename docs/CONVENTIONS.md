@@ -12,6 +12,22 @@
 - Одна задача из issues = одна ветка = один PR, где возможно.
 - Параллельная работа: каждый issue имеет метки фазы и области (`backend`, `frontend`, `ports`, `agents` и т. д.). Задачи с разными областями можно вести параллельно, задачи одной области с одинаковой фазой лучше делать последовательно.
 
+## GitHub Project
+
+Доска: [users/korzhanov/projects/13](https://github.com/users/korzhanov/projects/13) (Demerzel).
+
+Все issues и PR репозитория должны быть на доске со статусом:
+
+| Событие | Status |
+|---|---|
+| новый / открытый issue | Backlog |
+| issue с открытым PR (упоминание `#N`) | In progress |
+| draft PR | In progress |
+| открытый PR | In review |
+| closed issue / merged или closed PR | Done |
+
+Автоматизация: `.github/workflows/project-board.yml` (нужен secret `PROJECT_TOKEN` со scope `repo` + `project`). Разовая синхронизация: `bun scripts/sync-project-board.mjs`. Встроенные workflow проекта (Auto-add, Item closed, PR merged) тоже включены.
+
 ## Коммиты
 
 Формат Conventional Commits: `тип(область): описание`.

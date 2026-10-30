@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 — 2026-10-30
+
+- Доска GitHub Projects #13: все issues/PR синкаются со Status (workflow + `scripts/sync-project-board.mjs`). Конвенции обновлены.
+
 ## 0.1.3 — 2026-10-30
 
 - Спайк виджета (#1): инструкция, конфиг виджета `widget.json`, критерии go/no-go в `spikes/1-widget-plugin/`.
