@@ -8,3 +8,4 @@ pub mod storage;
 pub mod summary;
 pub mod tasks;
 pub mod widget;
+pub mod widget_refresh;
