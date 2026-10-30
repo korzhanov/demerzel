@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.0 — 2026-10-30
+
+- Headless-раннер Claude Code CLI поверх worktree: `claude -p` в каталоге run, промпт из задачи + `CLAUDE.md`, сбор stdout/stderr/кода/длительности, таймаут и отмена SIGTERM дереву процессов (`DEMERZEL_CLAUDE_BIN`). Закрывает #28.
+
 ## 0.29.0 — 2026-10-30
 
 - Менеджер git worktree для агентов: `create_worktree` / `remove_worktree` в `~/.orchestrator/worktrees/<project>/<run-id>` с веткой `agent/<run-id>` (`DEMERZEL_WORKTREES_DIR`), изоляция от основной ветки, документ `docs/agents.md`. Закрывает #27.
