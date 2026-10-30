@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "The Shadow Orchestrator of Your Local Stack Empire"
 authors = ["you"]
 edition = "2024"
+# Tauri picks this when [[bin]] dem (CLI) coexists with src/main.rs
+default-run = "demerzel"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
