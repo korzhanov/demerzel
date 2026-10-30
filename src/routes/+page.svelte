@@ -10,6 +10,8 @@
     type Project,
     type ProcessRow,
   } from "$lib/types";
+  import { clampPortPollInterval } from "$lib/ports";
+  import PortsPanel from "$lib/components/PortsPanel.svelte";
 
   let roots = $state("");
   let projects = $state<Project[]>([]);
@@ -24,7 +26,6 @@
   let portsError = $state("");
   let portsBusy = $state(false);
   let portInterval = $state(5);
-  let confirmPort = $state<PortRow | null>(null);
   let tasks = $state<Task[]>([]);
   let taskErrors = $state<string[]>([]);
   let tasksBusy = $state(false);
@@ -80,11 +81,8 @@
     } catch (e) { taskErrors = [...taskErrors, String(e)]; }
   }
 
-  async function confirmStop() {
-    const row = confirmPort;
-    if (!row || row.managed_id === null) return;
-    confirmPort = null;
-    await stop(row.managed_id);
+  async function stopManagedFromPorts(managedId: number) {
+    await stop(managedId);
     await refreshPorts();
   }
 
@@ -188,7 +186,7 @@
     const poll = setInterval(() => { void refresh(); }, 1000);
     let nextPortPoll = Date.now();
     const portPoll = setInterval(() => {
-      const interval = Math.max(1, Math.min(60, Number(portInterval) || 5));
+      const interval = clampPortPollInterval(Number(portInterval));
       if (Date.now() >= nextPortPoll) {
         nextPortPoll = Date.now() + interval * 1000;
         void refreshPorts();
@@ -277,33 +275,14 @@
     <pre class="logs">{#each logs as line, i (i)}<span class:err={line.stream === "stderr"}>{line.text}
 </span>{/each}</pre>
   </section>
-  <section aria-labelledby="ports-title">
-    <h2 id="ports-title">Порты</h2>
-    <div class="row">
-      <button type="button" disabled={portsBusy} onclick={refreshPorts}>Обновить порты</button>
-      <label>Интервал опроса, секунд <input type="number" min="1" max="60" bind:value={portInterval} /></label>
-    </div>
-    {#if portsError}<p class="error" role="alert">{portsError}</p>{/if}
-    {#if confirmPort}
-      <div class="confirmation" role="alert">
-        <p>Остановить управляемый процесс {confirmPort.command} (PID {confirmPort.pid}) проекта {confirmPort.project}? Будет остановлена вся группа процесса.</p>
-        <button type="button" onclick={confirmStop}>Да, остановить</button>
-        <button type="button" onclick={() => { confirmPort = null; }}>Отмена</button>
-      </div>
-    {/if}
-    {#if ports.length === 0}<p>Слушающих портов не найдено.</p>
-    {:else}
-      <div class="table-scroll"><table>
-        <thead><tr><th>Порт</th><th>Проект</th><th>Процесс</th><th>PID</th><th>Статус</th><th>Действие</th></tr></thead>
-        <tbody>{#each ports as port (`${port.pid}:${port.port}`)}
-          <tr class:conflict={port.status === "conflict"} class:foreign={port.status === "foreign"}>
-            <td>{port.port}</td><td>{port.project ?? "—"}</td><td>{port.command}</td><td>{port.pid}</td><td>{port.status}</td>
-            <td>{#if port.managed_id !== null}<button type="button" onclick={() => { confirmPort = port; }}>Остановить…</button>{:else}Только просмотр{/if}</td>
-          </tr>
-        {/each}</tbody>
-      </table></div>
-    {/if}
-  </section>
+  <PortsPanel
+    {ports}
+    {portsError}
+    {portsBusy}
+    bind:portInterval
+    onRefresh={refreshPorts}
+    onStopManaged={stopManagedFromPorts}
+  />
 
   <section aria-labelledby="tasks-title">
     <h2 id="tasks-title">Задачи</h2>
@@ -346,11 +325,6 @@
   .logs { background: #0d0d12; color: #ddd; padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; }
   .err { color: #ff7b72; }
   .error { color: #b00020; overflow-wrap: anywhere; }
-  .table-scroll { overflow-x: auto; }
-  .conflict { background: #ffebee; }
-  .foreign { background: #fff8e1; }
-  .confirmation { padding: 12px; border: 1px solid #b00020; margin-bottom: 12px; }
-  .confirmation button { margin-right: 8px; }
   .task-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
   .task-column { background: #f4f5f8; border-radius: 8px; padding: 12px; }
   .task-column h3 { margin-top: 0; font-size: 1rem; }
