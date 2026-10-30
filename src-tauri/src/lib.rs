@@ -81,7 +81,11 @@ fn save_settings(app: tauri::AppHandle, settings: backend::settings::Settings) -
 fn scan_projects(roots: Vec<String>) -> Result<Vec<Project>, String> {
     let mut all = Vec::new();
     for root in roots {
-        all.extend(scanner::scan(&PathBuf::from(root)).map_err(|e| e.to_string())?);
+        let path = PathBuf::from(&root);
+        let found = scanner::scan(&path).map_err(|e| {
+            scanner::access_hint(&e, &path).unwrap_or_else(|| format!("{}: {e}", path.display()))
+        })?;
+        all.extend(found);
     }
     Ok(all)
 }

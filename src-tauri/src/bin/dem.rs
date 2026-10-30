@@ -48,7 +48,8 @@ fn status(roots: &[PathBuf]) -> ExitCode {
                 print_tree(&projects, 1);
             }
             Err(e) => {
-                eprintln!("dem: {}: {e}", root.display());
+                let msg = scanner::access_hint(&e, root).unwrap_or_else(|| format!("{}: {e}", root.display()));
+                eprintln!("dem: {msg}");
                 code = ExitCode::FAILURE;
             }
         }

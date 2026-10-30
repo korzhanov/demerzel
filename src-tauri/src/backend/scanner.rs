@@ -35,6 +35,18 @@ pub fn is_project_dir(entries: &[&str]) -> bool {
     entries.iter().any(|e| PROJECT_MARKERS.contains(e))
 }
 
+/// Подсказка для пользователя, если сканирование упёрлось в права доступа.
+/// На macOS папки в `Documents`, `Desktop`, `Downloads` закрыты до разрешения.
+pub fn access_hint(err: &io::Error, path: &Path) -> Option<String> {
+    if err.kind() != io::ErrorKind::PermissionDenied {
+        return None;
+    }
+    Some(format!(
+        "нет доступа к {}. На macOS: Системные настройки → Конфиденциальность и безопасность → Файлы и папки (или Полный доступ к диску), разрешите Demerzel. См. docs/permissions.md",
+        path.display()
+    ))
+}
+
 /// Ограничение глубины, чтобы не уйти в огромные деревья.
 pub const MAX_DEPTH: usize = 6;
 
@@ -82,6 +94,20 @@ fn child_names(dir: &Path) -> io::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_error_gets_hint() {
+        let err = io::Error::from(io::ErrorKind::PermissionDenied);
+        let hint = access_hint(&err, Path::new("/Users/x/Documents/app")).unwrap();
+        assert!(hint.contains("/Users/x/Documents/app"));
+        assert!(hint.contains("docs/permissions.md"));
+    }
+
+    #[test]
+    fn other_errors_get_no_hint() {
+        let err = io::Error::from(io::ErrorKind::NotFound);
+        assert!(access_hint(&err, Path::new("/nope")).is_none());
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("demerzel-scan-{}-{}", name, std::process::id()));
