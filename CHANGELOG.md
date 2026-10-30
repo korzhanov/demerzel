@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.0 — 2026-10-30
+
+- Схема и валидация корневого манифеста `demerzel.yaml`: сервисы `path` / `cmd` / `port` / `healthcheck`, `type: docker-compose` с `file`/`service`; неизвестные поля (`mode`, `notifications`) отклоняются. Документы `docs/demerzel-yaml.md` и `docs/demerzel.schema.json`, fallback на `orchestrator.json`, unit-тесты `load`/`parse`. Закрывает #41.
+
 ## 0.21.0 — 2026-10-30
 
 - CLI `dem` / `demerzel`: `status`, `up`, `down`, `sync`, `watch` через Unix-socket supervisor (процессы, логи/метрики, migrate). Документ `docs/cli.md`, `DEMERZEL_RUNTIME_DIR`, unit-тесты entrypoint. `status`/`watch` поднимают supervisor без предварительного `up`. Закрывает #40.

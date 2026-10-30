@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/korzhanov/demerzel/docs/demerzel.schema.json",
+  "title": "demerzel.yaml",
+  "description": "Корневой манифест экосистемы Demerzel. Параметры проектов — в orchestrator.json. mode/notifications сюда не входят.",
+  "type": "object",
+  "required": ["services"],
+  "additionalProperties": false,
+  "properties": {
+    "services": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/service" },
+      "propertyNames": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "service": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "cmd": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "healthcheck": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["process", "docker-compose"] },
+        "file": { "type": "string", "minLength": 1 },
+        "service": { "type": "string", "minLength": 1, "pattern": "^[^-].*" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "docker-compose" } },
+            "required": ["type"]
+          },
+          "then": { "required": ["file", "service"] }
+        },
+        {
+          "if": {
+            "anyOf": [
+              { "not": { "required": ["type"] } },
+              { "properties": { "type": { "const": "process" } } }
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [{ "required": ["file"] }, { "required": ["service"] }]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
