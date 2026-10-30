@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.38.1 — 2026-10-30
+
+- Макеты интерфейса в `references/mockups/`: колонки, меню-бар, вкладки; стиль из мозаики `references/media`; исходники HTML. Закрывает #93.
+
 ## 0.38.0 — 2026-10-30
 
 - Запасной Swift WidgetKit: scaffold `macos-widgetkit/` (Timeline + App Group + чтение `summary.json`), модуль `widgetkit_fallback`, `settings.widgetkit.enabled`, команда `sync_summary_to_widgetkit`; при ошибке `tauri-plugin-widgets` — forced запись в App Group. Docs `docs/widgetkit-fallback.md`. Не App Store / не iOS extension. Закрывает #38.

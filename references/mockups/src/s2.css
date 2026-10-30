@@ -1,0 +1,20 @@
+*{box-sizing:border-box;margin:0}
+:root{--bg:#14110d;--pn:#1d1812;--ln:#3a2f1f;--tx:#efe3c8;--mu:#8f8266;--gold:#e0a83a;--red:#d9553a;--grn:#6bb36a;--tl:#4a9aa8}
+body{font:13px -apple-system,Helvetica,Arial,sans-serif;background:#3b2f1c;color:var(--tx);padding:28px;width:1100px}
+.win{background:var(--bg);border-radius:12px;overflow:hidden;border:1px solid #6b5326;box-shadow:0 12px 34px #0008}
+.tb{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--pn);border-bottom:1px solid var(--ln)}
+.tl i{display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff5f57;margin-right:7px}.tl i:nth-child(2){background:#febc2e}.tl i:nth-child(3){background:#28c840}
+.tb img{width:26px;height:26px;border-radius:7px}.tb b{font-weight:500;font-size:15px;color:var(--gold);letter-spacing:.08em}
+.seg{margin-left:auto;display:flex;border:1px solid var(--ln);border-radius:8px;overflow:hidden}
+.seg span{padding:5px 12px;color:var(--mu)}.seg .on{background:var(--gold);color:#241a08;font-weight:500}
+.ban{height:124px;background:url(strip.jpg) center/cover;border-bottom:1px solid var(--ln)}
+.sum{display:flex;gap:22px;padding:10px 16px;border-bottom:1px solid var(--ln);color:var(--mu)}.sum b{color:var(--tx);font-weight:500}
+.red{color:var(--red)}.grn{color:var(--grn)}.amb{color:var(--gold)}.mut{color:var(--mu)}
+.cols{display:grid;grid-template-columns:230px 1fr 300px;min-height:420px}.cols>div{padding:12px 0}
+.side{border-right:1px solid var(--ln)}.logs{border-left:1px solid var(--ln);padding:12px 14px!important;font:11.5px ui-monospace,Menlo,monospace;color:#b5a888;line-height:1.7}
+.row{display:flex;gap:8px;padding:7px 16px;align-items:center}.row.sel{background:#2a2216;box-shadow:inset 2px 0 var(--gold)}.row .r{margin-left:auto}
+.main{padding:16px 20px!important}h1{font-size:18px;font-weight:500;margin-bottom:2px}
+.btn{display:inline-block;padding:6px 12px;border:1px solid #5a4624;border-radius:7px;margin-right:6px;color:var(--tx)}.btn.p{background:var(--gold);border-color:var(--gold);color:#241a08;font-weight:500}
+.tbl>div{display:grid;grid-template-columns:1fr 90px 70px;padding:7px 0;border-bottom:1px solid var(--ln)}
+.lbl{color:var(--mu);font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%}
