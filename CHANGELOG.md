@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.0 — 2026-10-30
+
+- Политика доставки алертов: дедуп одинаковых событий в окне 10 мин, троттлинг голоса ≤1/мин, тихие часы 23:00–08:00 `Europe/Berlin` (голос выкл., notify только `critical`). `DeliveryGate` / `DeliveryDecision` поверх `AlertCandidate`, поля в `alerts` settings, доки и `bun:test`. Закрывает #21.
+
 ## 0.25.0 — 2026-10-30
 
 - Движок правил алертов: модель `AlertRule` / `AlertEvent` / `AlertCandidate`, уровни `critical` / `important` / `info`, правила по умолчанию и оценка в `settings.json` → `alerts`. Кандидаты без доставки (дедуп #21, notify #22, say #23). Документ `docs/alerts.md`, wireframe `references/alerts-rules-wireframe.md`, зеркало хелперов + `bun:test`. Закрывает #20.
