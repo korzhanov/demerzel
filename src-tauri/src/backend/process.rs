@@ -1,6 +1,6 @@
 //! Менеджер процессов: статусы и переходы (#8, #9).
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Status {
     Stopped,
     Starting,
