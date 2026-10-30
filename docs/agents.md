@@ -1,6 +1,6 @@
-# Агенты: git worktree и Claude CLI
+# Агенты: git worktree, Claude CLI и лимиты
 
-Phase-6, issues #27 (worktree) и #28 (headless Claude Code CLI). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -33,6 +33,30 @@ Headless-прогон внутри каталога worktree:
 
 Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 
+## Параллелизм и память (#29)
+
+Перед переводом run из `Queued` → `Running` вызывается `AgentLimiter::try_acquire`:
+
+1. **Concurrency** — одновременно не больше `agents.max_concurrent` (по умолчанию **1**). Иначе `StartDecision::Queue(ConcurrencyLimit)`.
+2. **Память** — `vm_stat`: доступно ≈ `(Pages free + inactive + speculative) × page size`. Если меньше `agents.min_free_memory_mb` (по умолчанию **2048** МиБ) — очередь `InsufficientMemory`.
+3. **Ollama** — если процесс `ollama` уже запущен (`pgrep -x`), к порогу добавляется `agents.ollama_reserve_mb` (по умолчанию **4096** МиБ). Сам раннер Ollama — #30.
+
+Слот освобождается `release(run_id)` после завершения / fail / discard. Повторный `try_acquire` того же `run_id` идемпотентен.
+
+Конфиг в `settings.json` → `agents`:
+
+```json
+{
+  "agents": {
+    "max_concurrent": 1,
+    "min_free_memory_mb": 2048,
+    "ollama_reserve_mb": 4096
+  }
+}
+```
+
+Отсутствующая секция → значения по умолчанию.
+
 ## API (Rust)
 
 Модуль `backend/agents`:
@@ -44,8 +68,11 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 - `ClaudeHandle::spawn` / `cancel` / `wait_until`
 - `run_claude(worktree, task, timeout, cancel?)` → `ClaudeRunResult`
 - `claude_bin` / `DEFAULT_CLAUDE_TIMEOUT` / `PROJECT_RULES_FILE`
+- `AgentsConfig` / `AgentLimiter` / `try_acquire` / `release`
+- `available_memory_mb` / `parse_vm_stat_available_mb` / `ollama_process_running`
+- `DEFAULT_CONCURRENCY` / `DEFAULT_MIN_FREE_MEMORY_MB` / `DEFAULT_OLLAMA_RESERVE_MB`
 
-Лимиты параллелизма (#29), тесты/diff (#31) и UI (#32–#33) поверх этого слоя.
+Тесты/diff (#31) и UI (#32–#33) поверх этого слоя.
 
 ## Связь со схемой
 

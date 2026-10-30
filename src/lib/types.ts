@@ -72,9 +72,45 @@ export interface AlertsConfig {
   timezone?: string;
 }
 
+/** Лимит параллельных агентов и порог памяти (#29). */
+export interface AgentsConfig {
+  /** Одновременно Running; по умолчанию 1. */
+  max_concurrent?: number;
+  /** Минимум доступной RAM, МиБ; по умолчанию 2048. */
+  min_free_memory_mb?: number;
+  /** Запас под Ollama, МиБ, если процесс запущен; по умолчанию 4096. */
+  ollama_reserve_mb?: number;
+}
+
+export const DEFAULT_AGENT_CONCURRENCY = 1;
+export const DEFAULT_MIN_FREE_MEMORY_MB = 2048;
+export const DEFAULT_OLLAMA_RESERVE_MB = 4096;
+
+export function agentsConfigOrDefault(
+  agents?: AgentsConfig | null,
+): Required<AgentsConfig> {
+  return {
+    max_concurrent: agents?.max_concurrent ?? DEFAULT_AGENT_CONCURRENCY,
+    min_free_memory_mb: agents?.min_free_memory_mb ?? DEFAULT_MIN_FREE_MEMORY_MB,
+    ollama_reserve_mb: agents?.ollama_reserve_mb ?? DEFAULT_OLLAMA_RESERVE_MB,
+  };
+}
+
+/** Требуемая свободная RAM с учётом Ollama (зеркало `AgentLimiter::required_free_mb`). */
+export function requiredFreeMemoryMb(
+  agents: AgentsConfig | undefined,
+  ollamaRunning: boolean,
+): number {
+  const cfg = agentsConfigOrDefault(agents);
+  return ollamaRunning
+    ? cfg.min_free_memory_mb + cfg.ollama_reserve_mb
+    : cfg.min_free_memory_mb;
+}
+
 export interface Settings {
   scan_roots: string[];
   alerts?: AlertsConfig;
+  agents?: AgentsConfig;
 }
 
 export interface PortRow {

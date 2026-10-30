@@ -1,4 +1,5 @@
-//! Запуски агентов: статусы run, git worktree (#27) и Claude Code CLI (#28).
+//! Запуски агентов: статусы run, git worktree (#27), Claude Code CLI (#28)
+//! и лимит параллелизма / памяти (#29).
 //!
 //! На каждый баг — отдельный worktree в `~/.orchestrator/worktrees/<project>/<run-id>`
 //! с веткой `agent/<run-id>`, чтобы правки агента не попадали в основную ветку.
@@ -7,7 +8,12 @@
 //! Headless-раннер (#28): `claude -p "<prompt>"` в каталоге worktree, таймаут,
 //! отмена SIGTERM дереву процессов, промпт из задачи + `CLAUDE.md`.
 //! Бинарник: `claude` или `DEMERZEL_CLAUDE_BIN` (для тестов — фейковый скрипт).
+//!
+//! Параллелизм (#29): по умолчанию 1 агент; перед стартом — свободная память
+//! (`vm_stat`), с запасом под Ollama если процесс запущен (сам раннер — #30).
 
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -42,8 +48,275 @@ pub fn can_transition(from: RunStatus, to: RunStatus) -> bool {
     )
 }
 
-/// Лимит параллельных агентов по умолчанию.
+/// Лимит параллельных агентов по умолчанию (#29).
 pub const DEFAULT_CONCURRENCY: usize = 1;
+
+/// Минимум доступной памяти (МиБ) перед стартом по умолчанию.
+pub const DEFAULT_MIN_FREE_MEMORY_MB: u64 = 2048;
+
+/// Запас под Ollama (МиБ), если процесс `ollama` запущен. Раннер Ollama — #30.
+pub const DEFAULT_OLLAMA_RESERVE_MB: u64 = 4096;
+
+fn default_max_concurrent() -> usize {
+    DEFAULT_CONCURRENCY
+}
+
+fn default_min_free_memory_mb() -> u64 {
+    DEFAULT_MIN_FREE_MEMORY_MB
+}
+
+fn default_ollama_reserve_mb() -> u64 {
+    DEFAULT_OLLAMA_RESERVE_MB
+}
+
+/// Настройки агентов в `settings.json` → `agents` (#29).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsConfig {
+    /// Сколько агентов можно держать в Running одновременно.
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent: usize,
+    /// Минимум доступной RAM (МиБ) после вычета запаса Ollama.
+    #[serde(default = "default_min_free_memory_mb")]
+    pub min_free_memory_mb: u64,
+    /// Сколько МиБ резервировать, если `ollama` уже крутится.
+    #[serde(default = "default_ollama_reserve_mb")]
+    pub ollama_reserve_mb: u64,
+}
+
+impl Default for AgentsConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent: DEFAULT_CONCURRENCY,
+            min_free_memory_mb: DEFAULT_MIN_FREE_MEMORY_MB,
+            ollama_reserve_mb: DEFAULT_OLLAMA_RESERVE_MB,
+        }
+    }
+}
+
+/// Почему задача осталась в `Queued` вместо `Running`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueueReason {
+    ConcurrencyLimit { running: usize, max: usize },
+    InsufficientMemory {
+        free_mb: u64,
+        required_mb: u64,
+        ollama_running: bool,
+    },
+}
+
+/// Решение лимитера перед стартом агента.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartDecision {
+    /// Слот занят — можно переводить Queued → Running.
+    Start,
+    /// Слот не выдан — оставить в очереди.
+    Queue(QueueReason),
+}
+
+/// Источник доступной памяти (для тестов подменяется).
+pub trait MemoryProbe {
+    fn available_mb(&self) -> Result<u64, String>;
+}
+
+/// Проверка, запущен ли процесс Ollama (для тестов подменяется).
+pub trait OllamaProbe {
+    fn is_running(&self) -> bool;
+}
+
+/// Чтение доступной RAM через `vm_stat` (free + inactive + speculative).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SystemMemoryProbe;
+
+impl MemoryProbe for SystemMemoryProbe {
+    fn available_mb(&self) -> Result<u64, String> {
+        available_memory_mb()
+    }
+}
+
+/// `pgrep -x ollama` — процесс есть / нет. Не запускает Ollama (#30).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SystemOllamaProbe;
+
+impl OllamaProbe for SystemOllamaProbe {
+    fn is_running(&self) -> bool {
+        ollama_process_running()
+    }
+}
+
+/// Лимитер: concurrency + память (+ запас Ollama).
+#[derive(Debug)]
+pub struct AgentLimiter<M = SystemMemoryProbe, O = SystemOllamaProbe> {
+    config: AgentsConfig,
+    running: HashSet<String>,
+    memory: M,
+    ollama: O,
+}
+
+impl AgentLimiter<SystemMemoryProbe, SystemOllamaProbe> {
+    pub fn new(config: AgentsConfig) -> Self {
+        Self::with_probes(config, SystemMemoryProbe, SystemOllamaProbe)
+    }
+
+    pub fn from_defaults() -> Self {
+        Self::new(AgentsConfig::default())
+    }
+}
+
+impl<M: MemoryProbe, O: OllamaProbe> AgentLimiter<M, O> {
+    pub fn with_probes(config: AgentsConfig, memory: M, ollama: O) -> Self {
+        Self {
+            config,
+            running: HashSet::new(),
+            memory,
+            ollama,
+        }
+    }
+
+    pub fn config(&self) -> &AgentsConfig {
+        &self.config
+    }
+
+    pub fn running_count(&self) -> usize {
+        self.running.len()
+    }
+
+    pub fn is_running(&self, run_id: &str) -> bool {
+        self.running.contains(run_id)
+    }
+
+    /// Сколько МиБ нужно свободно с учётом Ollama.
+    pub fn required_free_mb(&self) -> u64 {
+        let mut required = self.config.min_free_memory_mb;
+        if self.ollama.is_running() {
+            required = required.saturating_add(self.config.ollama_reserve_mb);
+        }
+        required
+    }
+
+    /// Пытается занять слот для `run_id`. При отказе — `Queue` (статус Queued).
+    pub fn try_acquire(&mut self, run_id: &str) -> Result<StartDecision, String> {
+        let run_id = run_id.trim();
+        if run_id.is_empty() {
+            return Err("run_id must not be empty".into());
+        }
+        if self.running.contains(run_id) {
+            return Ok(StartDecision::Start);
+        }
+
+        let max = self.config.max_concurrent;
+        if self.running.len() >= max {
+            return Ok(StartDecision::Queue(QueueReason::ConcurrencyLimit {
+                running: self.running.len(),
+                max,
+            }));
+        }
+
+        let free_mb = self.memory.available_mb()?;
+        let ollama_running = self.ollama.is_running();
+        let required_mb = if ollama_running {
+            self.config
+                .min_free_memory_mb
+                .saturating_add(self.config.ollama_reserve_mb)
+        } else {
+            self.config.min_free_memory_mb
+        };
+
+        if free_mb < required_mb {
+            return Ok(StartDecision::Queue(QueueReason::InsufficientMemory {
+                free_mb,
+                required_mb,
+                ollama_running,
+            }));
+        }
+
+        self.running.insert(run_id.to_string());
+        Ok(StartDecision::Start)
+    }
+
+    /// Освобождает слот после завершения / fail / discard.
+    pub fn release(&mut self, run_id: &str) {
+        self.running.remove(run_id);
+    }
+}
+
+/// Доступная память (МиБ): pages free + inactive + speculative из `vm_stat`.
+pub fn available_memory_mb() -> Result<u64, String> {
+    let output = Command::new("vm_stat")
+        .output()
+        .map_err(|e| format!("vm_stat: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("vm_stat failed: {}", stderr.trim()));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_vm_stat_available_mb(&stdout)
+}
+
+/// Парсит вывод `vm_stat` → доступные МиБ (для тестов и SystemMemoryProbe).
+pub fn parse_vm_stat_available_mb(stdout: &str) -> Result<u64, String> {
+    let page_size = parse_vm_stat_page_size(stdout)?;
+    let free = parse_vm_stat_pages(stdout, "Pages free")?;
+    let inactive = parse_vm_stat_pages(stdout, "Pages inactive")?;
+    let speculative = parse_vm_stat_pages(stdout, "Pages speculative").unwrap_or(0);
+    let pages = free.saturating_add(inactive).saturating_add(speculative);
+    let bytes = pages.saturating_mul(page_size);
+    Ok(bytes / (1024 * 1024))
+}
+
+fn parse_vm_stat_page_size(stdout: &str) -> Result<u64, String> {
+    // "Mach Virtual Memory Statistics: (page size of 16384 bytes)"
+    for line in stdout.lines() {
+        if let Some(idx) = line.find("page size of ") {
+            let rest = &line[idx + "page size of ".len()..];
+            let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(n) = num.parse::<u64>() {
+                if n > 0 {
+                    return Ok(n);
+                }
+            }
+        }
+    }
+    // Fallback: sysctl hw.pagesize
+    let out = Command::new("sysctl")
+        .args(["-n", "hw.pagesize"])
+        .output()
+        .map_err(|e| format!("sysctl hw.pagesize: {e}"))?;
+    if !out.status.success() {
+        return Err("cannot determine page size from vm_stat or sysctl".into());
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.trim()
+        .parse::<u64>()
+        .map_err(|e| format!("parse hw.pagesize: {e}"))
+}
+
+fn parse_vm_stat_pages(stdout: &str, label: &str) -> Result<u64, String> {
+    let prefix = format!("{label}:");
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(&prefix) {
+            let digits: String = rest
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect();
+            return digits
+                .parse::<u64>()
+                .map_err(|e| format!("parse {label}: {e}"));
+        }
+    }
+    Err(format!("vm_stat: missing {label}"))
+}
+
+/// Есть ли процесс с именем `ollama` (`pgrep -x`).
+pub fn ollama_process_running() -> bool {
+    Command::new("pgrep")
+        .args(["-x", "ollama"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
 
 /// Созданный worktree: путь, ветка и идентификаторы.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -734,5 +1007,142 @@ mod tests {
 
         unsafe { std::env::remove_var("DEMERZEL_CLAUDE_BIN") };
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- concurrency + memory (#29) ---
+
+    #[derive(Clone)]
+    struct FixedMemory(u64);
+    impl MemoryProbe for FixedMemory {
+        fn available_mb(&self) -> Result<u64, String> {
+            Ok(self.0)
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixedOllama(bool);
+    impl OllamaProbe for FixedOllama {
+        fn is_running(&self) -> bool {
+            self.0
+        }
+    }
+
+    fn limiter(max: usize, free_mb: u64, ollama: bool) -> AgentLimiter<FixedMemory, FixedOllama> {
+        let cfg = AgentsConfig {
+            max_concurrent: max,
+            min_free_memory_mb: 2048,
+            ollama_reserve_mb: 4096,
+        };
+        AgentLimiter::with_probes(cfg, FixedMemory(free_mb), FixedOllama(ollama))
+    }
+
+    #[test]
+    fn agents_config_defaults() {
+        let cfg = AgentsConfig::default();
+        assert_eq!(cfg.max_concurrent, 1);
+        assert_eq!(cfg.min_free_memory_mb, 2048);
+        assert_eq!(cfg.ollama_reserve_mb, 4096);
+    }
+
+    #[test]
+    fn concurrency_limit_queues_second_agent() {
+        let mut gate = limiter(1, 16_000, false);
+        assert_eq!(gate.try_acquire("a").unwrap(), StartDecision::Start);
+        assert_eq!(gate.running_count(), 1);
+        match gate.try_acquire("b").unwrap() {
+            StartDecision::Queue(QueueReason::ConcurrencyLimit { running, max }) => {
+                assert_eq!(running, 1);
+                assert_eq!(max, 1);
+            }
+            other => panic!("expected concurrency queue, got {other:?}"),
+        }
+        gate.release("a");
+        assert_eq!(gate.try_acquire("b").unwrap(), StartDecision::Start);
+        assert!(gate.is_running("b"));
+    }
+
+    #[test]
+    fn concurrency_allows_up_to_max() {
+        let mut gate = limiter(2, 16_000, false);
+        assert_eq!(gate.try_acquire("a").unwrap(), StartDecision::Start);
+        assert_eq!(gate.try_acquire("b").unwrap(), StartDecision::Start);
+        assert!(matches!(
+            gate.try_acquire("c").unwrap(),
+            StartDecision::Queue(QueueReason::ConcurrencyLimit { max: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn low_memory_queues_even_with_free_slot() {
+        let mut gate = limiter(2, 500, false);
+        match gate.try_acquire("a").unwrap() {
+            StartDecision::Queue(QueueReason::InsufficientMemory {
+                free_mb,
+                required_mb,
+                ollama_running,
+            }) => {
+                assert_eq!(free_mb, 500);
+                assert_eq!(required_mb, 2048);
+                assert!(!ollama_running);
+            }
+            other => panic!("expected memory queue, got {other:?}"),
+        }
+        assert_eq!(gate.running_count(), 0);
+    }
+
+    #[test]
+    fn ollama_reserve_raises_memory_requirement() {
+        // 5000 >= 2048, но с Ollama нужно 2048+4096=6144.
+        let mut gate = limiter(1, 5000, true);
+        match gate.try_acquire("a").unwrap() {
+            StartDecision::Queue(QueueReason::InsufficientMemory {
+                required_mb,
+                ollama_running,
+                ..
+            }) => {
+                assert_eq!(required_mb, 6144);
+                assert!(ollama_running);
+            }
+            other => panic!("expected ollama memory queue, got {other:?}"),
+        }
+        let mut ok = limiter(1, 7000, true);
+        assert_eq!(ok.try_acquire("a").unwrap(), StartDecision::Start);
+        assert_eq!(ok.required_free_mb(), 6144);
+    }
+
+    #[test]
+    fn parse_vm_stat_fixture() {
+        let sample = "\
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               1024.
+Pages active:                             10000.
+Pages inactive:                           2048.
+Pages speculative:                         512.
+Pages wired down:                         9000.
+";
+        // (1024+2048+512)*16384 / 1MiB = 3584*16384/1048576 = 56
+        assert_eq!(parse_vm_stat_available_mb(sample).unwrap(), 56);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn system_memory_probe_returns_positive() {
+        let mb = available_memory_mb().unwrap();
+        assert!(mb > 0, "expected positive free memory, got {mb}");
+    }
+
+    #[test]
+    fn try_acquire_rejects_empty_run_id() {
+        let mut gate = limiter(1, 16_000, false);
+        assert!(gate.try_acquire("").is_err());
+        assert!(gate.try_acquire("  ").is_err());
+    }
+
+    #[test]
+    fn reacquire_same_run_id_is_idempotent() {
+        let mut gate = limiter(1, 16_000, false);
+        assert_eq!(gate.try_acquire("same").unwrap(), StartDecision::Start);
+        assert_eq!(gate.try_acquire("same").unwrap(), StartDecision::Start);
+        assert_eq!(gate.running_count(), 1);
     }
 }
