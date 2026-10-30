@@ -165,8 +165,12 @@ impl TaskSource for FileSource {
         let path = self
             .root
             .join(if self.json { "tasks.json" } else { "TODO.md" });
-        let text =
-            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        // Missing tasks file = no tasks for this project (not an error).
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
         if self.json {
             let mut tasks: Vec<Task> = serde_json::from_str(&text)
                 .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -311,6 +315,48 @@ mod file_tests {
         .fetch("p")
         .unwrap_err();
         assert!(err.contains("duplicate") || err.contains("empty"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn file_source_missing_todo_md_returns_empty() {
+        let root = temp_root("missing-todo");
+        let source = FileSource {
+            root: root.clone(),
+            json: false,
+        };
+        let tasks = source.fetch("/proj").expect("missing TODO.md is Ok([])");
+        assert!(tasks.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn file_source_missing_tasks_json_returns_empty() {
+        let root = temp_root("missing-json");
+        let source = FileSource {
+            root: root.clone(),
+            json: true,
+        };
+        let tasks = source.fetch("demo").expect("missing tasks.json is Ok([])");
+        assert!(tasks.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn file_source_io_errors_still_surface() {
+        let root = temp_root("io-err");
+        // Point at a path that exists as a directory named TODO.md so read_to_string fails
+        // with an error other than NotFound.
+        let todo_as_dir = root.join("TODO.md");
+        fs::create_dir_all(&todo_as_dir).unwrap();
+        let err = FileSource {
+            root: root.clone(),
+            json: false,
+        }
+        .fetch("/proj")
+        .unwrap_err();
+        assert!(err.contains("TODO.md"), "{err}");
+        assert!(!err.is_empty());
         let _ = fs::remove_dir_all(root);
     }
 }
