@@ -79,8 +79,9 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 | `commands.migrate` | Миграции при `dem sync` (пусто → пропуск) |
 | `ports.range` | Диапазон портов `[start, end]` |
 | `ports.default` | Порт по умолчанию внутри диапазона |
-| `tasks.source` | `todo` (`TODO.md`) \| `tasks-json` \| `github` |
+| `tasks.source` | `todo` (`TODO.md`) \| `tasks-json` \| `github` \| `notion` |
 | `tasks.repository` | `owner/name` для `source=github` |
+| `tasks.database_id` | UUID Notion DB для `source=notion` (`NOTION_TOKEN`) |
 | `env` | Переменные окружения процесса |
 
 Монорепо / несколько сервисов: корневой [`demerzel.yaml`](docs/demerzel-yaml.md) перечисляет сервисы; детали каждого проекта остаются в его `orchestrator.json`.
@@ -89,7 +90,7 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 
 ## Статус
 
-Версия: см. [`VERSION`](VERSION). План работ — [GitHub Issues](https://github.com/korzhanov/demerzel/issues); фазы через метки `phase-0` … `phase-7`. Оставшиеся later-задачи: `phase-7` (#36–#38).
+Версия: см. [`VERSION`](VERSION). План работ — [GitHub Issues](https://github.com/korzhanov/demerzel/issues); фазы через метки `phase-0` … `phase-7`. Оставшиеся later-задачи: `phase-7` (#37–#38; Notion #36 закрыт в 0.36.0).
 
 ## Документация
 

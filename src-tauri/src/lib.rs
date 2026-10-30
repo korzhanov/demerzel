@@ -244,6 +244,18 @@ fn project_tasks(path: String) -> Result<Vec<backend::tasks::Task>, String> {
             label: tasks.label.clone(),
         }.fetch(&path);
     }
+    if source == "notion" {
+        let tasks = task_config.as_ref().ok_or("missing tasks configuration")?;
+        return backend::notion_tasks::NotionSource {
+            database_id: tasks
+                .database_id
+                .clone()
+                .ok_or("tasks.database_id is required for source=notion")?,
+            title_property: tasks.title_property.clone(),
+            status_property: tasks.status_property.clone(),
+        }
+        .fetch(&path);
+    }
     backend::tasks::FileSource { root, json: source == "tasks-json" }.fetch(&path)
 }
 

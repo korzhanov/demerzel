@@ -1,5 +1,6 @@
 //! Модель задачи и трейт источника (#16); файловый адаптер TODO.md / tasks.json (#17).
 //! GitHub Issues REST + ETag — `github_tasks::GithubSource` (#18).
+//! Notion database REST — `notion_tasks::NotionSource` (#36).
 //! Обновление статуса при старте агента (#33): `mark_task_in_progress`.
 
 use std::fs;
@@ -24,7 +25,7 @@ pub struct Task {
     pub url: Option<String>,
 }
 
-/// Источник задач: TODO.md, tasks.json, GitHub Issues (#17, #18).
+/// Источник задач: TODO.md, tasks.json, GitHub Issues, Notion (#17, #18, #36).
 pub trait TaskSource {
     fn name(&self) -> &str;
     fn fetch(&self, project: &str) -> Result<Vec<Task>, String>;
@@ -201,7 +202,7 @@ impl TaskSource for FileSource {
 /// Переводит задачу в `in_progress` при старте агента (#33).
 ///
 /// - `todo` / `tasks-json` — пишет в файл источника.
-/// - `github` — remote не трогает (закрытие issue только вручную); возвращает копию со статусом.
+/// - `github` / `notion` — remote не трогает (закрытие только вручную); возвращает копию со статусом.
 pub fn mark_task_in_progress(task: &Task) -> Result<Task, String> {
     if task.status == TaskStatus::Done {
         return Err("cannot start agent for a done task".into());
@@ -228,8 +229,8 @@ pub fn mark_task_in_progress(task: &Task) -> Result<Task, String> {
             let raw_id = parse_json_task_id(&task.id)?;
             set_tasks_json_status(Path::new(path), &raw_id, TaskStatus::InProgress)?;
         }
-        "github" => {
-            // Статус только для UI/ответа; GitHub issue не закрываем и не меняем.
+        "github" | "notion" => {
+            // Статус только для UI/ответа; remote page/issue не меняем.
         }
         other => {
             return Err(format!("cannot update status for task source '{other}'"));
@@ -544,6 +545,22 @@ mod file_tests {
             status: TaskStatus::Todo,
             source: "github".into(),
             url: Some("https://github.com/a/b/issues/1".into()),
+        };
+        let updated = mark_task_in_progress(&task).unwrap();
+        assert_eq!(updated.status, TaskStatus::InProgress);
+        assert_eq!(updated.id, task.id);
+    }
+
+    #[test]
+    fn mark_notion_task_in_progress_is_local_only() {
+        let task = Task {
+            id: "notion:0123456789abcdef0123456789abcdef:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+                .into(),
+            project: "/proj".into(),
+            title: "Notion bug".into(),
+            status: TaskStatus::Todo,
+            source: "notion".into(),
+            url: Some("https://www.notion.so/aaa".into()),
         };
         let updated = mark_task_in_progress(&task).unwrap();
         assert_eq!(updated.status, TaskStatus::InProgress);
