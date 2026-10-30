@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 — 2026-10-30
+
+- CI: GitHub Actions. Frontend на Ubuntu (`pnpm check`, `pnpm build`), backend на macOS (`cargo test`, `cargo clippy -D warnings`, `pnpm tauri build --debug`). Закрывает #34.
+
 ## 0.1.0 — 2026-10-30
 
 - Скелет приложения: Tauri 2 + SvelteKit в режиме SPA (PR, закрывает #3).
