@@ -8,6 +8,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use super::agents::AgentsConfig;
 use super::alerts::AlertsConfig;
 
 pub const SETTINGS_FILE: &str = "settings.json";
@@ -19,6 +20,9 @@ pub struct Settings {
     /// Правила алертов (#20). Отсутствующее поле → `AlertsConfig::default()`.
     #[serde(default)]
     pub alerts: AlertsConfig,
+    /// Лимит параллельных агентов и порог памяти (#29).
+    #[serde(default)]
+    pub agents: AgentsConfig,
 }
 
 /// Убирает пустые строки и дубликаты, сохраняя порядок.
@@ -94,6 +98,28 @@ mod tests {
         let loaded = load(&path).unwrap();
         assert_eq!(loaded.scan_roots, vec!["/proj".to_string()]);
         assert_eq!(loaded.alerts, AlertsConfig::default());
+        assert_eq!(loaded.agents, crate::backend::agents::AgentsConfig::default());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn agents_section_roundtrip() {
+        use crate::backend::agents::AgentsConfig;
+        let path = tmp_file("agents");
+        let s = Settings {
+            scan_roots: vec!["/p".into()],
+            agents: AgentsConfig {
+                max_concurrent: 2,
+                min_free_memory_mb: 1024,
+                ollama_reserve_mb: 2048,
+            },
+            ..Settings::default()
+        };
+        save(&path, &s).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.agents.max_concurrent, 2);
+        assert_eq!(loaded.agents.min_free_memory_mb, 1024);
+        assert_eq!(loaded.agents.ollama_reserve_mb, 2048);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

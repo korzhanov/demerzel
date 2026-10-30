@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.0 — 2026-10-30
+
+- Лимит параллельных агентов и проверка памяти перед стартом: `AgentLimiter` (по умолчанию 1 слот), `vm_stat` → доступная RAM, очередь при нехватке; запас `ollama_reserve_mb` если процесс `ollama` запущен. Конфиг `settings.json` → `agents`, доки в `docs/agents.md`. Закрывает #29.
+
 ## 0.30.0 — 2026-10-30
 
 - Headless-раннер Claude Code CLI поверх worktree: `claude -p` в каталоге run, промпт из задачи + `CLAUDE.md`, сбор stdout/stderr/кода/длительности, таймаут и отмена SIGTERM дереву процессов (`DEMERZEL_CLAUDE_BIN`). Закрывает #28.
