@@ -31,12 +31,12 @@
 3. Эталон App Intent (исходники в `Sources/`):
    - `AskDemerzelIntent` — параметр `ProjectEntity`, `perform` → сокет `pulse`, `IntentDialog` + snippet.
    - `DemerzelAppShortcuts` — русские фразы с `\(.applicationName)`.
-   - Встраивание в основной `.app` — scope #101 (тот же путь, что widget `.appex`: Swift рядом с Tauri host).
+   - Встраивание в основной `.app` — **сделано в #101**: `src-tauri/macos-siri/` → `PlugIns/DemerzelAppIntents.appex`.
 
-4. Ручная проверка на Mac (после embed в #101 или временном host-приложении):
+4. Ручная проверка на Mac (после `tauri build` / install):
    - Shortcuts / Spotlight: «Спроси Demerzel про parser».
-   - Siri: та же фраза (имя приложения слышимо).
-   - Ответ: диалог + сниппет со summary / ETA.
+   - Siri: та же фраза; «Перезапусти Demerzel parser» — с подтверждением.
+   - Ответ: IntentDialog с summary / ETA (или `project: restarted`).
 
 ## Критерии
 

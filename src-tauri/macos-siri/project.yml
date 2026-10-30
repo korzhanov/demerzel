@@ -1,0 +1,31 @@
+name: DemerzelAppIntents
+
+options:
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "15.0"
+
+targets:
+  DemerzelAppIntents:
+    type: extensionkit-extension
+    platform: macOS
+    sources:
+      - path: Sources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Demerzel Intents
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.appintents-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.demerzel.orchestrator.appintents
+        PRODUCT_NAME: DemerzelAppIntents
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_ENTITLEMENTS: DemerzelAppIntents.entitlements
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SKIP_INSTALL: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Demerzel Intents
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks"
+        OTHER_LDFLAGS: "$(inherited) -framework AppIntents -framework ExtensionFoundation -framework SwiftUI"

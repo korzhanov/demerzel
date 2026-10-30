@@ -30,7 +30,7 @@
 | [icloud-summary.md](icloud-summary.md) | `summary.json` → iCloud Drive для iPhone (#37) |
 | [widget-macos.md](widget-macos.md) | Сборка `.appex`, embed PlugIns, Widget Gallery (#103), пульс в small/medium (#98); источник опроса — [pulse.md](pulse.md) (#97) |
 | [widgetkit-fallback.md](widgetkit-fallback.md) | Native Swift WidgetKit fallback, App Group (#38) |
-| [siri-app-intents.md](siri-app-intents.md) | App Intents / Siri: dem.sock, фразы, sandbox (#100 → #101) |
+| [siri-app-intents.md](siri-app-intents.md) | App Intents / Siri: AskDemerzelStatus + RestartProcess, dem.sock (#101) |
 
 ## ADR (Architecture Decision Records)
 
@@ -68,6 +68,6 @@
 | 5 | Виджет / summary | #25–#26 |
 | 6 | Агенты (worktree → ревью) | #27–#33 |
 | 7 | Later / fallback | #36 Notion (0.36.0), #37 iCloud (0.37.0), #38 WidgetKit fallback (0.38.0) |
-| 8 | Siri / App Intents | #100 spike go (0.46.0) → #101 intents |
+| 8 | Siri / App Intents | #101 intents (0.47.0); spike #100 go |
 
 Правила доски и статусов — в [CONVENTIONS.md](CONVENTIONS.md#github-project).
