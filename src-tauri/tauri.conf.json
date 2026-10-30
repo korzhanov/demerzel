@@ -1,12 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Demerzel",
-  "version": "0.38.0",
+  "version": "0.42.0",
   "identifier": "app.demerzel.orchestrator",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
+    "beforeBundleCommand": "./macos-widget/build-widget.sh",
     "frontendDist": "../build"
   },
   "app": {
@@ -30,7 +31,13 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "./macos-widget/App.entitlements",
+      "files": {
+        "PlugIns/TauriWidgetExtension.appex": "./macos-widget/build/Build/Products/Release/TauriWidgetExtension.appex"
+      }
+    }
   },
   "plugins": {
     "widgets": {

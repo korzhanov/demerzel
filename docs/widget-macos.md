@@ -1,0 +1,81 @@
+# Виджет macOS (`tauri-plugin-widgets`)
+
+Основной путь виджета — `tauri-plugin-widgets` ([ADR-001](decisions/001-stack.md)).  
+Запасной Swift WidgetKit: [widgetkit-fallback.md](widgetkit-fallback.md).
+
+## Почему виджета не было в списке (#103)
+
+В main были `plugins.widgets` и `tauri_plugin_widgets::init()`, но **не** собирался и не встраивался `.appex`. WidgetKit показывает приложение в Edit Widgets только если в бандле есть extension:
+
+`Demerzel.app/Contents/PlugIns/TauriWidgetExtension.appex`
+
+Спайк уже делал это через `beforeBundleCommand` + `bundle.macOS.files`. Тот же sidecar перенесён в `src-tauri/macos-widget/`.
+
+## Сборка и установка (локально, ad-hoc)
+
+Требуется: Xcode, `xcodegen` (`brew install xcodegen`), Bun.
+
+```sh
+bun install                          # postinstall патчит Swift Package (нет Tests/)
+bun run tauri build --debug          # beforeBundleCommand → build-widget.sh → embed PlugIns
+bun run widget:install               # ad-hoc sign → /Applications → open
+```
+
+Или по шагам:
+
+```sh
+bun run tauri build --debug
+# .app: src-tauri/target/debug/bundle/macos/Demerzel.app
+ls "src-tauri/target/debug/bundle/macos/Demerzel.app/Contents/PlugIns/TauriWidgetExtension.appex"
+bun run sign:macos
+# установить в /Applications (WidgetKit плохо подхватывает из target/)
+rm -rf /Applications/Demerzel.app
+cp -R src-tauri/target/debug/bundle/macos/Demerzel.app /Applications/
+bun run sign:macos /Applications/Demerzel.app
+open /Applications/Demerzel.app
+```
+
+Без `sign:macos` host часто остаётся linker-signed → EPERM при записи в контейнер виджета (см. [001-report.md](decisions/001-report.md)).
+
+## Проверка в Widget Gallery
+
+1. Запустить установленное `/Applications/Demerzel.app` хотя бы раз (containermanagerd создаёт контейнер appex).
+2. Notification Center → **Edit Widgets** (или правый клик по рабочему столу → Edit Widgets).
+3. Найти **Demerzel** → Add Widget (small/medium/large).
+4. Обновить данные в приложении (скан портов / refresh summary) — виджет должен обновиться без перезапуска app.
+
+Если виджета нет в списке:
+
+```sh
+# есть ли PlugIns?
+ls /Applications/Demerzel.app/Contents/PlugIns/
+# подпись не linker-signed?
+codesign -dv --verbose=2 /Applications/Demerzel.app 2>&1 | head -20
+# doctor плагина
+bunx tauri-widgets doctor
+```
+
+Перезагрузка галереи: убрать виджет → Quit Demerzel → снова open → Edit Widgets. Иногда помогает `killall WidgetKitExtensionHost` (macOS перезапустит host).
+
+Данные (transport `widgetContainer`):
+
+`~/Library/Containers/app.demerzel.orchestrator.widgetkit/Data/widget_data.json`
+
+Превью IR без сборки:
+
+```sh
+bun run widget:preview
+```
+
+## Конфиг
+
+| | |
+|---|---|
+| App Group | `group.app.demerzel.orchestrator` |
+| Host bundle | `app.demerzel.orchestrator` |
+| Extension | `app.demerzel.orchestrator.widgetkit` |
+| Transport | `widgetContainer` (ad-hoc без Team ID) |
+| Widget id | `default` |
+| Display name | Demerzel |
+
+С Team ID / MAS: `transport: appGroup` и Developer portal App Group — см. ADR-001.

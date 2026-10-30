@@ -86,7 +86,7 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 
 Монорепо / несколько сервисов: корневой [`demerzel.yaml`](docs/demerzel-yaml.md) перечисляет сервисы; детали каждого проекта остаются в его `orchestrator.json`.
 
-Настройки приложения (алерты, лимиты агентов, Ollama, iCloud summary, WidgetKit fallback) — в `settings.json` приложения, не в `orchestrator.json`. Подробности: [docs/alerts.md](docs/alerts.md), [docs/agents.md](docs/agents.md), [docs/icloud-summary.md](docs/icloud-summary.md), [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md).
+Настройки приложения (алерты, лимиты агентов, Ollama, iCloud summary, WidgetKit fallback) — в `settings.json` приложения, не в `orchestrator.json`. Подробности: [docs/alerts.md](docs/alerts.md), [docs/agents.md](docs/agents.md), [docs/icloud-summary.md](docs/icloud-summary.md), [docs/widget-macos.md](docs/widget-macos.md), [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md).
 
 ## Статус
 
@@ -104,6 +104,7 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 - [docs/agents.md](docs/agents.md) — worktree, Claude / Ollama, ревью
 - [docs/alerts.md](docs/alerts.md) — правила и доставка алертов
 - [docs/icloud-summary.md](docs/icloud-summary.md) — `summary.json` → iCloud для iPhone
+- [docs/widget-macos.md](docs/widget-macos.md) — сборка `.appex`, установка, Widget Gallery
 - [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md) — native WidgetKit fallback (#38)
 - [docs/permissions.md](docs/permissions.md) — доступ к папкам macOS
 - [docs/decisions/](docs/decisions/) — ADR

@@ -1,6 +1,6 @@
 {
   "name": "demerzel",
-  "version": "0.38.0",
+  "version": "0.42.0",
   "description": "The Shadow Orchestrator of Your Local Stack Empire",
   "type": "module",
   "scripts": {
@@ -8,10 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
+    "postinstall": "bun scripts/patch-swift-package.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "bun test src/lib",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "sign:macos": "bash scripts/sign-macos.sh",
+    "widget:preview": "bunx tauri-plugin-widgets-api preview ./widget.json --size small --watch",
+    "widget:install": "bash scripts/sign-macos.sh && rm -rf /Applications/Demerzel.app && cp -R src-tauri/target/debug/bundle/macos/Demerzel.app /Applications/ && bash scripts/sign-macos.sh /Applications/Demerzel.app && open /Applications/Demerzel.app"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -22,7 +26,8 @@
     "clsx": "^2.1.1",
     "paneforge": "^1.0.2",
     "tailwind-merge": "^3.7.0",
-    "tailwind-variants": "^4.0.0"
+    "tailwind-variants": "^4.0.0",
+    "tauri-plugin-widgets-api": "^0.6.2"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",
