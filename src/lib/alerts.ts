@@ -1,4 +1,4 @@
-/** Зеркало severity + delivery-хелперов бэкенда (#20–#22). Голос say — #23. */
+/** Зеркало severity + delivery/notify/speak-хелперов бэкенда (#20–#23). */
 
 /** Имя события Tauri после клика по системному уведомлению. */
 export const OPEN_PROJECT_EVENT = "alerts:open-project";
@@ -118,6 +118,45 @@ export function notifyTitle(severity: AlertSeverity): string {
  */
 export function shouldDeliverNotify(decision: Pick<DeliveryDecision, "notify">): boolean {
   return decision.notify;
+}
+
+/**
+ * Нужно ли вызывать `say`: только если gate сказал `speak`
+ * (critical + тихие часы + троттлинг ≤1/мин).
+ */
+export function shouldDeliverSpeak(decision: Pick<DeliveryDecision, "speak">): boolean {
+  return decision.speak;
+}
+
+export type VoicePhraseKind =
+  | "process_exited"
+  | "port_conflict"
+  | "agent_failed"
+  | "tests_failed";
+
+export const DEFAULT_VOICE_NAME = "Milena";
+
+export const DEFAULT_VOICE_PHRASES: Record<VoicePhraseKind, string> = {
+  process_exited: "Олег, внимание. {project} упал, код {code}.",
+  port_conflict: "Олег, внимание. Порт {port} занят.",
+  agent_failed: "Олег, внимание. Агент {run_id} не справился.",
+  tests_failed: "Олег, внимание. Тесты {run_id} упали.",
+};
+
+export type SpeakEventVars = {
+  project?: string;
+  code?: number | string;
+  port?: number | string;
+  run_id?: string;
+};
+
+/** Подстановка плейсхолдеров в шаблон фразы (зеркало `speak::render_phrase`). */
+export function renderVoicePhrase(template: string, vars: SpeakEventVars): string {
+  return template
+    .replaceAll("{project}", vars.project ?? "")
+    .replaceAll("{code}", vars.code != null ? String(vars.code) : "")
+    .replaceAll("{port}", vars.port != null ? String(vars.port) : "")
+    .replaceAll("{run_id}", vars.run_id ?? "");
 }
 
 /** Выбор процесса по имени проекта из уведомления. */

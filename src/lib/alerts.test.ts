@@ -1,14 +1,18 @@
 /// <reference types="bun-types" />
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_VOICE_NAME,
+  DEFAULT_VOICE_PHRASES,
   deliveryFlags,
   isQuietHours,
   isQuietHoursLocal,
   notifyTitle,
   parseHhMmToMinutes,
   processIdForProject,
+  renderVoicePhrase,
   severityLabel,
   shouldDeliverNotify,
+  shouldDeliverSpeak,
   shouldNotify,
   shouldSpeak,
 } from "./alerts";
@@ -117,5 +121,42 @@ describe("notify delivery (#22)", () => {
     ];
     expect(processIdForProject(rows, "web")).toBe(2);
     expect(processIdForProject(rows, "missing")).toBeNull();
+  });
+});
+
+describe("speak delivery (#23)", () => {
+  test("shouldDeliverSpeak follows gate flag only", () => {
+    expect(shouldDeliverSpeak({ speak: true })).toBe(true);
+    expect(shouldDeliverSpeak({ speak: false })).toBe(false);
+    expect(
+      shouldDeliverSpeak(deliveryFlags("critical", { quiet: true })),
+    ).toBe(false);
+    expect(
+      shouldDeliverSpeak(deliveryFlags("critical", { quiet: false })),
+    ).toBe(true);
+    expect(
+      shouldDeliverSpeak(
+        deliveryFlags("critical", { quiet: false, voiceThrottled: true }),
+      ),
+    ).toBe(false);
+  });
+
+  test("default phrases render without leftover placeholders", () => {
+    expect(DEFAULT_VOICE_NAME).toBe("Milena");
+    expect(
+      renderVoicePhrase(DEFAULT_VOICE_PHRASES.process_exited, {
+        project: "api",
+        code: 1,
+      }),
+    ).toBe("Олег, внимание. api упал, код 1.");
+    expect(
+      renderVoicePhrase(DEFAULT_VOICE_PHRASES.port_conflict, { port: 5173 }),
+    ).toBe("Олег, внимание. Порт 5173 занят.");
+    expect(
+      renderVoicePhrase(DEFAULT_VOICE_PHRASES.agent_failed, { run_id: "r1" }),
+    ).toBe("Олег, внимание. Агент r1 не справился.");
+    expect(
+      renderVoicePhrase(DEFAULT_VOICE_PHRASES.tests_failed, { run_id: "t1" }),
+    ).toBe("Олег, внимание. Тесты t1 упали.");
   });
 });
