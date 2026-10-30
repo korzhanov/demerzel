@@ -1,0 +1,13 @@
+{
+  "$schema": "https://s00d.github.io/tauri-plugin-widgets/schemas/widget-config.v1.json",
+  "small": {
+    "type": "vstack",
+    "padding": 12,
+    "background": "#0d0d12",
+    "children": [
+      { "type": "text", "content": "Demerzel", "fontSize": 12, "color": "#8888aa" },
+      { "type": "text", "content": "0 failing", "fontSize": 28, "fontWeight": "bold", "color": "#ffffff" },
+      { "type": "progress", "value": 0.0, "tint": "#4CAF50", "label": "Ports ok" }
+    ]
+  }
+}
