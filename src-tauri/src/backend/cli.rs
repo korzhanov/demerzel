@@ -1,5 +1,6 @@
 //! CLI `dem` / `demerzel`: status, up, down, sync, watch (#40).
 //!
+//! `dem sync` вызывает `commands.migrate` из `orchestrator.json` (#43); без поля — пропуск.
 //! Per-user Unix socket supervisor owns child handles across CLI invocations.
 use super::{config, docker, ecosystem, process::Status, registry::Registry};
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,14 @@ fn request(action: &str, root: &Path) -> Result<String, String> {
     BufReader::new(stream).read_line(&mut line).map_err(|e| e.to_string())?;
     let response: Response = serde_json::from_str(&line).map_err(|e| e.to_string())?;
     match response.error { Some(e) => Err(e), None => Ok(response.output) }
+}
+
+fn format_migrate_status(name: &str, log: &str) -> String {
+    format!("{name} migrate: {log}")
+}
+
+fn format_migrate_watch_line(name: &str, log: &str) -> String {
+    format!("[{name} migrate] {log}")
 }
 
 fn run_command(command: &str, path: &Path, env: &BTreeMap<String, String>) -> Result<String, String> {
@@ -130,11 +139,16 @@ impl Supervisor {
                 let cfg = config::load_checked(&svc.path)?;
                 let env = cfg.as_ref().map(|c| c.env.clone()).unwrap_or_default();
                 if req.action == "sync" {
-                    let log = if let Some(migrate) = cfg.as_ref().and_then(|c| c.commands.migrate.as_ref()) {
-                        run_command(migrate, &svc.path, &env)?
-                    } else { "no commands.migrate; skipped".into() };
+                    // ORM-agnostic: only `commands.migrate` from orchestrator.json (#43).
+                    let log = match cfg
+                        .as_ref()
+                        .and_then(|c| config::resolve_migrate_command(&c.commands))
+                    {
+                        Some(migrate) => run_command(migrate, &svc.path, &env)?,
+                        None => config::MIGRATE_SKIPPED.into(),
+                    };
                     self.migration_logs.insert(key.clone(), log.clone());
-                    output.push(format!("{name} migrate: {log}"));
+                    output.push(format_migrate_status(name, &log));
                 }
                 if matches!(req.action.as_str(), "up" | "sync") && !active {
                     let cmd = svc.cmd.clone().or_else(|| config::resolve_dev_command(&svc.path)).ok_or_else(|| format!("{name}: no cmd/commands.dev/scripts.dev"))?;
@@ -149,7 +163,9 @@ impl Supervisor {
                     if let Some(id) = id {
                         for line in self.registry.logs(id).unwrap_or_default() { text.push_str(&format!("\n[{name}] {}", line.text)); }
                     }
-                    if let Some(log) = self.migration_logs.get(&key) { text.push_str(&format!("\n[{name} migrate] {log}")); }
+                    if let Some(log) = self.migration_logs.get(&key) {
+                        text.push_str(&format!("\n{}", format_migrate_watch_line(name, log)));
+                    }
                     if let Some(pid) = row.and_then(|r| r.pid) {
                         if let Ok(metrics) = Command::new("ps").args(["-p", &pid.to_string(), "-o", "%cpu=,rss="]).output() {
                             text.push_str(&format!("\n[{name}] CPU% RSS(KiB): {}", String::from_utf8_lossy(&metrics.stdout).trim()));
@@ -250,5 +266,26 @@ mod tests {
         for cmd in ["status", "up", "down", "sync", "watch"] {
             assert!(ACTIONS.contains(&cmd), "{cmd}");
         }
+    }
+
+    #[test]
+    fn sync_migrate_status_and_watch_lines() {
+        let skipped = format_migrate_status("api", config::MIGRATE_SKIPPED);
+        assert_eq!(skipped, "api migrate: no commands.migrate; skipped");
+        let watch = format_migrate_watch_line("api", "Applied 2 migrations");
+        assert_eq!(watch, "[api migrate] Applied 2 migrations");
+    }
+
+    #[test]
+    fn sync_uses_resolve_migrate_command_contract() {
+        let with = config::Commands {
+            migrate: Some("bun run db:migrate".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config::resolve_migrate_command(&with),
+            Some("bun run db:migrate")
+        );
+        assert!(config::resolve_migrate_command(&config::Commands::default()).is_none());
     }
 }

@@ -117,6 +117,20 @@ pub fn load_checked(dir: &Path) -> Result<Option<ProjectConfig>, String> {
     }
 }
 
+/// Сообщение `dem sync`, когда `commands.migrate` нет или пусто (#43).
+pub const MIGRATE_SKIPPED: &str = "no commands.migrate; skipped";
+
+/// ORM-агностичная команда миграций из `orchestrator.json` (#43).
+///
+/// Пустая строка и пробелы считаются отсутствием поля — `dem sync` пропускает миграции.
+pub fn resolve_migrate_command(commands: &Commands) -> Option<&str> {
+    commands
+        .migrate
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
 /// Команда запуска для UI / менеджера процессов.
 ///
 /// Порядок:
@@ -205,6 +219,29 @@ mod tests {
         let cfg = parse(r#"{ "name": "parser", "type": "parser" }"#).unwrap();
         assert!(cfg.ports.is_none());
         assert!(cfg.commands.dev.is_none());
+        assert!(resolve_migrate_command(&cfg.commands).is_none());
+    }
+
+    #[test]
+    fn resolve_migrate_reads_nonempty_command() {
+        let cfg = parse(VALID).unwrap();
+        assert_eq!(
+            resolve_migrate_command(&cfg.commands),
+            Some("npx prisma migrate deploy")
+        );
+    }
+
+    #[test]
+    fn resolve_migrate_skips_blank_and_missing() {
+        let blank = parse(
+            r#"{ "name": "api", "type": "service", "commands": { "migrate": "  " } }"#,
+        )
+        .unwrap();
+        assert!(resolve_migrate_command(&blank.commands).is_none());
+        assert_eq!(MIGRATE_SKIPPED, "no commands.migrate; skipped");
+
+        let missing = parse(r#"{ "name": "api", "type": "service" }"#).unwrap();
+        assert!(resolve_migrate_command(&missing.commands).is_none());
     }
 
     #[test]

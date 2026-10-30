@@ -15,7 +15,10 @@
       "properties": {
         "dev": { "type": "string" },
         "test": { "type": "string" },
-        "migrate": { "type": "string" }
+        "migrate": {
+          "type": "string",
+          "description": "ORM-агностичная команда миграций. Вызывается dem sync; если нет или пусто — пропуск с сообщением (#43)."
+        }
       }
     },
     "ports": {
