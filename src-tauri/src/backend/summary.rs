@@ -3,21 +3,21 @@
 //! Формат версионирован. Запись атомарная: сначала временный файл, потом rename.
 //! Если содержимое не изменилось, файл не переписывается.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::Path;
 
 pub const SUMMARY_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProjectStatus {
     pub name: String,
     pub running: usize,
     pub failing: usize,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Summary {
     pub version: u32,
     pub projects: Vec<ProjectStatus>,
