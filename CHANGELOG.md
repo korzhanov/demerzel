@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.24.0 — 2026-10-30
+
+- Контракт `commands.migrate` в `orchestrator.json`: `dem sync` вызывает команду из конфига (ORM-агностично); без поля / пусто — `no commands.migrate; skipped`; результат в ответе sync и в логе `watch` как `[name migrate]`. Хелпер `resolve_migrate_command`, доки в `docs/cli.md`, описание в JSON Schema. Закрывает #43.
+
 ## 0.23.0 — 2026-10-30
 
 - Рантайм Docker Compose для `type: docker-compose`: `dem up`/`down`/`status`/`sync` через `docker compose` (`ps --format json`, `up -d`, `stop`). Учёт контейнерного `Health`, опциональный YAML `healthcheck` после up/sync, понятная ошибка если Docker не запущен. Модуль `docker.rs`, тесты parse/ready, доки в `demerzel-yaml.md` / `cli.md`. Закрывает #42.

@@ -15,6 +15,31 @@
 
 `ROOT` по умолчанию — текущая директория.
 
+## Миграции (`commands.migrate`)
+
+`dem sync` не знает конкретный ORM. Для каждого process-сервиса читается [`orchestrator.json`](orchestrator.schema.json) → `commands.migrate` и запускается как shell-команда в каталоге сервиса с `env` из конфига.
+
+| Ситуация | Поведение |
+|---|---|
+| Поле задано и непустое | Команда выполняется; stdout/stderr попадают в ответ `sync` и в лог `watch` как `[name migrate] …` |
+| Поля нет, пусто или только пробелы | Миграции пропускаются: `name migrate: no commands.migrate; skipped` |
+| Команда завершилась с ошибкой | `dem sync` возвращает ошибку (сервис в статусе ошибки) |
+
+Docker Compose-сервисы (`type: docker-compose`) миграции через `commands.migrate` не вызывают — у них свой health/ready цикл.
+
+Пример:
+
+```json
+{
+  "name": "api",
+  "type": "service",
+  "commands": {
+    "dev": "bun run dev",
+    "migrate": "bunx prisma migrate deploy"
+  }
+}
+```
+
 ## Supervisor
 
 Состояние процессов держит фоновый supervisor на Unix-сокете `~/.orchestrator/runtime/dem.sock` (override: `DEMERZEL_RUNTIME_DIR`). Команды `up`, `sync`, `status` и `watch` поднимают его при необходимости; `down` требует уже запущенный supervisor.
