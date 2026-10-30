@@ -5,10 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 use super::ports::PortRange;
 
 pub const CONFIG_FILE: &str = "orchestrator.json";
+const PACKAGE_JSON: &str = "package.json";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -91,6 +94,53 @@ pub fn parse(json: &str) -> Result<ProjectConfig, ConfigError> {
     Ok(cfg)
 }
 
+/// Читает `orchestrator.json` из папки проекта, если файл есть и валиден.
+pub fn load_from_dir(dir: &Path) -> Option<ProjectConfig> {
+    let path = dir.join(CONFIG_FILE);
+    let raw = fs::read_to_string(path).ok()?;
+    parse(&raw).ok()
+}
+
+/// Команда запуска для UI / менеджера процессов.
+///
+/// Порядок:
+/// 1. `commands.dev` из `orchestrator.json`
+/// 2. если в `package.json` есть `scripts.dev` — `bun|pnpm|npm run dev` по lockfile
+///
+/// Если ни того ни другого нет (как у корня 100words только с `pipeline`) — `None`:
+/// UI должен спросить команду у пользователя.
+pub fn resolve_dev_command(dir: &Path) -> Option<String> {
+    if let Some(cfg) = load_from_dir(dir) {
+        if let Some(dev) = cfg.commands.dev.filter(|s| !s.trim().is_empty()) {
+            return Some(dev);
+        }
+    }
+    package_json_dev_command(dir)
+}
+
+fn package_json_dev_command(dir: &Path) -> Option<String> {
+    let raw = fs::read_to_string(dir.join(PACKAGE_JSON)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let has_dev = value
+        .get("scripts")
+        .and_then(|s| s.get("dev"))
+        .and_then(|d| d.as_str())
+        .is_some_and(|s| !s.is_empty());
+    if !has_dev {
+        return None;
+    }
+    let runner = if dir.join("bun.lock").exists() || dir.join("bun.lockb").exists() {
+        "bun"
+    } else if dir.join("pnpm-lock.yaml").exists() {
+        "pnpm"
+    } else if dir.join("yarn.lock").exists() {
+        "yarn"
+    } else {
+        "npm"
+    };
+    Some(format!("{runner} run dev"))
+}
+
 pub fn validate(cfg: &ProjectConfig) -> Result<(), ConfigError> {
     if cfg.name.trim().is_empty() {
         return Err(ConfigError::EmptyName);
@@ -168,5 +218,50 @@ mod tests {
     #[test]
     fn rejects_empty_name() {
         assert_eq!(parse(r#"{ "name": " ", "type": "app" }"#), Err(ConfigError::EmptyName));
+    }
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("demerzel-cfg-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn resolve_prefers_orchestrator_dev() {
+        let dir = tmp("orch");
+        fs::write(
+            dir.join(CONFIG_FILE),
+            r#"{ "name": "root", "type": "app", "commands": { "dev": "bun run pipeline" } }"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join(PACKAGE_JSON),
+            r#"{ "scripts": { "dev": "vite", "pipeline": "echo hi" } }"#,
+        )
+        .unwrap();
+        assert_eq!(resolve_dev_command(&dir).as_deref(), Some("bun run pipeline"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolve_falls_back_to_package_scripts_dev() {
+        let dir = tmp("pkg");
+        fs::write(dir.join(PACKAGE_JSON), r#"{ "scripts": { "dev": "vite dev" } }"#).unwrap();
+        fs::write(dir.join("bun.lock"), "").unwrap();
+        assert_eq!(resolve_dev_command(&dir).as_deref(), Some("bun run dev"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolve_none_without_dev_script() {
+        let dir = tmp("nodev");
+        fs::write(
+            dir.join(PACKAGE_JSON),
+            r#"{ "scripts": { "pipeline": "bun server.ts" } }"#,
+        )
+        .unwrap();
+        assert_eq!(resolve_dev_command(&dir), None);
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

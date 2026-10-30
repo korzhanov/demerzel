@@ -91,14 +91,39 @@ fn scan_projects(roots: Vec<String>) -> Result<Vec<Project>, String> {
 }
 
 #[tauri::command]
+fn resolve_dev_command(path: String) -> Option<String> {
+    backend::config::resolve_dev_command(&PathBuf::from(path))
+}
+
+#[tauri::command]
 fn start_process(
     processes: tauri::State<'_, Processes>,
     project: String,
     path: String,
     command: String,
 ) -> Result<u64, String> {
+    let cwd = PathBuf::from(&path);
+    // Пустое поле или устаревший дефолт UI «bun run dev» → commands.dev с диска.
+    let cmd = {
+        let trimmed = command.trim();
+        let use_disk = trimmed.is_empty() || trimmed == "bun run dev";
+        if use_disk {
+            if let Some(resolved) = backend::config::resolve_dev_command(&cwd) {
+                resolved
+            } else if trimmed.is_empty() {
+                return Err(format!(
+                    "нет commands.dev в {} и нет scripts.dev в package.json — укажите команду в поле «команда»",
+                    backend::config::CONFIG_FILE
+                ));
+            } else {
+                trimmed.to_string()
+            }
+        } else {
+            trimmed.to_string()
+        }
+    };
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
-    reg.start(&project, &command, &PathBuf::from(path), &Default::default(), None)
+    reg.start(&project, &cmd, &cwd, &Default::default(), None)
         .map_err(|e| e.to_string())
 }
 
@@ -138,6 +163,7 @@ pub fn run() {
             scan_projects,
             get_settings,
             save_settings,
+            resolve_dev_command,
             start_process,
             stop_process,
             list_processes,

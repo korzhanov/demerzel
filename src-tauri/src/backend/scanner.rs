@@ -22,7 +22,16 @@ fn ser_path<S: serde::Serializer>(p: &PathBuf, s: S) -> Result<S::Ok, S::Error> 
 }
 
 /// Маркеры, по которым папка считается проектом.
-pub const PROJECT_MARKERS: &[&str] = &["package.json", ".git", "orchestrator.json"];
+/// `orchestrator.json` — явная регистрация (нужен для подпроектов без package.json, напр. parser).
+pub const PROJECT_MARKERS: &[&str] = &[
+    "package.json",
+    "orchestrator.json",
+    "Cargo.toml",
+    "go.mod",
+    "pyproject.toml",
+    "requirements.txt",
+    ".git",
+];
 
 /// Папки, которые никогда не сканируются.
 pub const IGNORED_DIRS: &[&str] = &["node_modules", "target", "build", "dist"];
