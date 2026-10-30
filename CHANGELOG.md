@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.46.0 — 2026-10-31
+
+- Спайк Siri / App Intents (#100): ADR-003 **go** — Swift App Shortcut «Спроси Demerzel …», entity проект, dialog+snippet; транспорт `dem.sock` (не App Group / не CLI primary). Эталон `spikes/2-siri-app-intents/`, probe `dem-sock-probe.swift`, docs `siri-app-intents.md`, контракт+тесты `siri-bridge`. Далее #101. Закрывает #100.
+
 ## 0.45.0 — 2026-10-31
 
 - CLI `dem pulse [проект] [--json]` и `dem restart <проект> [--json]` через supervisor `dem.sock` (локальный API для App Intents, без сети). Опрос пульса через `PulseStore` (#97); compose — `docker compose restart`. Docs `cli.md` / `pulse.md`. Закрывает #102.
