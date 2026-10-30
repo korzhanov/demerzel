@@ -8,12 +8,17 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use super::alerts::AlertsConfig;
+
 pub const SETTINGS_FILE: &str = "settings.json";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
     pub scan_roots: Vec<String>,
+    /// Правила алертов (#20). Отсутствующее поле → `AlertsConfig::default()`.
+    #[serde(default)]
+    pub alerts: AlertsConfig,
 }
 
 /// Убирает пустые строки и дубликаты, сохраняя порядок.
@@ -53,6 +58,7 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::alerts::AlertsConfig;
 
     fn tmp_file(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("demerzel-settings-{}-{}", name, std::process::id()));
@@ -71,10 +77,23 @@ mod tests {
         let path = tmp_file("roundtrip");
         let s = Settings {
             scan_roots: vec!["  /a ".into(), "".into(), "/a".into(), "/b".into()],
+            ..Settings::default()
         };
         save(&path, &s).unwrap();
         let loaded = load(&path).unwrap();
         assert_eq!(loaded.scan_roots, vec!["/a".to_string(), "/b".to_string()]);
+        assert_eq!(loaded.alerts.rules.len(), 4);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn missing_alerts_section_uses_default_rules() {
+        let path = tmp_file("alerts-default");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"scan_roots":["/proj"]}"#).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.scan_roots, vec!["/proj".to_string()]);
+        assert_eq!(loaded.alerts, AlertsConfig::default());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
