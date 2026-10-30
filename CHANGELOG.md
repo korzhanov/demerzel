@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.20.0 — 2026-10-30
+
+- UI доска задач: колонки по статусам (`todo` / `in_progress` / `done` / `blocked`), фильтр по проекту, агрегация через `project_tasks`, открытие issue URL или файла источника. Панель `TasksPanel`, хелперы фильтра/колонок/`canOpenTask` и `bun:test`. По wireframe `references/ports-tasks-wireframe.md`. Закрывает #19.
+
 ## 0.19.0 — 2026-10-30
 
 - Адаптер GitHub Issues `GithubSource`: REST через `gh api`, фильтр по метке, исключение PR, кэш ответа по ETag/`If-None-Match` и минимум 60 с между запросами. Документ `docs/tasks-format.md` (секция GitHub), поля `repository`/`label` в схеме. Закрывает #18.

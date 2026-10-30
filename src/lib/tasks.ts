@@ -1,5 +1,13 @@
 import type { Task, TaskStatus } from "./types";
 
+/** Колонки доски по wire-статусам модели Task (#16 / #19). */
+export const TASK_BOARD_COLUMNS: readonly { status: TaskStatus; label: string }[] = [
+  { status: "todo", label: "К выполнению" },
+  { status: "in_progress", label: "В работе" },
+  { status: "done", label: "Готово" },
+  { status: "blocked", label: "Заблокировано" },
+] as const;
+
 /** Подписи статусов нормализованной модели задачи (#16). */
 export function taskStatusLabel(status: TaskStatus): string {
   switch (status) {
@@ -16,6 +24,33 @@ export function taskStatusLabel(status: TaskStatus): string {
       return _exhaustive;
     }
   }
+}
+
+/** Фильтр доски: пустой projectFilter = все проекты (путь проекта). */
+export function filterTasksByProject(
+  tasks: readonly Task[],
+  projectFilter: string,
+): Task[] {
+  if (!projectFilter) return [...tasks];
+  return tasks.filter((task) => task.project === projectFilter);
+}
+
+/** Карточки одной колонки доски. */
+export function tasksForColumn(
+  tasks: readonly Task[],
+  status: TaskStatus,
+): Task[] {
+  return tasks.filter((task) => task.status === status);
+}
+
+/**
+ * Можно открыть источник: http(s) URL issue или абсолютный путь к файлу
+ * (TODO.md / tasks.json).
+ */
+export function canOpenTask(task: Pick<Task, "url">): boolean {
+  const url = task.url?.trim();
+  if (!url) return false;
+  return /^https?:\/\//.test(url) || url.startsWith("/");
 }
 
 /** Сводка по статусам — зеркало `count_by_status` на бэкенде. */

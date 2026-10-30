@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-  import type { Settings, PortRow, Task, TaskStatus } from "$lib/types";
+  import type { Settings, PortRow, Task } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -11,7 +11,9 @@
     type ProcessRow,
   } from "$lib/types";
   import { clampPortPollInterval } from "$lib/ports";
+  import { canOpenTask } from "$lib/tasks";
   import PortsPanel from "$lib/components/PortsPanel.svelte";
+  import TasksPanel from "$lib/components/TasksPanel.svelte";
 
   let roots = $state("");
   let projects = $state<Project[]>([]);
@@ -34,14 +36,7 @@
   let processBusy = false;
   let scanBusy = $state(false);
   let taskGeneration = 0;
-  const columns: { status: TaskStatus; label: string }[] = [
-    { status: "todo", label: "К выполнению" },
-    { status: "in_progress", label: "В работе" },
-    { status: "done", label: "Готово" },
-    { status: "blocked", label: "Заблокировано" },
-  ];
   const flatProjects = $derived(flatten(projects));
-  const visibleTasks = $derived(tasks.filter((task) => !projectFilter || task.project === projectFilter));
 
   function flatten(list: Project[]): Project[] {
     return [...new Map(list.flatMap((p) => [p, ...flatten(p.children)]).map((p) => [p.path, p])).values()];
@@ -73,12 +68,13 @@
   }
 
   async function openTask(task: Task) {
-    if (!task.url) return;
+    if (!canOpenTask(task) || !task.url) return;
     try {
       if (/^https?:\/\//.test(task.url)) await openUrl(task.url);
-      else if (task.url.startsWith("/")) await openPath(task.url);
-      else throw new Error("Неподдерживаемая ссылка задачи");
-    } catch (e) { taskErrors = [...taskErrors, String(e)]; }
+      else await openPath(task.url);
+    } catch (e) {
+      taskErrors = [...taskErrors, String(e)];
+    }
   }
 
   async function stopManagedFromPorts(managedId: number) {
@@ -284,31 +280,15 @@
     onStopManaged={stopManagedFromPorts}
   />
 
-  <section aria-labelledby="tasks-title">
-    <h2 id="tasks-title">Задачи</h2>
-    <div class="row">
-      <label>Проект <select bind:value={projectFilter}>
-        <option value="">Все проекты</option>
-        {#each flatProjects as p (p.path)}<option value={p.path}>{p.name} — {p.path}</option>{/each}
-      </select></label>
-      <button type="button" disabled={tasksBusy || flatProjects.length === 0} onclick={refreshTasks}>{tasksBusy ? "Загрузка…" : "Обновить задачи"}</button>
-    </div>
-    {#each taskErrors as message, i (i)}<p class="error" role="alert">{message}</p>{/each}
-    {#if flatProjects.length === 0}<p>Сначала выберите корневые папки и выполните сканирование.</p>{/if}
-    <div class="task-board">
-      {#each columns as column (column.status)}
-        <section class="task-column" aria-label={column.label}>
-          <h3>{column.label}</h3>
-          {#each visibleTasks.filter((task) => task.status === column.status) as task (task.id)}
-            <article class="task-card">
-              <strong>{task.title}</strong><p>{task.project}</p><small>{task.source}</small>
-              {#if task.url}<button type="button" onclick={() => openTask(task)}>Открыть источник</button>{/if}
-            </article>
-          {:else}<p class="empty">Нет задач</p>{/each}
-        </section>
-      {/each}
-    </div>
-  </section>
+  <TasksPanel
+    {tasks}
+    {taskErrors}
+    {tasksBusy}
+    bind:projectFilter
+    projects={flatProjects}
+    onRefresh={refreshTasks}
+    onOpen={openTask}
+  />
 </main>
 
 <style>
@@ -325,14 +305,4 @@
   .logs { background: #0d0d12; color: #ddd; padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; }
   .err { color: #ff7b72; }
   .error { color: #b00020; overflow-wrap: anywhere; }
-  .task-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  .task-column { background: #f4f5f8; border-radius: 8px; padding: 12px; }
-  .task-column h3 { margin-top: 0; font-size: 1rem; }
-  .task-card { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 10px; margin-bottom: 10px; overflow-wrap: anywhere; }
-  .task-card p { font-size: 0.8rem; color: #555; }
-  .task-card button { display: block; margin-top: 8px; }
-  select { max-width: 100%; font: inherit; }
-  .empty { color: #555; }
-  @media (max-width: 760px) { .task-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 440px) { .task-board { grid-template-columns: 1fr; } }
 </style>
