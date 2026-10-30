@@ -3,7 +3,14 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-  import type { AcceptAgentRunResult, AgentRunRecord, Settings, PortRow, Task } from "$lib/types";
+  import type {
+    AcceptAgentRunResult,
+    AgentRunRecord,
+    Settings,
+    PortRow,
+    StartAgentRunResult,
+    Task,
+  } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -13,7 +20,7 @@
   } from "$lib/types";
   import { OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
   import { clampPortPollInterval } from "$lib/ports";
-  import { canOpenTask } from "$lib/tasks";
+  import { canOpenTask, canStartAgentFromTask } from "$lib/tasks";
   import PortsPanel from "$lib/components/PortsPanel.svelte";
   import TasksPanel from "$lib/components/TasksPanel.svelte";
   import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
@@ -42,6 +49,7 @@
   let agentRunsBusy = $state(false);
   let selectedAgentRunId = $state<string | null>(null);
   let agentMergeCommand = $state("");
+  let startBusyTaskId = $state<string | null>(null);
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
@@ -84,6 +92,30 @@
       else await openPath(task.url);
     } catch (e) {
       taskErrors = [...taskErrors, String(e)];
+    }
+  }
+
+  async function startAgentFromTask(task: Task) {
+    if (!canStartAgentFromTask(task) || startBusyTaskId) return;
+    startBusyTaskId = task.id;
+    try {
+      const result = await invoke<StartAgentRunResult>("start_agent_from_task", { task });
+      tasks = tasks.map((t) => (t.id === result.task.id ? result.task : t));
+      if (result.queued && result.queue_reason) {
+        taskErrors = [...taskErrors, `Агент в очереди: ${result.queue_reason}`];
+      }
+      selectedAgentRunId = result.run.id;
+      await refreshAgentRuns();
+      // Claude может ещё работать в фоне — подтянуть статус через пару секунд.
+      if (!result.queued) {
+        setTimeout(() => {
+          void refreshAgentRuns();
+        }, 2000);
+      }
+    } catch (e) {
+      taskErrors = [...taskErrors, String(e)];
+    } finally {
+      startBusyTaskId = null;
     }
   }
 
@@ -357,8 +389,10 @@
     {tasksBusy}
     bind:projectFilter
     projects={flatProjects}
+    {startBusyTaskId}
     onRefresh={refreshTasks}
     onOpen={openTask}
+    onStartAgent={startAgentFromTask}
   />
 
   <AgentRunsPanel

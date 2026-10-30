@@ -1,6 +1,6 @@
 # Агенты: git worktree, Claude CLI, лимиты и ревью
 
-Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #31 (тесты + diff), #32 (UI ревью). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -102,6 +102,8 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 - `AgentRunRecord` / `AgentRunRegistry` / `AcceptAgentRunResult`
 - `manual_merge_command` / `shell_single_quote`
 - `upsert` / `list` / `accept` / `discard` (discard → `remove_worktree`)
+- `prepare_agent_from_task` / `complete_agent_run` / `start_agent_from_task` (#33)
+- `StartAgentRunResult` / `project_slug` / `task_prompt_text`
 
 ## UI ревью (#32)
 
@@ -114,7 +116,24 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 
 Tauri: `list_agent_runs`, `get_agent_run`, `upsert_agent_run`, `accept_agent_run`, `discard_agent_run`.
 
-Запуск из задачи (#33) поверх этого слоя (`upsert` после `collect_review`).
+## Запуск из задачи (#33)
+
+Кнопка «Исправить» на карточке доски задач:
+
+1. **Статус задачи** — `mark_task_in_progress`: TODO.md → `- [~]`, `tasks.json` → `in_progress`, GitHub — только локально в ответе (issue не закрывается).
+2. **Prepare** — `prepare_agent_from_task`: запись `queued`, `AgentLimiter::try_acquire`; при слоте — `create_worktree`, статус `running`.
+3. **Complete** (фон в UI / sync в тестах) — `complete_agent_run`: Claude CLI → `collect_review` → `needs_review` / `failed`, `release` слота.
+4. **Очередь** — при нехватке слота/памяти run остаётся `queued` без worktree; задача уже `in_progress`.
+5. **Закрытие задачи** — после accept/discard только вручную (accept не трогает TODO/GitHub).
+
+Tauri: `start_agent_from_task(task)` → `StartAgentRunResult { run, task, queued, queue_reason? }`.
+
+## API (дополнение #33)
+
+- `mark_task_in_progress` / `set_todo_checkbox` / `set_tasks_json_status` (`backend/tasks`)
+- `project_slug` / `new_run_id` / `task_prompt_text` / `queue_reason_message`
+- `prepare_agent_from_task` / `complete_agent_run` / `start_agent_from_task`
+- `StartAgentRunResult` / `StartAgentParams`
 
 ## Связь со схемой
 

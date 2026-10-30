@@ -35,6 +35,9 @@ pub struct AlertGate(pub Mutex<DeliveryGate>);
 /// In-memory реестр agent runs для UI ревью (#32).
 pub struct AgentRuns(pub Mutex<backend::agents::AgentRunRegistry>);
 
+/// Лимитер параллельных агентов (#29 / #33).
+pub struct AgentLimit(pub Mutex<backend::agents::AgentLimiter>);
+
 /// Результат приёма события алерта (для UI / тестов).
 #[derive(Debug, Clone, Serialize)]
 pub struct IngestAlertResult {
@@ -296,6 +299,64 @@ fn discard_agent_run(
     reg.discard(&id)
 }
 
+/// Запуск агента из задачи (#33): статус `in_progress`, worktree; Claude в фоне.
+#[tauri::command]
+fn start_agent_from_task(
+    app: tauri::AppHandle,
+    runs: tauri::State<'_, AgentRuns>,
+    limit: tauri::State<'_, AgentLimit>,
+    task: backend::tasks::Task,
+) -> Result<backend::agents::StartAgentRunResult, String> {
+    use backend::agents::{
+        complete_agent_run, prepare_agent_from_task, task_prompt_text, DEFAULT_CLAUDE_TIMEOUT,
+    };
+    use std::thread;
+
+    let project_path = PathBuf::from(&task.project);
+    let prompt = task_prompt_text(&task);
+    let prepared = {
+        let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+        let mut lim = limit.0.lock().map_err(|e| e.to_string())?;
+        prepare_agent_from_task(
+            &task,
+            &project_path,
+            &mut reg,
+            &mut lim,
+            Some("HEAD"),
+            None,
+        )?
+    };
+
+    if prepared.queued {
+        return Ok(prepared);
+    }
+
+    let run_id = prepared.run.id.clone();
+    let app_handle = app.clone();
+    thread::spawn(move || {
+        let runs_state = app_handle.state::<AgentRuns>();
+        let limit_state = app_handle.state::<AgentLimit>();
+        let Ok(mut reg) = runs_state.0.lock() else {
+            return;
+        };
+        let Ok(mut lim) = limit_state.0.lock() else {
+            return;
+        };
+        if let Err(e) = complete_agent_run(
+            &run_id,
+            &prompt,
+            &mut reg,
+            &mut lim,
+            DEFAULT_CLAUDE_TIMEOUT,
+            None,
+        ) {
+            eprintln!("[agents] complete_agent_run failed: {e}");
+        }
+    });
+
+    Ok(prepared)
+}
+
 /// Оценивает событие → gate → OS notify (#22) и `say` (#23) по флагам решения.
 #[tauri::command]
 fn ingest_alert_event(
@@ -356,6 +417,7 @@ pub fn run() {
         .manage(Processes(Mutex::new(Registry::default())))
         .manage(AlertGate(Mutex::new(DeliveryGate::new_default())))
         .manage(AgentRuns(Mutex::new(backend::agents::AgentRunRegistry::new())))
+        .manage(AgentLimit(Mutex::new(backend::agents::AgentLimiter::from_defaults())))
         .setup(|app| {
             let handle = app.handle().clone();
             app.notification().on_action(move |performed| {
@@ -364,12 +426,16 @@ pub fn run() {
                     .and_then(|n| notify::project_from_extra(n.extra()));
                 handle_notification_action(&handle, performed.action_id(), project);
             })?;
-            // Подтянуть quiet/dedupe из settings при старте.
+            // Подтянуть quiet/dedupe и agents limiter из settings при старте.
             if let Ok(path) = settings_path(app.handle())
                 && let Ok(settings) = backend::settings::load(&path)
-                && let Ok(mut gate) = app.state::<AlertGate>().0.lock()
             {
-                *gate = DeliveryGate::from_config(&settings.alerts);
+                if let Ok(mut gate) = app.state::<AlertGate>().0.lock() {
+                    *gate = DeliveryGate::from_config(&settings.alerts);
+                }
+                if let Ok(mut lim) = app.state::<AgentLimit>().0.lock() {
+                    *lim = backend::agents::AgentLimiter::new(settings.agents);
+                }
             }
             Ok(())
         })
@@ -391,6 +457,7 @@ pub fn run() {
             upsert_agent_run,
             accept_agent_run,
             discard_agent_run,
+            start_agent_from_task,
             ingest_alert_event
         ])
         .run(tauri::generate_context!())

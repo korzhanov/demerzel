@@ -186,6 +186,14 @@ export interface AcceptAgentRunResult {
   merge_command: string;
 }
 
+/** Результат `start_agent_from_task` (#33). */
+export interface StartAgentRunResult {
+  run: AgentRunRecord;
+  task: Task;
+  queued: boolean;
+  queue_reason: string | null;
+}
+
 export interface Settings {
   scan_roots: string[];
   alerts?: AlertsConfig;

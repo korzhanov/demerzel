@@ -53,6 +53,14 @@ export function canOpenTask(task: Pick<Task, "url">): boolean {
   return /^https?:\/\//.test(url) || url.startsWith("/");
 }
 
+/**
+ * Кнопка «Исправить» (#33): агент из задачи, кроме уже закрытых (`done`).
+ * Закрытие после accept — только вручную.
+ */
+export function canStartAgentFromTask(task: Pick<Task, "status">): boolean {
+  return task.status !== "done";
+}
+
 /** Сводка по статусам — зеркало `count_by_status` на бэкенде. */
 export function countByStatus(tasks: readonly Pick<Task, "status">[]): {
   todo: number;
