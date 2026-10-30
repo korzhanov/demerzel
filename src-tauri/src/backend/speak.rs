@@ -16,14 +16,38 @@ pub struct VoiceConfig {
     /// Голос `say -v` (по умолчанию Milena).
     #[serde(default = "default_voice_name")]
     pub name: String,
+    /// Имя пользователя для `{user}` в фразах (#99).
+    #[serde(default = "default_user_name")]
+    pub user_name: String,
+    /// Как произносить имя в `say` (если пусто — `user_name`).
+    #[serde(default)]
+    pub user_pronunciation: String,
     #[serde(default)]
     pub phrases: VoicePhrases,
+}
+
+impl VoiceConfig {
+    /// Имя, которое пойдёт в `say`.
+    pub fn spoken_name(&self) -> &str {
+        let p = self.user_pronunciation.trim();
+        if p.is_empty() {
+            self.user_name.trim()
+        } else {
+            p
+        }
+    }
+}
+
+fn default_user_name() -> String {
+    "Олег".into()
 }
 
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
             name: default_voice_name(),
+            user_name: default_user_name(),
+            user_pronunciation: String::new(),
             phrases: VoicePhrases::default(),
         }
     }
@@ -58,19 +82,19 @@ impl Default for VoicePhrases {
 }
 
 fn default_phrase_process_exited() -> String {
-    "Олег, внимание. {project} упал, код {code}.".into()
+    "{user}, внимание. {project} упал, код {code}.".into()
 }
 
 fn default_phrase_port_conflict() -> String {
-    "Олег, внимание. Порт {port} занят.".into()
+    "{user}, внимание. Порт {port} занят.".into()
 }
 
 fn default_phrase_agent_failed() -> String {
-    "Олег, внимание. Агент {run_id} не справился.".into()
+    "{user}, внимание. Агент {run_id} не справился.".into()
 }
 
 fn default_phrase_tests_failed() -> String {
-    "Олег, внимание. Тесты {run_id} упали.".into()
+    "{user}, внимание. Тесты {run_id} упали.".into()
 }
 
 /// Готовый вызов для `say`.
@@ -107,7 +131,7 @@ pub fn build_payload(candidate: &AlertCandidate, voice: &VoiceConfig) -> SpeakPa
     let template = phrase_template(&voice.phrases, &candidate.event);
     SpeakPayload {
         voice: voice.name.clone(),
-        phrase: render_phrase(template, &candidate.event),
+        phrase: render_phrase(&template.replace("{user}", voice.spoken_name()), &candidate.event),
     }
 }
 
@@ -192,9 +216,22 @@ mod tests {
     }
 
     #[test]
+    fn user_name_and_pronunciation_are_substituted() {
+        let e = AlertEvent::PortConflict { port: 5173 };
+        let c = evaluate(&default_rules(), &e).expect("candidate");
+        let mut v = VoiceConfig::default();
+        v.user_name = "Anna".into();
+        assert_eq!(build_payload(&c, &v).phrase, "Anna, внимание. Порт 5173 занят.");
+        v.user_pronunciation = "Анна".into();
+        assert_eq!(build_payload(&c, &v).phrase, "Анна, внимание. Порт 5173 занят.");
+    }
+
+    #[test]
     fn custom_template_and_voice() {
         let voice = VoiceConfig {
             name: "Yuri".into(),
+            user_name: "Олег".into(),
+            user_pronunciation: String::new(),
             phrases: VoicePhrases {
                 process_exited: "{project} код {code}".into(),
                 ..VoicePhrases::default()
