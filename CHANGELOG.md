@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.0 — 2026-10-30
+
+- CLI `dem` / `demerzel`: `status`, `up`, `down`, `sync`, `watch` через Unix-socket supervisor (процессы, логи/метрики, migrate). Документ `docs/cli.md`, `DEMERZEL_RUNTIME_DIR`, unit-тесты entrypoint. `status`/`watch` поднимают supervisor без предварительного `up`. Закрывает #40.
+
 ## 0.20.0 — 2026-10-30
 
 - UI доска задач: колонки по статусам (`todo` / `in_progress` / `done` / `blocked`), фильтр по проекту, агрегация через `project_tasks`, открытие issue URL или файла источника. Панель `TasksPanel`, хелперы фильтра/колонок/`canOpenTask` и `bun:test`. По wireframe `references/ports-tasks-wireframe.md`. Закрывает #19.
@@ -42,7 +46,7 @@
 
 ## 0.10.0 — 2026-10-30
 
-- CLI `dem` (и `demerzel`): команды `status` (дерево проектов и подпроектов с конфигами, портами и типами) и `help`. Команды `up`, `down`, `sync`, `watch` пока отвечают, что не подключены. Частично, #40 остаётся открытым.
+- CLI `dem` (и `demerzel`): команды `status` (дерево проектов и подпроектов с конфигами, портами и типами) и `help`. Команды `up`, `down`, `sync`, `watch` тогда ещё не были подключены (закрыто в 0.21.0 / #40).
 
 ## 0.9.0 — 2026-10-30
 
