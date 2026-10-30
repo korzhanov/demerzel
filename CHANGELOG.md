@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.43.0 — 2026-10-31
+
+- Пульс проектов в виджете: опциональный `pulse` в `summary.json` (summary + ETA), строки в small (1) / medium (до 3), `widget::config` пушит оба размера; reload только при изменении текста IR. Зеркало в native WidgetKit fallback и `src/lib/pulse.ts`. Docs: `docs/widget-macos.md`. Источник опроса (#97) отдельно. Закрывает #98.
+
 ## 0.42.1 — 2026-10-31
 
 - UI доски: карточки задач не вылезают из колонок (`min-w-0` / `overflow-hidden` / `break-words`); проекты в узкой панели — truncate + `title` с полным путём; сводка «В работе · Todo · Готово» как на мокапе. Закрывает #104.

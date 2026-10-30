@@ -79,3 +79,31 @@ bun run widget:preview
 | Display name | Demerzel |
 
 С Team ID / MAS: `transport: appGroup` и Developer portal App Group — см. ADR-001.
+
+## Пульс проектов (#98)
+
+В `summary.json` у проекта может быть опциональный снимок пульса (совместим с контрактом #97):
+
+```json
+{
+  "name": "parser",
+  "running": 1,
+  "failing": 0,
+  "pulse": {
+    "summary": "1500 новых лемм, 450 проверено",
+    "eta_seconds": 600,
+    "state": "running"
+  }
+}
+```
+
+Виджет:
+
+| Размер | Что показывает |
+|---|---|
+| small | failing + порты + **1** строка пульса (`name: summary, ещё N мин`) |
+| medium | проекты / задачи + до **3** строк пульса |
+
+IR собирается в `widget::config` (small+medium). `refresh_widget` сравнивает текст IR и вызывает `reload_all_timelines` только при изменении (throttle ≥30 с) — бюджет WidgetKit не жжётся на тот же пульс. Источник опроса команды/файла — [#97](https://github.com/korzhanov/demerzel/issues/97); виджет только отображает уже попавший в summary снимок.
+
+Превью IR: `bun run widget:preview` (см. `widget.json`).

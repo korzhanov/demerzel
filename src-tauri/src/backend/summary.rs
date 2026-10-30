@@ -3,6 +3,7 @@
 //! Формат версионирован. Запись атомарная: сначала временный файл, потом rename.
 //! Если содержимое не изменилось, файл не переписывается.
 //! Копия в iCloud Drive — см. `icloud_sync`; App Group — `widgetkit_fallback`.
+//! Опциональный пульс проектов (#98); источник команды/файла — #97.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -11,11 +12,25 @@ use std::path::Path;
 
 pub const SUMMARY_VERSION: u32 = 1;
 
+/// Снимок пульса для виджета / summary.json (#98).
+/// Полный контракт опроса (команда / файл) — #97.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ProjectPulse {
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProjectStatus {
     pub name: String,
     pub running: usize,
     pub failing: usize,
+    /// Последний известный пульс; отсутствует → строка пульса в виджете не рисуется.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pulse: Option<ProjectPulse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -44,8 +59,42 @@ impl Summary {
         self.failing_total = self.projects.iter().map(|p| p.failing).sum();
     }
 
+    /// Проекты с непустым текстом пульса (для виджета #98).
+    pub fn projects_with_pulse(&self) -> impl Iterator<Item = (&str, &ProjectPulse)> {
+        self.projects.iter().filter_map(|p| {
+            let pulse = p.pulse.as_ref()?;
+            let summary = pulse.summary.trim();
+            if summary.is_empty() {
+                return None;
+            }
+            Some((p.name.as_str(), pulse))
+        })
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).expect("summary is always serializable")
+    }
+}
+
+/// Человекочитаемый ETA для строки пульса (RU).
+pub fn format_eta_ru(secs: u64) -> String {
+    if secs < 60 {
+        format!("ещё {secs} с")
+    } else if secs < 3600 {
+        let mins = secs.div_ceil(60);
+        format!("ещё {mins} мин")
+    } else {
+        let hours = secs.div_ceil(3600);
+        format!("ещё {hours} ч")
+    }
+}
+
+/// `name: summary` или `name: summary, ещё N мин`.
+pub fn format_pulse_line(name: &str, pulse: &ProjectPulse) -> String {
+    let summary = pulse.summary.trim();
+    match pulse.eta_seconds {
+        Some(secs) => format!("{name}: {summary}, {}", format_eta_ru(secs)),
+        None => format!("{name}: {summary}"),
     }
 }
 
@@ -68,8 +117,22 @@ mod tests {
 
     fn sample() -> Summary {
         let mut s = Summary::new("2026-10-30T18:00:00+01:00");
-        s.projects.push(ProjectStatus { name: "api".into(), running: 1, failing: 1 });
-        s.projects.push(ProjectStatus { name: "web".into(), running: 2, failing: 0 });
+        s.projects.push(ProjectStatus {
+            name: "api".into(),
+            running: 1,
+            failing: 1,
+            pulse: Some(ProjectPulse {
+                summary: "1500 новых лемм, 450 проверено".into(),
+                eta_seconds: Some(600),
+                state: Some("running".into()),
+            }),
+        });
+        s.projects.push(ProjectStatus {
+            name: "web".into(),
+            running: 2,
+            failing: 0,
+            pulse: None,
+        });
         s.recompute();
         s
     }
@@ -85,6 +148,40 @@ mod tests {
         assert!(json.contains("\"version\": 1"));
         assert!(json.contains("\"failing_total\": 1"));
         assert!(json.contains("\"updated_at\""));
+        assert!(json.contains("\"pulse\""));
+        assert!(json.contains("\"eta_seconds\": 600"));
+    }
+
+    #[test]
+    fn pulse_line_includes_eta() {
+        let pulse = ProjectPulse {
+            summary: "1500 новых лемм, 450 проверено".into(),
+            eta_seconds: Some(600),
+            state: None,
+        };
+        assert_eq!(
+            format_pulse_line("parser", &pulse),
+            "parser: 1500 новых лемм, 450 проверено, ещё 10 мин"
+        );
+        assert_eq!(format_eta_ru(45), "ещё 45 с");
+        assert_eq!(format_eta_ru(3600), "ещё 1 ч");
+    }
+
+    #[test]
+    fn projects_with_pulse_skips_empty() {
+        let mut s = sample();
+        s.projects.push(ProjectStatus {
+            name: "empty".into(),
+            running: 0,
+            failing: 0,
+            pulse: Some(ProjectPulse {
+                summary: "  ".into(),
+                eta_seconds: None,
+                state: None,
+            }),
+        });
+        let names: Vec<_> = s.projects_with_pulse().map(|(n, _)| n).collect();
+        assert_eq!(names, vec!["api"]);
     }
 
     #[test]

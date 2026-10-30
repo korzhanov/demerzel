@@ -7,7 +7,39 @@
     "children": [
       { "type": "text", "content": "Demerzel", "fontSize": 12, "color": "#8888aa" },
       { "type": "text", "content": "0 failing", "fontSize": 28, "fontWeight": "bold", "color": "#ffffff" },
-      { "type": "progress", "value": 0.0, "tint": "#4CAF50", "label": "Ports ok" }
+      { "type": "progress", "value": 0.0, "tint": "#4CAF50", "label": "Ports ok" },
+      {
+        "type": "text",
+        "content": "parser: 1500 новых лемм, 450 проверено, ещё 10 мин",
+        "fontSize": 12,
+        "color": "#b0b0cc"
+      }
+    ]
+  },
+  "medium": {
+    "type": "vstack",
+    "padding": 12,
+    "background": "#0d0d12",
+    "children": [
+      { "type": "text", "content": "Demerzel", "fontSize": 12, "color": "#8888aa" },
+      {
+        "type": "text",
+        "content": "parser  ·  1 running, 0 failing",
+        "fontSize": 13,
+        "color": "#e0e0e0"
+      },
+      {
+        "type": "text",
+        "content": "parser: 1500 новых лемм, 450 проверено, ещё 10 мин",
+        "fontSize": 12,
+        "color": "#b0b0cc"
+      },
+      {
+        "type": "text",
+        "content": "Tasks: 3 todo · 1 in progress",
+        "fontSize": 12,
+        "color": "#8888aa"
+      }
     ]
   }
 }

@@ -104,7 +104,8 @@ fn now_secs() -> u64 {
 /// Обновляет виджет по сводке, если содержимое изменилось и прошёл интервал.
 /// Возвращает `true`, если обновление выполнено.
 pub fn refresh_widget(app: &tauri::AppHandle, summary: &Summary) -> Result<bool, String> {
-    let json = widget::small(summary);
+    // small+medium IR (#98); throttle по тексту — без reload при неизменном пульсе/статусе.
+    let json = widget::config(summary);
     let content = json.to_string();
     let state = app.state::<WidgetState>();
     let mut throttle = state.0.lock().map_err(|e| e.to_string())?;

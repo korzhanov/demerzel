@@ -27,7 +27,7 @@
 | [agents.md](agents.md) | Worktree, Claude CLI, Ollama, лимиты, ревью (#27–#33) |
 | [alerts.md](alerts.md) | Правила алертов, notify / speak, quiet hours (#20–#23) |
 | [icloud-summary.md](icloud-summary.md) | `summary.json` → iCloud Drive для iPhone (#37) |
-| [widget-macos.md](widget-macos.md) | Сборка `.appex`, embed PlugIns, Widget Gallery (#103) |
+| [widget-macos.md](widget-macos.md) | Сборка `.appex`, embed PlugIns, Widget Gallery (#103), пульс в small/medium (#98) |
 | [widgetkit-fallback.md](widgetkit-fallback.md) | Native Swift WidgetKit fallback, App Group (#38) |
 
 ## ADR (Architecture Decision Records)

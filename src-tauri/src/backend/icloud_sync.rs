@@ -172,6 +172,7 @@ mod tests {
             name: "api".into(),
             running: 1,
             failing: 0,
+            ..Default::default()
         });
         s.recompute();
         s

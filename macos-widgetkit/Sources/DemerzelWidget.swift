@@ -8,10 +8,17 @@ let appGroupId = "group.app.demerzel.orchestrator"
 let summaryFileName = "summary.json"
 let widgetKind = "DemerzelNativeWidget"
 
+struct ProjectPulse: Codable, Hashable {
+    var summary: String
+    var eta_seconds: Int?
+    var state: String?
+}
+
 struct ProjectStatus: Codable, Hashable {
     var name: String
     var running: Int
     var failing: Int
+    var pulse: ProjectPulse?
 }
 
 struct SummaryPayload: Codable, Hashable {
@@ -34,6 +41,33 @@ struct SummaryPayload: Codable, Hashable {
         agents_running: 0,
         updated_at: "—"
     )
+
+    /// Строки пульса (summary + ETA) для small/medium (#98).
+    func pulseLines(limit: Int) -> [String] {
+        var out: [String] = []
+        for p in projects {
+            guard let pulse = p.pulse else { continue }
+            let text = pulse.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            if let eta = pulse.eta_seconds {
+                out.append("\(p.name): \(text), \(Self.formatEta(eta))")
+            } else {
+                out.append("\(p.name): \(text)")
+            }
+            if out.count >= limit { break }
+        }
+        return out
+    }
+
+    static func formatEta(_ secs: Int) -> String {
+        if secs < 60 { return "ещё \(secs) с" }
+        if secs < 3600 {
+            let mins = (secs + 59) / 60
+            return "ещё \(mins) мин"
+        }
+        let hours = (secs + 3599) / 3600
+        return "ещё \(hours) ч"
+    }
 }
 
 enum SummaryStore {
@@ -83,6 +117,9 @@ struct DemerzelWidgetView: View {
         let failing = entry.summary.failing_total
         let tint = failing == 0 ? Color(red: 0.30, green: 0.69, blue: 0.31) : Color(red: 0.90, green: 0.22, blue: 0.21)
 
+        let pulseLimit = family == .systemSmall ? 1 : 3
+        let pulses = entry.summary.pulseLines(limit: pulseLimit)
+
         VStack(alignment: .leading, spacing: 6) {
             Text("Demerzel")
                 .font(.caption)
@@ -105,6 +142,13 @@ struct DemerzelWidgetView: View {
                 Text(entry.summary.port_conflicts == 0 ? "Ports ok" : "Port conflicts")
                     .font(.caption2)
                     .foregroundStyle(tint)
+            }
+
+            ForEach(pulses, id: \.self) { line in
+                Text(line)
+                    .font(.caption2)
+                    .foregroundStyle(Color(white: 0.7))
+                    .lineLimit(2)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
