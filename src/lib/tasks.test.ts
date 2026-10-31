@@ -2,11 +2,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   TASK_BOARD_COLUMNS,
+  TASK_COLUMN_PREVIEW,
   canOpenTask,
   canStartAgentFromTask,
   countByStatus,
   filterTasksByProject,
   formatTaskBoardSummary,
+  splitColumnPreview,
   taskStatusLabel,
   tasksForColumn,
 } from "./tasks";
@@ -69,6 +71,22 @@ describe("tasksForColumn", () => {
     ];
     expect(tasksForColumn(rows, "todo").map((t) => t.id)).toEqual(["1", "3"]);
     expect(tasksForColumn(rows, "blocked")).toEqual([]);
+  });
+});
+
+describe("splitColumnPreview", () => {
+  test("keeps short lists intact; spoils the rest past preview limit", () => {
+    expect(TASK_COLUMN_PREVIEW).toBe(3);
+    const ids = ["a", "b", "c", "d", "e"];
+    expect(splitColumnPreview(ids, 3)).toEqual({
+      preview: ["a", "b", "c"],
+      rest: ["d", "e"],
+    });
+    expect(splitColumnPreview(["x", "y"], 3)).toEqual({
+      preview: ["x", "y"],
+      rest: [],
+    });
+    expect(splitColumnPreview(ids, 0)).toEqual({ preview: [], rest: ids });
   });
 });
 
