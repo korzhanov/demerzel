@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import AutomationsPanel from "$lib/components/AutomationsPanel.svelte";
   import AutomationScheduler from "$lib/components/AutomationScheduler.svelte";
+  import UpdateControl from "$lib/components/UpdateControl.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
@@ -1120,6 +1121,8 @@
       {/snippet}
     </StatusSummary>
   </Tooltip.Provider>
+
+  <UpdateControl />
 
   {#if error}
     <p class="break-words px-4 pt-2 text-sm text-destructive">{error}</p>
