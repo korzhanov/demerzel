@@ -28,3 +28,22 @@ export function clampPortPollInterval(raw: number): number {
   if (!Number.isFinite(raw)) return 5;
   return Math.max(1, Math.min(60, Math.trunc(raw)));
 }
+
+/** Системные процессы macOS и служебные хелперы IDE — не чужие серверы (#122). */
+const SYSTEM_PROCESS_NAMES = new Set([
+  "rapportd",
+  "ControlCenter",
+  "Cloud",
+  "AMPDevicesAgent",
+  "sharingd",
+  "controlcenter",
+  "launchd",
+  "mDNSResponder",
+  "remoted",
+]);
+
+export function isSystemPort(row: Pick<PortRow, "command" | "status" | "managed_id">): boolean {
+  if (row.managed_id !== null || row.status === "conflict") return false;
+  if (SYSTEM_PROCESS_NAMES.has(row.command)) return true;
+  return /\bHelper\b/.test(row.command);
+}
