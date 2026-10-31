@@ -3,6 +3,7 @@
   import { canStopManagedPort, portStatusLabel } from "$lib/ports";
 
   interface Props {
+    class?: string;
     ports: PortRow[];
     portsError: string;
     portsBusy: boolean;
@@ -12,6 +13,7 @@
   }
 
   let {
+    class: className = "",
     ports,
     portsError,
     portsBusy,
@@ -41,7 +43,7 @@
   import { Input } from "$lib/components/ui/input/index.js";
 </script>
 
-<Card.Root class="gap-3 rounded-lg py-3 shadow-none" aria-labelledby="ports-title">
+<Card.Root class={["gap-3 rounded-lg py-3 shadow-none", className]} aria-labelledby="ports-title">
   <Card.Header class="px-4 pb-0">
     <Card.Title id="ports-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Порты</Card.Title>
   </Card.Header>
