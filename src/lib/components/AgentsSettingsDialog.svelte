@@ -29,11 +29,11 @@
     onPersist: (prefs: AgentCatalogPref[]) => void | Promise<void>;
   } = $props();
 
-  let dialogEl = $state<HTMLDialogElement | null>(null);
   let error = $state("");
   let confirmRunner = $state<AgentRunner | null>(null);
   let busy = $state(false);
   let dragFrom = $state<number | null>(null);
+  let dragOver = $state<number | null>(null);
 
   const merged = $derived(mergeCatalogPrefs(prefs, AGENT_RUNNERS));
   const availableMap = $derived(
@@ -63,16 +63,6 @@
     return vendor;
   }
 
-  $effect(() => {
-    const el = dialogEl;
-    if (!el) return;
-    if (open) {
-      if (!el.open) el.showModal();
-    } else if (el.open) {
-      el.close();
-    }
-  });
-
   async function persist(next: AgentCatalogPref[]) {
     prefs = next;
     await onPersist(next);
@@ -98,149 +88,200 @@
     }
   }
 
-  function onDragStart(i: number) {
+  function onGripDragStart(e: DragEvent, i: number) {
     dragFrom = i;
+    dragOver = i;
+    try {
+      e.dataTransfer?.setData("text/plain", String(i));
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    } catch {
+      /* WebView без dataTransfer */
+    }
   }
 
-  async function onDrop(to: number) {
-    if (dragFrom == null) return;
-    const next = reorderCatalog(merged, dragFrom, to);
+  function onRowDragOver(e: DragEvent, i: number) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    dragOver = i;
+  }
+
+  async function onRowDrop(e: DragEvent, to: number) {
+    e.preventDefault();
+    const from = dragFrom;
     dragFrom = null;
-    await persist(next);
+    dragOver = null;
+    if (from == null || from === to) return;
+    await persist(reorderCatalog(merged, from, to));
+  }
+
+  function onDragEnd() {
+    dragFrom = null;
+    dragOver = null;
+  }
+
+  function close() {
+    open = false;
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      if (confirmRunner) confirmRunner = null;
+      else close();
+    }
   }
 </script>
 
-<dialog
-  bind:this={dialogEl}
-  class="fixed inset-0 z-50 m-auto h-fit max-h-[min(90vh,42rem)] w-[min(32rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-border bg-card p-0 text-card-foreground shadow-lg backdrop:bg-black/55"
-  aria-labelledby="agents-settings-title"
-  onclose={() => (open = false)}
-  onclick={(e) => {
-    if (e.target === dialogEl) open = false;
+<svelte:window
+  onkeydown={(e) => {
+    if (open) onKeydown(e);
   }}
->
-  <div class="flex max-h-[min(90vh,42rem)] flex-col">
-    <header class="flex items-start gap-2 border-b border-border px-4 py-3">
-      <div class="min-w-0 flex-1 space-y-1">
-        <h2
-          id="agents-settings-title"
-          class="flex items-center gap-2 text-base font-medium tracking-tight"
+/>
+
+{#if open}
+  <!-- Не <dialog showModal>: top-layer перекрывает тултипы и Cursor browser overlays. -->
+  <div
+    class="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-3"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) close();
+    }}
+  >
+    <div
+      class="flex max-h-[min(90vh,42rem)] w-[min(32rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-lg"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="agents-settings-title"
+    >
+      <header class="flex items-start gap-2 border-b border-border px-4 py-3">
+        <div class="min-w-0 flex-1 space-y-1">
+          <h2
+            id="agents-settings-title"
+            class="flex items-center gap-2 text-base font-medium tracking-tight"
+          >
+            <BotIcon class="size-4 text-primary" aria-hidden="true" />
+            Агенты
+          </h2>
+          <p class="text-sm text-muted-foreground">
+            Приоритет — номер и порядок. Тяните за ⋮⋮. Установка → Terminal.app.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          class="size-8 p-0"
+          aria-label="Закрыть"
+          onclick={close}
         >
-          <BotIcon class="size-4 text-primary" aria-hidden="true" />
-          Агенты
-        </h2>
-        <p class="text-sm text-muted-foreground">
-          Приоритет — порядок в списке. Перетащите строку. Установка открывает
-          Terminal.app.
-        </p>
-      </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        class="size-8 p-0"
-        aria-label="Закрыть"
-        onclick={() => (open = false)}
-      >
-        <XIcon class="size-4" />
-      </Button>
-    </header>
+          <XIcon class="size-4" />
+        </Button>
+      </header>
 
-    <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-      {#if error}
-        <p class="text-sm text-destructive" role="alert">{error}</p>
-      {/if}
+      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+        {#if error}
+          <p class="text-sm text-destructive" role="alert">{error}</p>
+        {/if}
 
-      <section class="space-y-2" aria-labelledby="agents-list-title">
-        <h3
-          id="agents-list-title"
-          class="px-1 text-[13px] font-medium text-muted-foreground"
-        >
-          Список
-        </h3>
-        <ul class="overflow-hidden rounded-xl border border-border bg-muted/20">
-          {#each merged as pref, i (pref.runner)}
-            {@const entry = availableMap.get(pref.runner)}
-            {@const available = Boolean(entry?.available)}
-            {@const canInstall =
-              Boolean(installRowFor(pref.runner)?.install) && !available}
-            <li
-              class={[
-                "flex items-center gap-2 border-b border-border px-2.5 py-2.5 last:border-b-0",
-                !pref.enabled && available ? "opacity-60" : "",
-                dragFrom === i ? "bg-accent/30" : "",
-              ].join(" ")}
-              draggable="true"
-              ondragstart={() => onDragStart(i)}
-              ondragover={(e) => e.preventDefault()}
-              ondrop={() => void onDrop(i)}
-              ondragend={() => (dragFrom = null)}
-            >
-              <span
-                class="w-5 shrink-0 text-center font-mono text-[11px] tabular-nums text-muted-foreground"
-                aria-hidden="true"
+        <section class="space-y-2" aria-labelledby="agents-list-title">
+          <h3
+            id="agents-list-title"
+            class="px-1 text-[13px] font-medium text-muted-foreground"
+          >
+            Список
+          </h3>
+          <ul class="overflow-hidden rounded-xl border border-border bg-muted/20">
+            {#each merged as pref, i (pref.runner)}
+              {@const entry = availableMap.get(pref.runner)}
+              {@const available = Boolean(entry?.available)}
+              {@const canInstall =
+                Boolean(installRowFor(pref.runner)?.install) && !available}
+              <li
+                class={[
+                  "flex items-center gap-2 border-b border-border px-2.5 py-2.5 last:border-b-0",
+                  !pref.enabled ? "opacity-70" : "",
+                  dragOver === i && dragFrom != null && dragFrom !== i
+                    ? "bg-primary/10"
+                    : "",
+                  dragFrom === i ? "opacity-50" : "",
+                ].join(" ")}
+                ondragover={(e) => onRowDragOver(e, i)}
+                ondrop={(e) => void onRowDrop(e, i)}
               >
-                {i + 1}
-              </span>
-              <span
-                class="inline-flex shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
-                aria-hidden="true"
-                title="Перетащить"
-              >
-                <GripVerticalIcon class="size-4" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium leading-tight">
-                  {agentRunnerLabel(pref.runner)}
-                </p>
-                <p class="truncate text-[11px] text-muted-foreground">
-                  {subtitleFor(pref.runner, available)}
-                </p>
-              </div>
-
-              {#if canInstall}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  class="h-7 shrink-0 rounded-full px-3 text-xs font-medium"
-                  onclick={() => (confirmRunner = pref.runner)}
+                <span
+                  class="w-5 shrink-0 text-center font-mono text-[11px] tabular-nums text-muted-foreground"
+                  aria-hidden="true"
                 >
-                  Установить
-                </Button>
-              {:else}
+                  {i + 1}
+                </span>
+                <button
+                  type="button"
+                  class="inline-flex shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                  draggable="true"
+                  aria-label={`Перетащить ${agentRunnerLabel(pref.runner)}`}
+                  ondragstart={(e) => onGripDragStart(e, i)}
+                  ondragend={onDragEnd}
+                >
+                  <GripVerticalIcon class="size-4" />
+                </button>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium leading-tight">
+                    {agentRunnerLabel(pref.runner)}
+                  </p>
+                  <p class="truncate text-[11px] text-muted-foreground">
+                    {subtitleFor(pref.runner, available)}
+                  </p>
+                </div>
+
+                {#if canInstall}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    class="h-7 shrink-0 rounded-full px-3 text-xs font-medium"
+                    onclick={() => (confirmRunner = pref.runner)}
+                  >
+                    Установить
+                  </Button>
+                {/if}
+
                 <Switch
                   checked={pref.enabled}
-                  disabled={!available}
                   onCheckedChange={(v) =>
                     void persist(
                       setCatalogEnabled(merged, pref.runner, v === true),
                     )}
                   aria-label={`Использовать ${agentRunnerLabel(pref.runner)}`}
                 />
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      </section>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      </div>
     </div>
   </div>
-</dialog>
+{/if}
 
 {#if confirmRunner}
   {@const cmd = buildInstallCommand(confirmRunner)}
-  <dialog
-    open
-    class="fixed inset-0 z-[60] m-auto h-fit w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-border bg-card p-4 shadow-xl backdrop:bg-black/40"
-    aria-label="Подтверждение установки"
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    role="presentation"
     onclick={(e) => {
-      if (e.currentTarget === e.target) confirmRunner = null;
+      if (e.target === e.currentTarget) confirmRunner = null;
     }}
   >
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium">Установить {agentRunnerLabel(confirmRunner)}?</h3>
+    <div
+      class="w-[min(28rem,calc(100vw-2rem))] space-y-3 rounded-lg border border-border bg-card p-4 shadow-xl"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Подтверждение установки"
+    >
+      <h3 class="text-sm font-medium">
+        Установить {agentRunnerLabel(confirmRunner)}?
+      </h3>
       <p class="text-xs text-muted-foreground">
-        Откроется Terminal.app с командой. Запуск — только после вашего Enter в терминале.
+        Откроется Terminal.app с командой. Запуск — только после вашего Enter в
+        терминале.
       </p>
       <pre
         class="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
@@ -261,5 +302,5 @@
         >
       </div>
     </div>
-  </dialog>
+  </div>
 {/if}

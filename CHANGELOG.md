@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.55.8 — 2026-10-31
+
+- UI «Агенты»: модалка без top-layer (не перекрывает тултипы/Cursor overlays); Switch с заметным primary; drag за grip + `dataTransfer`.
+
 ## 0.55.7 — 2026-10-31
 
 - UI «Агенты»: список в духе Xcode — номер + drag, switch вкл/выкл, кнопка «Установить»; стрелки ↑↓ убраны.
