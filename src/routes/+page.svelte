@@ -872,6 +872,7 @@
         height="26"
         class="size-[26px] rounded-[7px] object-cover"
       />
+      <img src="/app-icon.png" alt="" aria-hidden="true" class="size-7 rounded-md" width="28" height="28" />
       <h1 class="text-[15px] font-medium tracking-[0.08em] text-primary">DEMERZEL</h1>
       {#if focusProject}
         <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
