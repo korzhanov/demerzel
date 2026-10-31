@@ -21,17 +21,13 @@ pub const WIDGET_KIND: &str = "DemerzelNativeWidget";
 
 /// Настройки запасного WidgetKit (#38).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct WidgetKitFallbackConfig {
     /// Писать `summary.json` в App Group для нативного extension (выкл. по умолчанию).
     #[serde(default)]
     pub enabled: bool,
 }
 
-impl Default for WidgetKitFallbackConfig {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
-}
 
 /// Результат попытки записи в App Group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -88,11 +88,10 @@ pub fn sanitize_folder(folder: &str) -> String {
     for c in Path::new(trimmed).components() {
         match c {
             Component::Normal(s) => {
-                if let Some(t) = s.to_str() {
-                    if !t.is_empty() && t != "." {
+                if let Some(t) = s.to_str()
+                    && !t.is_empty() && t != "." {
                         parts.push(t);
                     }
-                }
             }
             Component::CurDir => {}
             // ParentDir / RootDir / Prefix — отклоняем весь путь.

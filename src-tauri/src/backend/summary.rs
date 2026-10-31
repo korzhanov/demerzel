@@ -104,11 +104,10 @@ pub fn format_pulse_line(name: &str, pulse: &ProjectPulse) -> String {
 
 /// Пишет файл атомарно. Возвращает `true`, если файл был переписан.
 pub fn write_if_changed(path: &Path, content: &str) -> io::Result<bool> {
-    if let Ok(existing) = fs::read_to_string(path) {
-        if existing == content {
+    if let Ok(existing) = fs::read_to_string(path)
+        && existing == content {
             return Ok(false);
         }
-    }
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, content)?;
     fs::rename(&tmp, path)?;

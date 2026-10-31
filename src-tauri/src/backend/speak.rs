@@ -219,10 +219,16 @@ mod tests {
     fn user_name_and_pronunciation_are_substituted() {
         let e = AlertEvent::PortConflict { port: 5173 };
         let c = evaluate(&default_rules(), &e).expect("candidate");
-        let mut v = VoiceConfig::default();
-        v.user_name = "Anna".into();
+        let v = VoiceConfig {
+            user_name: "Anna".into(),
+            ..VoiceConfig::default()
+        };
         assert_eq!(build_payload(&c, &v).phrase, "Anna, внимание. Порт 5173 занят.");
-        v.user_pronunciation = "Анна".into();
+        let v = VoiceConfig {
+            user_name: "Anna".into(),
+            user_pronunciation: "Анна".into(),
+            ..VoiceConfig::default()
+        };
         assert_eq!(build_payload(&c, &v).phrase, "Анна, внимание. Порт 5173 занят.");
     }
 

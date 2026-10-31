@@ -96,8 +96,8 @@ pub fn parse_lsof(text: &str) -> Vec<Listener> {
             command.clear();
         } else if let Some(c) = line.strip_prefix('c') {
             command = c.to_owned();
-        } else if let Some(n) = line.strip_prefix('n') {
-            if let (Some(pid), Some(port)) = (
+        } else if let Some(n) = line.strip_prefix('n')
+            && let (Some(pid), Some(port)) = (
                 pid,
                 n.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()),
             ) {
@@ -110,7 +110,6 @@ pub fn parse_lsof(text: &str) -> Vec<Listener> {
                     },
                 );
             }
-        }
     }
     sockets.into_values().collect()
 }

@@ -17,6 +17,8 @@ pub struct Project {
     pub children: Vec<Project>,
 }
 
+// serde передаёт поле как &PathBuf: сигнатура обязана совпадать с типом поля.
+#[allow(clippy::ptr_arg)]
 fn ser_path<S: serde::Serializer>(p: &PathBuf, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&p.to_string_lossy())
 }

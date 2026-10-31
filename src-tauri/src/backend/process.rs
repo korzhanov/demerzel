@@ -100,13 +100,12 @@ impl Managed {
 
     /// Проверяет, завершился ли процесс, и обновляет статус.
     pub fn poll(&mut self) -> io::Result<Status> {
-        if let Some(child) = self.child.as_mut() {
-            if let Some(exit) = child.try_wait()? {
+        if let Some(child) = self.child.as_mut()
+            && let Some(exit) = child.try_wait()? {
                 let code = exit.code().unwrap_or(-1);
                 self.status = next(self.status, Event::Exit(code));
                 self.child = None;
             }
-        }
         Ok(self.status)
     }
 

@@ -45,11 +45,10 @@ pub fn parse(text: &str) -> Result<Manifest, String> {
         if name.trim().is_empty() || svc.path.as_os_str().is_empty() {
             return Err("service name/path must not be empty".into());
         }
-        if let Some(port) = svc.port {
-            if port == 0 || !ports.insert(port) {
+        if let Some(port) = svc.port
+            && (port == 0 || !ports.insert(port)) {
                 return Err(format!("{name}: zero or duplicate port {port}"));
             }
-        }
         match svc.kind.as_deref() {
             None | Some("process") => {
                 if svc.file.is_some() || svc.service.is_some() {
@@ -122,8 +121,8 @@ pub fn load(root: &Path) -> Result<Manifest, String> {
         if let Some(file) = &svc.file {
             svc.file = Some(svc.path.join(file));
         }
-        if let Some(cfg) = super::config::load_checked(&svc.path)? {
-            if let Some(ports) = cfg.ports {
+        if let Some(cfg) = super::config::load_checked(&svc.path)?
+            && let Some(ports) = cfg.ports {
                 let range = super::ports::PortRange::new(ports.range[0], ports.range[1])
                     .ok_or("invalid port range")?;
                 reservations.reserve(name, range)?;
@@ -131,7 +130,6 @@ pub fn load(root: &Path) -> Result<Manifest, String> {
                     return Err(format!("{name}: manifest port is outside project range"));
                 }
             }
-        }
     }
     Ok(resolved)
 }

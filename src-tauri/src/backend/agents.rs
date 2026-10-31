@@ -439,11 +439,10 @@ fn parse_vm_stat_page_size(stdout: &str) -> Result<u64, String> {
         if let Some(idx) = line.find("page size of ") {
             let rest = &line[idx + "page size of ".len()..];
             let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if let Ok(n) = num.parse::<u64>() {
-                if n > 0 {
+            if let Ok(n) = num.parse::<u64>()
+                && n > 0 {
                     return Ok(n);
                 }
-            }
         }
     }
     // Fallback: sysctl hw.pagesize

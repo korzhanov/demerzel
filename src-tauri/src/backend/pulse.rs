@@ -309,11 +309,10 @@ impl PulseStore {
         env: &BTreeMap<String, String>,
     ) -> Result<PulsePayload, PulseError> {
         let interval = Duration::from_secs(pulse.interval_secs.max(1));
-        if !self.is_due(key, interval) {
-            if let Some(rec) = self.get(key) {
+        if !self.is_due(key, interval)
+            && let Some(rec) = self.get(key) {
                 return Ok(rec.payload);
             }
-        }
         match fetch(project_dir, pulse, env) {
             Ok(payload) => {
                 self.set(key, payload.clone());

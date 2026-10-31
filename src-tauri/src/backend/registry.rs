@@ -179,11 +179,10 @@ impl Registry {
                 .and_then(|o| String::from_utf8(o.stdout).ok())
                 .and_then(|s| s.trim().parse::<u32>().ok());
             for (id, e) in &self.entries {
-                if let Some(pid) = e.managed.pid() {
-                    if socket.pid == pid || pgid == Some(pid) {
+                if let Some(pid) = e.managed.pid()
+                    && (socket.pid == pid || pgid == Some(pid)) {
                         managed.insert(socket.pid, (*id, e.path.to_string_lossy().into_owned()));
                     }
-                }
             }
         }
         Ok(super::ports::inventory(sockets, &managed, &self.ports.ranges))

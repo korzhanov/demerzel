@@ -71,11 +71,10 @@ fn page(endpoint: &str) -> Result<Vec<serde_json::Value>, String> {
         .get_or_init(Default::default)
         .lock()
         .map_err(|e| e.to_string())?;
-    if let Some(entry) = cache.get(endpoint) {
-        if entry.fetched.elapsed() < MIN_REFRESH {
+    if let Some(entry) = cache.get(endpoint)
+        && entry.fetched.elapsed() < MIN_REFRESH {
             return Ok(entry.issues.clone());
         }
-    }
 
     let mut cmd = std::process::Command::new("gh");
     cmd.args([
