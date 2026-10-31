@@ -94,8 +94,6 @@
   let selectedId = $state<number | null>(null);
   /** Выбранный проект в сайдбаре (мокup columns). */
   let selectedProjectPath = $state<string | null>(null);
-  /** Проект из клика по системному уведомлению (#22). */
-  let focusProject = $state<string | null>(null);
   let logs = $state<LogLine[]>([]);
   /** Переопределение: если пусто — берём commands.dev / scripts.dev с диска. */
   let commandOverride = $state("");
@@ -499,7 +497,6 @@
   function selectProject(p: Project) {
     selectedProjectPath = p.path;
     projectFilter = p.path;
-    focusProject = p.name;
     const id = processIdForProject(processes, p.name);
     if (id !== null) select(id);
   }
@@ -513,7 +510,6 @@
   }
 
   function openProjectFromNotify(project: string) {
-    focusProject = project;
     const id = processIdForProject(processes, project);
     if (id !== null) select(id);
     const match = flatProjects.find((p) => p.name === project);
@@ -656,7 +652,6 @@
         class={[
           "flex w-full min-w-0 items-center gap-2 border-l-2 border-transparent py-1.5 pr-3 text-left text-sm transition-colors hover:bg-accent",
           selectedProjectPath === p.path && "border-l-primary bg-secondary",
-          focusProject === p.name && selectedProjectPath !== p.path && "bg-accent/60",
         ]}
         title="{p.name} — {p.path}"
         onclick={() => selectProject(p)}
@@ -918,11 +913,6 @@
   <Tooltip.Provider delayDuration={300}>
     <header class="shrink-0 border-b border-border">
       <h1 class="sr-only">DEMERZEL</h1>
-      {#if focusProject}
-        <div class="bg-card px-3.5 py-2">
-          <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
-        </div>
-      {/if}
       <div
         class="relative h-[var(--banner-height)] bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
       >
