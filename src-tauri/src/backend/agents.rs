@@ -25,6 +25,9 @@
 //! Запуск из задачи (#33): `start_agent_from_task` — статус задачи `in_progress`,
 //! worktree + limiter + выбранный раннер + `collect_review` → registry.
 //!
+//! Автофикс по алерту (#96): режимы `off` / `suggest` / `auto` (`agents.autofix`),
+//! запуск из алерта через `backend::autofix` → тот же limiter / worktree / ревью.
+//!
 //! Реестр CLI (#95): `AgentRunner` (claude/codex/gemini/aider/opencode/cursor_agent/ollama),
 //! детект PATH+`--version` в `agent_catalog`, агент по умолчанию и на проект.
 
@@ -195,7 +198,36 @@ fn default_agent_runner() -> AgentRunner {
     AgentRunner::Claude
 }
 
-/// Настройки агентов в `settings.json` → `agents` (#29 / #30).
+/// Режим автофикса по алерту (#96): выкл / предложить / авто.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutofixMode {
+    #[default]
+    Off,
+    Suggest,
+    Auto,
+}
+
+impl AutofixMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Suggest => "suggest",
+            Self::Auto => "auto",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "off" | "disabled" | "none" => Ok(Self::Off),
+            "suggest" | "offer" | "ask" => Ok(Self::Suggest),
+            "auto" | "automatic" => Ok(Self::Auto),
+            other => Err(format!("unknown autofix mode '{other}'")),
+        }
+    }
+}
+
+/// Настройки агентов в `settings.json` → `agents` (#29 / #30 / #96).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentsConfig {
     /// Сколько агентов можно держать в Running одновременно.
@@ -213,6 +245,9 @@ pub struct AgentsConfig {
     /// Модель для `ollama run` (#30).
     #[serde(default = "default_ollama_model")]
     pub ollama_model: String,
+    /// Автофикс по алерту (#96): `off` / `suggest` / `auto`. По умолчанию выкл.
+    #[serde(default)]
+    pub autofix: AutofixMode,
 }
 
 impl Default for AgentsConfig {
@@ -223,6 +258,7 @@ impl Default for AgentsConfig {
             ollama_reserve_mb: DEFAULT_OLLAMA_RESERVE_MB,
             runner: AgentRunner::Claude,
             ollama_model: DEFAULT_OLLAMA_MODEL.to_string(),
+            autofix: AutofixMode::Off,
         }
     }
 }
@@ -483,7 +519,7 @@ pub fn worktree_path(project: &str, run_id: &str) -> Result<PathBuf, String> {
     Ok(worktrees_root()?.join(project).join(run_id))
 }
 
-fn validate_segment(label: &str, value: &str) -> Result<(), String> {
+pub(crate) fn validate_segment(label: &str, value: &str) -> Result<(), String> {
     if value.is_empty() {
         return Err(format!("{label} must not be empty"));
     }
@@ -1390,7 +1426,7 @@ pub fn new_run_id() -> String {
     format!("r{nanos:x}")
 }
 
-fn now_rfc3339() -> String {
+pub(crate) fn now_rfc3339() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -1959,7 +1995,7 @@ mod tests {
     // --- concurrency + memory (#29) ---
 
     #[derive(Clone)]
-    struct FixedMemory(u64);
+    pub(crate) struct FixedMemory(pub(crate) u64);
     impl MemoryProbe for FixedMemory {
         fn available_mb(&self) -> Result<u64, String> {
             Ok(self.0)
@@ -1967,7 +2003,7 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct FixedOllama(bool);
+    pub(crate) struct FixedOllama(pub(crate) bool);
     impl OllamaProbe for FixedOllama {
         fn is_running(&self) -> bool {
             self.0
@@ -1992,6 +2028,7 @@ mod tests {
         assert_eq!(cfg.ollama_reserve_mb, 4096);
         assert_eq!(cfg.runner, AgentRunner::Claude);
         assert_eq!(cfg.ollama_model, DEFAULT_OLLAMA_MODEL);
+        assert_eq!(cfg.autofix, AutofixMode::Off);
     }
 
     #[test]
@@ -2679,5 +2716,85 @@ Pages wired down:                         9000.
             task_prompt_text(&task),
             "Fix\n\nSource: https://example.test/1"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn start_agent_from_alert_goes_to_review_not_main() {
+        use crate::backend::alerts::EventKind;
+        use crate::backend::autofix::{
+            build_alert_autofix_prompt, start_agent_from_alert, AlertAutofixContext,
+            StartAlertAgentParams,
+        };
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let pid = std::process::id();
+        let repo = std::env::temp_dir().join(format!("demerzel-alert-repo-{pid}"));
+        let wt_root = std::env::temp_dir().join(format!("demerzel-alert-wt-{pid}"));
+        let fake_dir = std::env::temp_dir().join(format!("demerzel-alert-fake-{pid}"));
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        let _ = fs::remove_dir_all(&fake_dir);
+        init_repo(&repo);
+        fs::write(
+            repo.join("orchestrator.json"),
+            r#"{"name":"alert-app","type":"app","commands":{"test":"exit 0"},"agents":{"autofix":"auto"}}"#,
+        )
+        .unwrap();
+        run_git(&repo, &["add", "orchestrator.json"]).unwrap();
+        run_git(&repo, &["commit", "-m", "orchestrator"]).unwrap();
+        unsafe { std::env::set_var("DEMERZEL_WORKTREES_DIR", &wt_root) };
+        fs::create_dir_all(&fake_dir).unwrap();
+        install_fake_claude(
+            &fake_dir,
+            "#!/bin/sh\nset -e\necho alert-fix\nprintf 'fixed\\n' > fix.txt\ngit add fix.txt\ngit -c user.email=t@t -c user.name=t commit -m fix\nexit 0\n",
+        );
+
+        let prompt = build_alert_autofix_prompt(&AlertAutofixContext {
+            project_path: repo.display().to_string(),
+            project: "alert-app".into(),
+            message: "process alert-app exited with code 1".into(),
+            kind: EventKind::ProcessExited,
+            command: Some("bun run dev".into()),
+            log_tail: Some("err| boom".into()),
+            diff: None,
+        });
+        let mut reg = AgentRunRegistry::new();
+        let mut limiter = always_free_limiter();
+        let result = start_agent_from_alert(StartAlertAgentParams {
+            project_path: &repo,
+            prompt: &prompt,
+            registry: &mut reg,
+            limiter: &mut limiter,
+            timeout: Duration::from_secs(5),
+            base_ref: Some("main"),
+            cancel: None,
+            run_id: Some("alert-1".into()),
+            runner: AgentRunner::Claude,
+            ollama_model: None,
+            mode: AutofixMode::Auto,
+        })
+        .unwrap();
+
+        assert!(!result.queued);
+        assert_eq!(result.mode, AutofixMode::Auto);
+        assert_eq!(result.run.status, NeedsReview);
+        assert!(result.run.task_id.is_none());
+        assert!(
+            !repo.join("fix.txt").exists(),
+            "agent file must not appear on main"
+        );
+        assert_eq!(
+            git_stdout(&repo, &["status", "--porcelain"]),
+            "",
+            "main worktree must stay clean"
+        );
+
+        remove_worktree(&repo, "alert-app", "alert-1").unwrap();
+        unsafe { std::env::remove_var("DEMERZEL_WORKTREES_DIR") };
+        unsafe { std::env::remove_var("DEMERZEL_CLAUDE_BIN") };
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&wt_root);
+        let _ = fs::remove_dir_all(&fake_dir);
     }
 }

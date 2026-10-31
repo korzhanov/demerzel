@@ -3,6 +3,9 @@
 /** Имя события Tauri после клика по системному уведомлению. */
 export const OPEN_PROJECT_EVENT = "alerts:open-project";
 
+/** Предложение автофикса из алерта (#96). */
+export const AUTOFIX_OFFER_EVENT = "alerts:autofix-offer";
+
 export type AlertSeverity = "info" | "important" | "critical";
 
 export type AlertEventKind =
@@ -166,4 +169,14 @@ export function processIdForProject(
 ): number | null {
   const hit = processes.find((p) => p.project === project);
   return hit ? hit.id : null;
+}
+
+/** Виды алертов, из которых можно стартовать автофикс (#96). */
+export function autofixEligibleKind(
+  kind: AlertEventKind,
+  exitCode?: number | null,
+): boolean {
+  if (kind === "agent_failed") return false;
+  if (kind === "process_exited") return exitCode == null || exitCode !== 0;
+  return kind === "port_conflict" || kind === "tests_failed";
 }

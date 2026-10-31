@@ -1,8 +1,10 @@
 /// <reference types="bun-types" />
 import { describe, expect, test } from "bun:test";
 import {
+  AUTOFIX_OFFER_EVENT,
   DEFAULT_VOICE_NAME,
   DEFAULT_VOICE_PHRASES,
+  autofixEligibleKind,
   deliveryFlags,
   isQuietHours,
   isQuietHoursLocal,
@@ -158,5 +160,16 @@ describe("speak delivery (#23)", () => {
     expect(
       renderVoicePhrase(DEFAULT_VOICE_PHRASES.tests_failed, { run_id: "t1" }),
     ).toBe("Олег, внимание. Тесты t1 упали.");
+  });
+});
+
+describe("autofixEligibleKind (#96)", () => {
+  test("crash / port / tests yes; clean exit and agent_failed no", () => {
+    expect(AUTOFIX_OFFER_EVENT).toBe("alerts:autofix-offer");
+    expect(autofixEligibleKind("process_exited", 1)).toBe(true);
+    expect(autofixEligibleKind("process_exited", 0)).toBe(false);
+    expect(autofixEligibleKind("port_conflict")).toBe(true);
+    expect(autofixEligibleKind("tests_failed")).toBe(true);
+    expect(autofixEligibleKind("agent_failed")).toBe(false);
   });
 });

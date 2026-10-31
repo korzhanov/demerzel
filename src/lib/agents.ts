@@ -3,8 +3,25 @@ import type {
   AgentRunner,
   AgentRunRecord,
   AgentRunStatus,
+  AutofixMode,
 } from "./types";
 import { canTransitionAgentRun } from "./types";
+
+/** Подпись режима автофикса (#96). */
+export function autofixModeLabel(mode: AutofixMode | undefined | null): string {
+  switch (mode ?? "off") {
+    case "off":
+      return "Автофикс выкл";
+    case "suggest":
+      return "Предлагать фикс";
+    case "auto":
+      return "Автофикс";
+    default: {
+      const _exhaustive: never = mode as never;
+      return _exhaustive;
+    }
+  }
+}
 
 /** Подпись раннера для UI (#30 / #95). */
 export function agentRunnerLabel(runner: AgentRunner | undefined | null): string {

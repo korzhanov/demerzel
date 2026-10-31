@@ -4,6 +4,7 @@ import {
   agentRunnerLabel,
   agentRunnerOptionLabel,
   agentRunStatusLabel,
+  autofixModeLabel,
   canAcceptAgentRun,
   canDiscardAgentRun,
   hasAgentRunReviewPayload,
@@ -13,14 +14,17 @@ import {
 import {
   AGENT_RUN_STATUSES,
   AGENT_RUNNERS,
+  AUTOFIX_MODES,
   DEFAULT_AGENT_CONCURRENCY,
   DEFAULT_AGENT_RUNNER,
+  DEFAULT_AUTOFIX_MODE,
   DEFAULT_MIN_FREE_MEMORY_MB,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_RESERVE_MB,
   agentsConfigOrDefault,
   canTransitionAgentRun,
   parseAgentRunner,
+  parseAutofixMode,
   requiredFreeMemoryMb,
   statusAfterTests,
   type AgentCatalogEntry,
@@ -43,12 +47,15 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       "cursor_agent",
       "ollama",
     ]);
+    expect(DEFAULT_AUTOFIX_MODE).toBe("off");
+    expect([...AUTOFIX_MODES]).toEqual(["off", "suggest", "auto"]);
     expect(agentsConfigOrDefault(undefined)).toEqual({
       max_concurrent: 1,
       min_free_memory_mb: 2048,
       ollama_reserve_mb: 4096,
       runner: "claude",
       ollama_model: "qwen2.5-coder:7b",
+      autofix: "off",
     });
   });
 
@@ -59,7 +66,17 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       ollama_reserve_mb: 4096,
       runner: "claude",
       ollama_model: "qwen2.5-coder:7b",
+      autofix: "off",
     });
+  });
+
+  test("autofix mode parse and labels (#96)", () => {
+    expect(parseAutofixMode("suggest")).toBe("suggest");
+    expect(parseAutofixMode("auto")).toBe("auto");
+    expect(parseAutofixMode("nope")).toBe("off");
+    expect(autofixModeLabel("off")).toBe("Автофикс выкл");
+    expect(autofixModeLabel("suggest")).toBe("Предлагать фикс");
+    expect(autofixModeLabel("auto")).toBe("Автофикс");
   });
 
   test("ollama reserve raises required free memory", () => {

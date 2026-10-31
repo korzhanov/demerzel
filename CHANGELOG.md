@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.49.0 — 2026-10-31
+
+- Автофикс по алерту (#96): режимы `off` / `suggest` / `auto` (`agents.autofix`, override в `orchestrator.json`), из crash / port conflict / tests failed — агент в worktree с хвостом логов + командой + diff; лимитер и ревью как у #27–#33 (результат не в main). Tauri `start_agent_from_alert`, событие `alerts:autofix-offer`, баннер «Исправить». Закрывает #96.
+
 ## 0.48.0 — 2026-10-31
 
 - Реестр CLI-агентов (#95): детект `claude` / `codex` / `gemini` / `aider` / `opencode` / `cursor-agent` / `ollama` по PATH + `--version` (без headless-сессии), подсказки установки, единый `AgentRunner`, агент по умолчанию и на проект (`orchestrator.json` → `agents.runner`). Tauri `list_available_agents` / `resolve_project_agent_runner`. Headless по-прежнему Claude/Ollama. Закрывает #95.

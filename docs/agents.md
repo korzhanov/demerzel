@@ -1,6 +1,6 @@
-# Агенты: git worktree, Claude CLI, Ollama, реестр CLI, лимиты и ревью
+# Агенты: git worktree, Claude CLI, Ollama, реестр CLI, лимиты, ревью и автофикс
 
-Phase-6/7, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #30 (Ollama, опционально), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи), #95 (реестр CLI на машине). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6/7, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #30 (Ollama, опционально), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи), #95 (реестр CLI на машине), #96 (автофикс по алерту). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -52,24 +52,26 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
     "min_free_memory_mb": 2048,
     "ollama_reserve_mb": 4096,
     "runner": "claude",
-    "ollama_model": "qwen2.5-coder:7b"
+    "ollama_model": "qwen2.5-coder:7b",
+    "autofix": "off"
   }
 }
 ```
 
-Отсутствующая секция → значения по умолчанию. `runner: "claude"` — основной путь; Ollama не обязателен.
+Отсутствующая секция → значения по умолчанию. `runner: "claude"` — основной путь; Ollama не обязателен. `autofix` по умолчанию `off` (#96).
 
-Раннер на проект (#95) — в `orchestrator.json`:
+Раннер и автофикс на проект (#95 / #96) — в `orchestrator.json`:
 
 ```json
 {
   "name": "api",
   "type": "service",
-  "agents": { "runner": "ollama" }
+  "agents": { "runner": "ollama", "autofix": "suggest" }
 }
 ```
 
-Приоритет: явный выбор в UI → `orchestrator.json` → `agents.runner` → `claude`.
+Приоритет раннера: явный выбор в UI → `orchestrator.json` → `agents.runner` → `claude`.  
+Приоритет автофикса: `orchestrator.json` → `agents.autofix` → `off`.
 
 ## Реестр CLI (#95)
 
@@ -173,6 +175,18 @@ Tauri: `start_agent_from_task(task)` → `StartAgentRunResult { run, task, queue
 - `project_slug` / `new_run_id` / `task_prompt_text` / `queue_reason_message`
 - `prepare_agent_from_task` / `complete_agent_run` / `start_agent_from_task`
 - `StartAgentRunResult` / `StartAgentParams`
+
+## Автофикс по алерту (#96)
+
+Режимы `AutofixMode`: `off` / `suggest` / `auto` (`AgentsConfig.autofix`, override в `orchestrator.json`).
+
+1. Алерт (`process_exited` ≠ 0 / `port_conflict` / `tests_failed`) → контекст: команда + хвост логов + diff.
+2. `suggest` — событие `alerts:autofix-offer` + баннер «Исправить».
+3. `auto` или клик — `prepare_agent_from_alert` → worktree + limiter → CLI → `collect_review` → `needs_review` / `failed`.
+4. Accept по-прежнему только вручную (#32); merge в main не выполняется.
+
+Модуль `backend/autofix`: `decide_autofix`, `build_alert_autofix_prompt`, `start_agent_from_alert`.  
+Tauri: `start_agent_from_alert(project_path, prompt, runner?)` → `StartAgentFromAlertResult`.
 
 ## Связь со схемой
 
