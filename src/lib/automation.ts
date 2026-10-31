@@ -5,6 +5,7 @@ import type {
   DiscoveredAutomation,
 } from "./types";
 import { isRunning, statusLabel } from "./types";
+import type { ProcessStatus, RestartRule } from "./types";
 
 const key = (s: { source: string; name: string }) => `${s.source}\u0000${s.name}`;
 
@@ -38,4 +39,12 @@ export function automationStatusText(s: AutomationStatus): string {
 
 export function automationIsRunning(s: AutomationStatus): boolean {
   return s.status !== null && isRunning(s.status);
+}
+
+/** Зеркало backend `should_restart` (#153, этап D). */
+export function shouldRestart(status: ProcessStatus | null, attempts: number, rule: RestartRule): boolean {
+  if (!rule.enabled || attempts >= rule.max_retries || status === null) return false;
+  if (status === "Crashed") return true;
+  if (typeof status === "object") return status.Exited !== 0;
+  return false;
 }

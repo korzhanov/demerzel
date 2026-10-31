@@ -1,7 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import type { AutomationSelection, AutomationStatus, AutomationsView } from "$lib/types";
+  import type { AutomationSelection, AutomationStatus, AutomationsView, RestartRule } from "$lib/types";
   import {
+    shouldRestart,
     automationIsRunning,
     automationStatusText,
     initialSelection,
@@ -18,13 +19,50 @@
   let { path, name }: Props = $props();
 
   let statuses = $state<AutomationStatus[]>([]);
+  let restart = $state<RestartRule>({ enabled: false, max_retries: 3 });
+  // Попытки перезапуска по имени и последний обработанный запуск (не даёт повторять один и тот же сбой).
+  const attempts = new Map<string, number>();
+  const handled = new Map<string, number | null>();
+
+  async function setRestart(enabled: boolean) {
+    restart = { ...restart, enabled };
+    try {
+      await invoke("save_restart_rule", { path, rule: restart });
+    } catch (e) {
+      actionError = String(e);
+    }
+  }
+
+  async function applyRestartRules(list: AutomationStatus[]) {
+    for (const s of list) {
+      if (!s.command || s.run_id === null) continue;
+      if (automationIsRunning(s)) {
+        attempts.set(s.name, 0);
+        continue;
+      }
+      if (handled.get(s.name) === s.run_id) continue;
+      handled.set(s.name, s.run_id);
+      const n = attempts.get(s.name) ?? 0;
+      if (s.status && shouldRestart(s.status, n, restart)) {
+        attempts.set(s.name, n + 1);
+        try {
+          await invoke("start_automation", { project: name, path, source: s.source, name: s.name });
+        } catch (e) {
+          actionError = String(e);
+        }
+      }
+    }
+  }
   let actionError = $state("");
 
   async function refreshStatuses() {
     const p = path;
     try {
       const s = await invoke<AutomationStatus[]>("automation_statuses", { path: p });
-      if (p === path) statuses = s;
+      if (p === path) {
+        statuses = s;
+        await applyRestartRules(s);
+      }
     } catch {
       // статусы — вспомогательные; ошибку показывает загрузка списка
     }
@@ -33,6 +71,8 @@
   $effect(() => {
     void path;
     statuses = [];
+    attempts.clear();
+    handled.clear();
     refreshStatuses();
     const timer = setInterval(refreshStatuses, 3000);
     return () => clearInterval(timer);
@@ -67,6 +107,7 @@
       .then((v) => {
         if (p !== path) return;
         view = v;
+        restart = v.restart;
         selected = initialSelection(v);
       })
       .catch((e) => {
@@ -148,6 +189,13 @@
         {/each}
       </ul>
       {#if actionError}<p class="text-xs text-destructive">{actionError}</p>{/if}
+      <label class="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+        <Checkbox
+          checked={restart.enabled}
+          onCheckedChange={(v) => setRestart(v === true)}
+        />
+        Перезапускать после сбоя (до {restart.max_retries} раз)
+      </label>
     {/if}
   {/if}
 </div>

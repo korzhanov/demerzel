@@ -332,9 +332,14 @@ export interface AutomationSelection {
   source: string;
   name: string;
 }
+export interface RestartRule {
+  enabled: boolean;
+  max_retries: number;
+}
 export interface AutomationsView {
   discovered: DiscoveredAutomation[];
   selected: AutomationSelection[];
+  restart: RestartRule;
 }
 
 export interface AutomationStatus {
