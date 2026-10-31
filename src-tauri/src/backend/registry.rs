@@ -165,12 +165,16 @@ impl Registry {
             .map_err(|e| e.to_string())
     }
 
-    pub fn port_inventory(&mut self) -> Result<Vec<super::ports::PortRow>, String> {
+    /// Инвентарь портов. `known_projects` — пути со скана: cwd слушателя
+    /// сопоставляется с ними (не даёт `managed_id`, только проект и статус ok).
+    pub fn port_inventory(
+        &mut self,
+        known_projects: &[std::path::PathBuf],
+    ) -> Result<Vec<super::ports::PortRow>, String> {
         self.list().map_err(|e| e.to_string())?;
         let sockets = super::ports::listeners()?;
         let mut managed = BTreeMap::new();
-        // Resolve child listeners through process groups, never through cwd alone:
-        // another process in the same directory is still foreign.
+        // Управляемые — по process group. cwd сам по себе не делает процесс managed.
         for socket in &sockets {
             let pgid = std::process::Command::new("ps")
                 .args(["-o", "pgid=", "-p", &socket.pid.to_string()])
@@ -180,12 +184,27 @@ impl Registry {
                 .and_then(|s| s.trim().parse::<u32>().ok());
             for (id, e) in &self.entries {
                 if let Some(pid) = e.managed.pid()
-                    && (socket.pid == pid || pgid == Some(pid)) {
-                        managed.insert(socket.pid, (*id, e.path.to_string_lossy().into_owned()));
-                    }
+                    && (socket.pid == pid || pgid == Some(pid))
+                {
+                    managed.insert(socket.pid, (*id, e.path.to_string_lossy().into_owned()));
+                }
             }
         }
-        Ok(super::ports::inventory(sockets, &managed, &self.ports.ranges))
+        let need_cwd: Vec<u32> = sockets
+            .iter()
+            .filter(|s| !managed.contains_key(&s.pid))
+            .map(|s| s.pid)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let cwds = super::ports::process_cwds(&need_cwd);
+        Ok(super::ports::inventory(
+            sockets,
+            &managed,
+            &self.ports.ranges,
+            known_projects,
+            &cwds,
+        ))
     }
 
     pub fn logs(&self, id: u64) -> Option<Vec<LogLine>> {
@@ -214,6 +233,14 @@ impl Registry {
     }
 
     /// Путь проекта по id управляемого процесса.
+    /// (id, папка, команда, статус) по всем запускам; вызывать после `list`, чтобы статусы были свежими.
+    pub fn runs(&self) -> Vec<(u64, std::path::PathBuf, String, Status)> {
+        self.entries
+            .iter()
+            .map(|(id, e)| (*id, e.path.clone(), e.command.clone(), e.managed.status()))
+            .collect()
+    }
+
     pub fn path_for_id(&self, id: u64) -> Option<std::path::PathBuf> {
         self.entries.get(&id).map(|e| e.path.clone())
     }

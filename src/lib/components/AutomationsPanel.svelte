@@ -1,14 +1,56 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import type { AutomationSelection, AutomationsView } from "$lib/types";
-  import { initialSelection, isChecked, toggle } from "$lib/automation";
+  import type { AutomationSelection, AutomationStatus, AutomationsView } from "$lib/types";
+  import {
+    automationIsRunning,
+    automationStatusText,
+    initialSelection,
+    isChecked,
+    toggle,
+  } from "$lib/automation";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 
   interface Props {
     path: string;
+    name: string;
   }
-  let { path }: Props = $props();
+  let { path, name }: Props = $props();
+
+  let statuses = $state<AutomationStatus[]>([]);
+  let actionError = $state("");
+
+  async function refreshStatuses() {
+    const p = path;
+    try {
+      const s = await invoke<AutomationStatus[]>("automation_statuses", { path: p });
+      if (p === path) statuses = s;
+    } catch {
+      // статусы — вспомогательные; ошибку показывает загрузка списка
+    }
+  }
+
+  $effect(() => {
+    void path;
+    statuses = [];
+    refreshStatuses();
+    const timer = setInterval(refreshStatuses, 3000);
+    return () => clearInterval(timer);
+  });
+
+  async function runAutomation(s: AutomationStatus) {
+    actionError = "";
+    try {
+      if (automationIsRunning(s) && s.run_id !== null) {
+        await invoke("stop_process", { id: s.run_id });
+      } else if (s.command) {
+        await invoke("start_process", { project: name, path, command: s.command });
+      }
+    } catch (e) {
+      actionError = String(e);
+    }
+    await refreshStatuses();
+  }
 
   let view = $state<AutomationsView | null>(null);
   let selected = $state<AutomationSelection[]>([]);
@@ -84,5 +126,28 @@
       <Button size="sm" variant="outline" disabled={saving} onclick={save}>Сохранить</Button>
       {#if saved}<span class="text-xs text-muted-foreground">Сохранено</span>{/if}
     </div>
+    {#if statuses.length > 0}
+      <p class="pt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        Статус
+      </p>
+      <ul class="space-y-1">
+        {#each statuses as s (s.source + s.name)}
+          <li class="flex items-center justify-between gap-2 text-sm">
+            <span class="min-w-0 truncate font-mono text-xs">{s.name}</span>
+            <span class="flex shrink-0 items-center gap-2">
+              <span class="text-xs text-muted-foreground">{automationStatusText(s)}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!s.command}
+                onclick={() => runAutomation(s)}
+                >{automationIsRunning(s) ? "Стоп" : "Запустить"}</Button
+              >
+            </span>
+          </li>
+        {/each}
+      </ul>
+      {#if actionError}<p class="text-xs text-destructive">{actionError}</p>{/if}
+    {/if}
   {/if}
 </div>

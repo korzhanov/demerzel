@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DashboardSummary } from "$lib/dashboard";
+  import type { Snippet } from "svelte";
   import BoxesIcon from "@lucide/svelte/icons/boxes";
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import UnplugIcon from "@lucide/svelte/icons/unplug";
@@ -9,9 +10,11 @@
   interface Props {
     summary: DashboardSummary;
     updatedAt: string;
+    /** Панель действий окна (справа). */
+    actions?: Snippet;
   }
 
-  let { summary, updatedAt }: Props = $props();
+  let { summary, updatedAt, actions }: Props = $props();
 </script>
 
 <div
@@ -53,8 +56,13 @@
     <b class="font-medium tabular-nums text-foreground">{summary.taskCount}</b>
     <span class="sr-only">Задач</span>
   </span>
-  <span class="ml-auto inline-flex items-center gap-1.5 text-muted-foreground" title="Обновлено">
-    <ClockIcon class="size-3.5 shrink-0" aria-hidden="true" />
-    <span class="tabular-nums">{updatedAt}</span>
-  </span>
+  <div class="ml-auto flex flex-wrap items-center gap-2">
+    <span class="inline-flex items-center gap-1.5 text-muted-foreground" title="Обновлено">
+      <ClockIcon class="size-3.5 shrink-0" aria-hidden="true" />
+      <span class="tabular-nums">{updatedAt}</span>
+    </span>
+    {#if actions}
+      {@render actions()}
+    {/if}
+  </div>
 </div>

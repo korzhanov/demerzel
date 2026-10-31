@@ -240,3 +240,79 @@ mod tests {
         assert!(v["automation"]["selected"].as_array().unwrap().is_empty());
     }
 }
+
+/// Состояние выбранной автозадачи по данным реестра процессов (#153, этап B).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AutomationStatus {
+    pub source: String,
+    pub name: String,
+    pub command: Option<String>,
+    /// Последний запуск этой команды в папке проекта; `None` — ещё не запускали.
+    pub run_id: Option<u64>,
+    pub status: Option<crate::backend::process::Status>,
+}
+
+/// Сопоставляет выбранные автозадачи с запусками. `runs` — (id, путь проекта, команда, статус).
+/// Берётся самый свежий (наибольший id) запуск той же команды в той же папке.
+pub fn match_statuses(
+    project: &Path,
+    selected: &[AutomationSelection],
+    discovered: &[DiscoveredAutomation],
+    runs: &[(u64, std::path::PathBuf, String, crate::backend::process::Status)],
+) -> Vec<AutomationStatus> {
+    selected
+        .iter()
+        .map(|sel| {
+            let command = discovered
+                .iter()
+                .find(|d| d.source == sel.source && d.name == sel.name)
+                .and_then(|d| d.command.clone());
+            let latest = command.as_ref().and_then(|cmd| {
+                runs.iter()
+                    .filter(|(_, p, c, _)| p == project && c == cmd)
+                    .max_by_key(|(id, ..)| *id)
+            });
+            AutomationStatus {
+                source: sel.source.clone(),
+                name: sel.name.clone(),
+                command,
+                run_id: latest.map(|r| r.0),
+                status: latest.map(|r| r.3.clone()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+    use crate::backend::process::Status;
+
+    #[test]
+    fn matches_latest_run_of_same_command_in_project() {
+        let p = Path::new("/x/parser");
+        let sel = vec![AutomationSelection { source: "package.json".into(), name: "pipeline".into() }];
+        let disc = vec![DiscoveredAutomation {
+            source: "package.json".into(),
+            name: "pipeline".into(),
+            command: Some("bun run pipeline".into()),
+            likely_automation: true,
+        }];
+        let runs = vec![
+            (1, p.to_path_buf(), "bun run pipeline".into(), Status::Exited(1)),
+            (5, p.to_path_buf(), "bun run pipeline".into(), Status::Running),
+            (6, Path::new("/x/other").to_path_buf(), "bun run pipeline".into(), Status::Running),
+        ];
+        let out = match_statuses(p, &sel, &disc, &runs);
+        assert_eq!(out[0].run_id, Some(5));
+        assert_eq!(out[0].status, Some(Status::Running));
+    }
+
+    #[test]
+    fn unknown_command_has_no_run() {
+        let sel = vec![AutomationSelection { source: "s".into(), name: "gone".into() }];
+        let out = match_statuses(Path::new("/x"), &sel, &[], &[]);
+        assert_eq!(out[0].run_id, None);
+        assert_eq!(out[0].command, None);
+    }
+}

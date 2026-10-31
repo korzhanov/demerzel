@@ -43,6 +43,19 @@ export function tasksForColumn(
   return tasks.filter((task) => task.status === status);
 }
 
+/** Сколько карточек показывать до спойлера в колонке. */
+export const TASK_COLUMN_PREVIEW = 3;
+
+/** Первые `limit` задач видимы, остальные — под спойлером. */
+export function splitColumnPreview<T>(
+  items: readonly T[],
+  limit: number = TASK_COLUMN_PREVIEW,
+): { preview: T[]; rest: T[] } {
+  const n = Math.max(0, Math.floor(limit));
+  if (items.length <= n) return { preview: [...items], rest: [] };
+  return { preview: items.slice(0, n), rest: items.slice(n) };
+}
+
 /**
  * Можно открыть источник: http(s) URL issue или абсолютный путь к файлу
  * (TODO.md / tasks.json).
