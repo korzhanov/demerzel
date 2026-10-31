@@ -561,11 +561,10 @@
   });
 
   type ViewMode = "columns" | "tabs";
-  type Tab = "projects" | "processes" | "ports" | "tasks" | "agents";
+  type Tab = "projects" | "processes" | "tasks" | "agents";
   const TABS: [Tab, string][] = [
-    ["projects", "Проекты"],
+    ["projects", "Проекты и порты"],
     ["processes", "Процессы"],
-    ["ports", "Порты"],
     ["tasks", "Задачи"],
     ["agents", "Агенты"],
   ];
@@ -628,7 +627,7 @@
 {/snippet}
 
 {#snippet projectsView()}
-  <section class="flex h-full min-w-0 flex-col overflow-hidden" aria-labelledby="projects-title">
+  <section class="flex min-w-0 flex-col" aria-labelledby="projects-title">
     <div class="flex items-center gap-2 px-3 pb-1.5 pt-3">
       <h2
         id="projects-title"
@@ -651,9 +650,12 @@
         {/if}
       </Button>
     </div>
-    <ul class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto border-t border-border pb-2">
+    <ul class="min-w-0 overflow-x-hidden border-t border-border pb-2">
       {@render tree(projects, 0)}
     </ul>
+    <div class="min-w-0 border-t border-border px-3 py-3">
+      {@render portsView()}
+    </div>
   </section>
 {/snippet}
 
@@ -717,6 +719,7 @@
 
 {#snippet portsView()}
   <PortsPanel
+    class="border-0 bg-transparent p-0 shadow-none"
     {ports}
     {portsError}
     {portsBusy}
@@ -1033,7 +1036,6 @@
           <div class="h-full min-w-0 space-y-3 overflow-x-hidden overflow-y-auto pb-4">
             {@render projectFocus()}
             <div class="space-y-3 px-3">
-              {@render portsView()}
               {@render tasksView()}
               {@render agentsView()}
             </div>
@@ -1056,7 +1058,6 @@
         <div class="space-y-3">
           {#if tab === "projects"}{@render projectsView()}{/if}
           {#if tab === "processes"}{@render processesView()}{/if}
-          {#if tab === "ports"}{@render portsView()}{/if}
           {#if tab === "tasks"}{@render tasksView()}{/if}
           {#if tab === "agents"}{@render agentsView()}{/if}
         </div>
