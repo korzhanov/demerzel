@@ -69,7 +69,6 @@
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
-  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import * as Resizable from "$lib/components/ui/resizable/index.js";
@@ -81,8 +80,16 @@
   import AppWindowIcon from "@lucide/svelte/icons/app-window";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
+  import MonitorIcon from "@lucide/svelte/icons/monitor";
   import BotIcon from "@lucide/svelte/icons/bot";
-  import { applyTheme, readStoredTheme, toggleTheme, type ThemeMode } from "$lib/theme";
+  import {
+    applyTheme,
+    nextTheme,
+    readStoredTheme,
+    themeLabel,
+    toggleTheme,
+    type ThemeMode,
+  } from "$lib/theme";
 
   let scanEntries = $state<ScanRootEntry[]>([]);
   let theme = $state<ThemeMode>("dark");
@@ -417,6 +424,10 @@
     theme = toggleTheme(theme);
   }
 
+  function onCycleView() {
+    setView(view === "columns" ? "tabs" : "columns");
+  }
+
   async function scan() {
     error = "";
     if (scanBusy) return;
@@ -526,6 +537,17 @@
     mounted = true;
     theme = readStoredTheme();
     applyTheme(theme);
+    const mq =
+      typeof matchMedia !== "undefined"
+        ? matchMedia("(prefers-color-scheme: dark)")
+        : null;
+    const onScheme = () => {
+      if (readStoredTheme() === "system") {
+        applyTheme("system");
+        theme = "system";
+      }
+    };
+    mq?.addEventListener("change", onScheme);
     let unlistenOpen: (() => void) | undefined;
     let unlistenAutofix: (() => void) | undefined;
     void (async () => {
@@ -602,6 +624,7 @@
       taskGeneration++;
       clearInterval(poll);
       clearInterval(portPoll);
+      mq?.removeEventListener("change", onScheme);
       unlistenOpen?.();
       unlistenAutofix?.();
     };
@@ -915,20 +938,26 @@
     onPersist={saveAgentCatalogPrefs}
   />
 
+  <header class="shrink-0 border-b border-border">
+    <h1 class="sr-only">DEMERZEL</h1>
+    <div
+      class="h-[var(--banner-height)] bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
+      role="img"
+      aria-label="DEMERZEL — The Shadow Orchestrator for Your Stack"
+    ></div>
+  </header>
+
+  {#if widgetMsg}
+    <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
+  {/if}
+
   <Tooltip.Provider delayDuration={300}>
-    <header class="shrink-0 border-b border-border">
-      <h1 class="sr-only">DEMERZEL</h1>
-      <div
-        class="relative h-[var(--banner-height)] bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
-      >
-        <span class="sr-only">DEMERZEL — The Shadow Orchestrator for Your Stack</span>
+    <StatusSummary {summary} {updatedAt}>
+      {#snippet actions()}
         <div
-          class="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1.5 px-3.5 py-2.5"
+          class="flex flex-wrap items-center gap-1"
           role="toolbar"
           aria-label="Панель окна"
-        >
-        <div
-          class="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/85 p-1 shadow-sm backdrop-blur-sm"
         >
           <Tooltip.Root>
             <Tooltip.Trigger>
@@ -945,7 +974,9 @@
                 </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content side="bottom" align="end">Агенты: приоритет и установка</Tooltip.Content>
+            <Tooltip.Content side="bottom" align="end"
+              >Агенты: приоритет и установка</Tooltip.Content
+            >
           </Tooltip.Root>
 
           <Tooltip.Root>
@@ -988,47 +1019,31 @@
             <Tooltip.Content>{logsOpen ? "Скрыть логи" : "Показать логи"}</Tooltip.Content>
           </Tooltip.Root>
 
-          <ToggleGroup.Root
-            type="single"
-            variant="outline"
-            class="overflow-hidden rounded-lg border border-border"
-            aria-label="Вид окна"
-            value={view}
-            onValueChange={(v) => v && setView(v as ViewMode)}
-          >
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  <div {...props} class="inline-flex">
-                    <ToggleGroup.Item
-                      value="columns"
-                      class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                      aria-label="Колонки"
-                    >
-                      <Columns2Icon class="size-4" />
-                    </ToggleGroup.Item>
-                  </div>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content>Вид колонками</Tooltip.Content>
-            </Tooltip.Root>
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  <div {...props} class="inline-flex">
-                    <ToggleGroup.Item
-                      value="tabs"
-                      class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                      aria-label="Вкладки"
-                    >
-                      <LayoutListIcon class="size-4" />
-                    </ToggleGroup.Item>
-                  </div>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content>Вид вкладками</Tooltip.Content>
-            </Tooltip.Root>
-          </ToggleGroup.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="outline"
+                  class="size-8 p-0"
+                  aria-label={view === "columns" ? "Вид: колонки" : "Вид: вкладки"}
+                  onclick={onCycleView}
+                >
+                  {#if view === "columns"}
+                    <Columns2Icon class="size-4" />
+                  {:else}
+                    <LayoutListIcon class="size-4" />
+                  {/if}
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content
+              >{view === "columns"
+                ? "Колонки · далее вкладки"
+                : "Вкладки · далее колонки"}</Tooltip.Content
+            >
+          </Tooltip.Root>
 
           <Tooltip.Root>
             <Tooltip.Trigger>
@@ -1038,32 +1053,27 @@
                   size="sm"
                   variant="outline"
                   class="size-8 p-0"
-                  aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"}
+                  aria-label={themeLabel(theme)}
                   onclick={onToggleTheme}
                 >
                   {#if theme === "dark"}
+                    <MoonIcon class="size-4" />
+                  {:else if theme === "light"}
                     <SunIcon class="size-4" />
                   {:else}
-                    <MoonIcon class="size-4" />
+                    <MonitorIcon class="size-4" />
                   {/if}
                 </Button>
               {/snippet}
             </Tooltip.Trigger>
             <Tooltip.Content
-              >{theme === "dark" ? "Светлая тема" : "Тёмная тема"}</Tooltip.Content
+              >{themeLabel(theme)} · далее {themeLabel(nextTheme(theme))}</Tooltip.Content
             >
           </Tooltip.Root>
         </div>
-      </div>
-      </div>
-    </header>
-
-    {#if widgetMsg}
-      <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
-    {/if}
+      {/snippet}
+    </StatusSummary>
   </Tooltip.Provider>
-
-  <StatusSummary {summary} {updatedAt} />
 
   {#if error}
     <p class="break-words px-4 pt-2 text-sm text-destructive">{error}</p>
