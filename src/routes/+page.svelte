@@ -894,7 +894,7 @@
               </Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content
+          <Tooltip.Content side="bottom" align="end"
             >Установить виджеты в /Applications (нужен tauri build --debug)</Tooltip.Content
           >
         </Tooltip.Root>

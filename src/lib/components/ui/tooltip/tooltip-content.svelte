@@ -27,6 +27,7 @@
 		bind:ref
 		data-slot="tooltip-content"
 		{sideOffset}
+		collisionPadding={8}
 		class={cn(
 			"bg-foreground text-background animate-in fade-in-0 zoom-in-95 z-[200] w-fit max-w-[min(20rem,calc(100vw-2rem))] rounded-md px-3 py-1.5 text-xs text-balance shadow-md",
 			className
@@ -35,7 +36,7 @@
 	>
 		{@render children?.()}
 		<TooltipPrimitive.Arrow
-			class="bg-foreground fill-foreground z-[200] size-2.5 translate-y-[calc(-50%-2px)] rotate-45 rounded-[2px]"
+			class="bg-foreground fill-foreground z-[200] size-2.5 rotate-45 rounded-[2px]"
 		/>
 	</TooltipPrimitive.Content>
 </TooltipPrimitive.Portal>
