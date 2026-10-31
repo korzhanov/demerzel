@@ -11,11 +11,12 @@
     "postinstall": "bun scripts/patch-swift-package.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "test": "bun test src/lib",
+    "test": "bun test src/lib && bun scripts/screenshots.mjs",
     "tauri": "tauri",
     "sign:macos": "bash scripts/sign-macos.sh",
     "widget:preview": "bunx tauri-plugin-widgets-api preview ./widget.json --size small --watch",
-    "widget:install": "bash scripts/sign-macos.sh && rm -rf /Applications/Demerzel.app && cp -R src-tauri/target/debug/bundle/macos/Demerzel.app /Applications/ && bash scripts/sign-macos.sh /Applications/Demerzel.app && open /Applications/Demerzel.app"
+    "widget:install": "bash scripts/sign-macos.sh && rm -rf /Applications/Demerzel.app && cp -R src-tauri/target/debug/bundle/macos/Demerzel.app /Applications/ && bash scripts/sign-macos.sh /Applications/Demerzel.app && open /Applications/Demerzel.app",
+    "screenshots": "bun scripts/screenshots.mjs"
   },
   "license": "UNLICENSED",
   "dependencies": {
