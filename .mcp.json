@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "demerzel": {
+      "command": "node",
+      "args": ["mcp/demerzel-mcp.mjs"],
+      "env": {}
+    }
+  }
+}

@@ -11,7 +11,7 @@
     "postinstall": "bun scripts/patch-swift-package.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "test": "bun test src/lib && bun scripts/screenshots.mjs",
+    "test": "bun test src/lib && bun test mcp && bun scripts/screenshots.mjs",
     "tauri": "tauri",
     "sign:macos": "bash scripts/sign-macos.sh",
     "widget:preview": "bunx tauri-plugin-widgets-api preview ./widget.json --size small --watch",
