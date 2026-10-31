@@ -916,158 +916,157 @@
   />
 
   <Tooltip.Provider delayDuration={300}>
-    <header
-      class="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3.5 py-2.5"
-    >
-      <img
-        src="/mockups/icon.jpg"
-        alt=""
-        width="26"
-        height="26"
-        class="size-[26px] rounded-[7px] object-cover"
-      />
-      <img src="/app-icon.png" alt="" aria-hidden="true" class="size-7 rounded-md" width="28" height="28" />
-      <h1 class="text-[15px] font-medium tracking-[0.08em] text-primary">DEMERZEL</h1>
+    <header class="shrink-0 border-b border-border">
+      <h1 class="sr-only">DEMERZEL</h1>
       {#if focusProject}
-        <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
+        <div class="bg-card px-3.5 py-2">
+          <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
+        </div>
       {/if}
-      <div class="ml-auto flex flex-wrap items-center gap-1.5">
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                size="sm"
-                variant="outline"
-                class="size-8 p-0"
-                aria-label="Агенты"
-                onclick={() => (agentsSettingsOpen = true)}
-              >
-                <BotIcon class="size-4" />
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content side="bottom" align="end">Агенты: приоритет и установка</Tooltip.Content>
-        </Tooltip.Root>
-
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                size="sm"
-                variant="outline"
-                class="size-8 p-0"
-                disabled={widgetBusy}
-                aria-label="Установить виджеты"
-                onclick={() => void installWidgets()}
-              >
-                <AppWindowIcon class="size-4" />
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content side="bottom" align="end"
-            >Установить виджеты в /Applications (нужен tauri build --debug)</Tooltip.Content
-          >
-        </Tooltip.Root>
-
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                size="sm"
-                variant={logsOpen ? "default" : "outline"}
-                class="size-8 p-0"
-                aria-pressed={logsOpen}
-                aria-label={logsOpen ? "Скрыть логи" : "Показать логи"}
-                onclick={() => (logsOpen = !logsOpen)}
-              >
-                <ScrollTextIcon class="size-4" />
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>{logsOpen ? "Скрыть логи" : "Показать логи"}</Tooltip.Content>
-        </Tooltip.Root>
-
-        <ToggleGroup.Root
-          type="single"
-          variant="outline"
-          class="overflow-hidden rounded-lg border border-border"
-          aria-label="Вид окна"
-          value={view}
-          onValueChange={(v) => v && setView(v as ViewMode)}
+      <div
+        class="relative h-[var(--banner-height)] bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
+      >
+        <span class="sr-only">DEMERZEL — The Shadow Orchestrator for Your Stack</span>
+        <div
+          class="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1.5 px-3.5 py-2.5"
+          role="toolbar"
+          aria-label="Панель окна"
+        >
+        <div
+          class="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/85 p-1 shadow-sm backdrop-blur-sm"
         >
           <Tooltip.Root>
             <Tooltip.Trigger>
               {#snippet child({ props })}
-                <div {...props} class="inline-flex">
-                  <ToggleGroup.Item
-                    value="columns"
-                    class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                    aria-label="Колонки"
-                  >
-                    <Columns2Icon class="size-4" />
-                  </ToggleGroup.Item>
-                </div>
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="outline"
+                  class="size-8 p-0"
+                  aria-label="Агенты"
+                  onclick={() => (agentsSettingsOpen = true)}
+                >
+                  <BotIcon class="size-4" />
+                </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content>Вид колонками</Tooltip.Content>
+            <Tooltip.Content side="bottom" align="end">Агенты: приоритет и установка</Tooltip.Content>
           </Tooltip.Root>
+
           <Tooltip.Root>
             <Tooltip.Trigger>
               {#snippet child({ props })}
-                <div {...props} class="inline-flex">
-                  <ToggleGroup.Item
-                    value="tabs"
-                    class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                    aria-label="Вкладки"
-                  >
-                    <LayoutListIcon class="size-4" />
-                  </ToggleGroup.Item>
-                </div>
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="outline"
+                  class="size-8 p-0"
+                  disabled={widgetBusy}
+                  aria-label="Установить виджеты"
+                  onclick={() => void installWidgets()}
+                >
+                  <AppWindowIcon class="size-4" />
+                </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content>Вид вкладками</Tooltip.Content>
+            <Tooltip.Content side="bottom" align="end"
+              >Установить виджеты в /Applications (нужен tauri build --debug)</Tooltip.Content
+            >
           </Tooltip.Root>
-        </ToggleGroup.Root>
 
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                size="sm"
-                variant="outline"
-                class="size-8 p-0"
-                aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"}
-                onclick={onToggleTheme}
-              >
-                {#if theme === "dark"}
-                  <SunIcon class="size-4" />
-                {:else}
-                  <MoonIcon class="size-4" />
-                {/if}
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content
-            >{theme === "dark" ? "Светлая тема" : "Тёмная тема"}</Tooltip.Content
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  size="sm"
+                  variant={logsOpen ? "default" : "outline"}
+                  class="size-8 p-0"
+                  aria-pressed={logsOpen}
+                  aria-label={logsOpen ? "Скрыть логи" : "Показать логи"}
+                  onclick={() => (logsOpen = !logsOpen)}
+                >
+                  <ScrollTextIcon class="size-4" />
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content>{logsOpen ? "Скрыть логи" : "Показать логи"}</Tooltip.Content>
+          </Tooltip.Root>
+
+          <ToggleGroup.Root
+            type="single"
+            variant="outline"
+            class="overflow-hidden rounded-lg border border-border"
+            aria-label="Вид окна"
+            value={view}
+            onValueChange={(v) => v && setView(v as ViewMode)}
           >
-        </Tooltip.Root>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <div {...props} class="inline-flex">
+                    <ToggleGroup.Item
+                      value="columns"
+                      class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                      aria-label="Колонки"
+                    >
+                      <Columns2Icon class="size-4" />
+                    </ToggleGroup.Item>
+                  </div>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>Вид колонками</Tooltip.Content>
+            </Tooltip.Root>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <div {...props} class="inline-flex">
+                    <ToggleGroup.Item
+                      value="tabs"
+                      class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                      aria-label="Вкладки"
+                    >
+                      <LayoutListIcon class="size-4" />
+                    </ToggleGroup.Item>
+                  </div>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>Вид вкладками</Tooltip.Content>
+            </Tooltip.Root>
+          </ToggleGroup.Root>
+
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="outline"
+                  class="size-8 p-0"
+                  aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"}
+                  onclick={onToggleTheme}
+                >
+                  {#if theme === "dark"}
+                    <SunIcon class="size-4" />
+                  {:else}
+                    <MoonIcon class="size-4" />
+                  {/if}
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content
+              >{theme === "dark" ? "Светлая тема" : "Тёмная тема"}</Tooltip.Content
+            >
+          </Tooltip.Root>
+        </div>
+      </div>
       </div>
     </header>
+
+    {#if widgetMsg}
+      <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
+    {/if}
   </Tooltip.Provider>
-
-  {#if widgetMsg}
-    <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
-  {/if}
-
-  <div
-    class="h-[var(--banner-height)] shrink-0 border-b border-border bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
-    role="img"
-    aria-label="DEMERZEL — The Shadow Orchestrator for Your Stack"
-  ></div>
 
   <StatusSummary {summary} {updatedAt} />
 
