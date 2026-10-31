@@ -79,7 +79,7 @@
             <Table.Head>Порт</Table.Head>
             <Table.Head>Проект</Table.Head>
             <Table.Head>Процесс</Table.Head>
-            <Table.Head>PID</Table.Head>
+            <Table.Head class="hidden xl:table-cell">PID</Table.Head>
             <Table.Head>Статус</Table.Head>
             <Table.Head>Действие</Table.Head>
           </Table.Row>
@@ -90,7 +90,7 @@
               <Table.Cell class="font-mono">{port.port}</Table.Cell>
               <Table.Cell>{port.project ?? "—"}</Table.Cell>
               <Table.Cell class="font-mono text-xs">{port.command}</Table.Cell>
-              <Table.Cell>{port.pid}</Table.Cell>
+              <Table.Cell class="hidden xl:table-cell">{port.pid}</Table.Cell>
               <Table.Cell>
                 {#if isSystemPort(port)}
                   <Badge variant="outline" class="text-muted-foreground">системный</Badge>
@@ -104,7 +104,7 @@
                 {#if canStopManagedPort(port)}
                   <Button size="sm" variant="outline" disabled={stopping} onclick={() => { confirmPort = port; }}>Остановить…</Button>
                 {:else}
-                  <span class="text-xs text-muted-foreground">Только просмотр</span>
+                  <span class="text-xs text-muted-foreground" title="Только просмотр">—</span>
                 {/if}
               </Table.Cell>
             </Table.Row>
