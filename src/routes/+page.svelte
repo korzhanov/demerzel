@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import AutomationsPanel from "$lib/components/AutomationsPanel.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
@@ -832,6 +833,8 @@
         placeholder="команда (пусто = orchestrator.json)"
         aria-label="Команда запуска"
       />
+
+      <AutomationsPanel path={selectedProject.path} />
 
       <div>
         <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">

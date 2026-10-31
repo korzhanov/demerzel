@@ -101,6 +101,23 @@ pub struct ProjectConfig {
     pub agents: Option<ProjectAgentsConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Выбранные пользователем автозадачи (#153).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation: Option<AutomationConfig>,
+}
+
+/// Секция `automation` в `orchestrator.json` (#153): что запускать из обнаруженных.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AutomationConfig {
+    #[serde(default)]
+    pub selected: Vec<AutomationSelection>,
+}
+
+/// Одна выбранная пользователем задача: источник и имя (скрипт, цель, ключ).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationSelection {
+    pub source: String,
+    pub name: String,
 }
 
 /// Секция `agents` в `orchestrator.json` (#95 / #96).

@@ -321,3 +321,18 @@ export interface Task {
   source: string;
   url: string | null;
 }
+
+export interface DiscoveredAutomation {
+  source: string;
+  name: string;
+  command: string | null;
+  likely_automation: boolean;
+}
+export interface AutomationSelection {
+  source: string;
+  name: string;
+}
+export interface AutomationsView {
+  discovered: DiscoveredAutomation[];
+  selected: AutomationSelection[];
+}

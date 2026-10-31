@@ -4,17 +4,34 @@
   "title": "orchestrator.json",
   "description": "Конфиг проекта Demerzel. Лежит в корне проекта или подпроекта.",
   "type": "object",
-  "required": ["name", "type"],
+  "required": [
+    "name",
+    "type"
+  ],
   "additionalProperties": false,
   "properties": {
-    "name": { "type": "string", "minLength": 1 },
-    "type": { "enum": ["app", "parser", "dashboard", "service"] },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "enum": [
+        "app",
+        "parser",
+        "dashboard",
+        "service"
+      ]
+    },
     "commands": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "dev": { "type": "string" },
-        "test": { "type": "string" },
+        "dev": {
+          "type": "string"
+        },
+        "test": {
+          "type": "string"
+        },
         "migrate": {
           "type": "string",
           "description": "ORM-агностичная команда миграций. Вызывается dem sync; если нет или пусто — пропуск с сообщением (#43)."
@@ -23,24 +40,43 @@
     },
     "ports": {
       "type": "object",
-      "required": ["range"],
+      "required": [
+        "range"
+      ],
       "additionalProperties": false,
       "properties": {
         "range": {
           "type": "array",
-          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
           "minItems": 2,
           "maxItems": 2
         },
-        "default": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "default": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
     "tasks": {
       "type": "object",
-      "required": ["source"],
+      "required": [
+        "source"
+      ],
       "additionalProperties": false,
       "properties": {
-        "source": { "enum": ["todo", "tasks-json", "github", "notion"] },
+        "source": {
+          "enum": [
+            "todo",
+            "tasks-json",
+            "github",
+            "notion"
+          ]
+        },
         "repository": {
           "type": "string",
           "description": "owner/name для source=github (#18)"
@@ -65,7 +101,9 @@
     },
     "env": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "pulse": {
       "type": "object",
@@ -96,8 +134,26 @@
         }
       },
       "oneOf": [
-        { "required": ["command"], "not": { "required": ["file"] } },
-        { "required": ["file"], "not": { "required": ["command"] } }
+        {
+          "required": [
+            "command"
+          ],
+          "not": {
+            "required": [
+              "file"
+            ]
+          }
+        },
+        {
+          "required": [
+            "file"
+          ],
+          "not": {
+            "required": [
+              "command"
+            ]
+          }
+        }
       ]
     },
     "agents": {
@@ -118,6 +174,31 @@
             "ollama"
           ],
           "description": "CLI-агент по умолчанию для этого проекта"
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "name"
+            ],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     }

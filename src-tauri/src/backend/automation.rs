@@ -4,6 +4,7 @@
 //! `[project.scripts]` / `[tool.poetry.scripts]`, `Makefile` → цели, `auto-run.json`
 //! (факт наличия и верхний уровень ключей). Имена, похожие на автозапуски, помечаются.
 
+use crate::backend::config::AutomationSelection;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -128,6 +129,28 @@ fn from_makefile(project: &Path) -> Vec<DiscoveredAutomation> {
     out
 }
 
+/// Записывает выбор в `orchestrator.json` → `automation.selected`; остальные поля не трогает (#153).
+/// Если файла нет — создаёт минимальный с именем папки.
+pub fn save_selection(project: &Path, selected: &[AutomationSelection]) -> Result<(), String> {
+    let file = project.join("orchestrator.json");
+    let mut doc: serde_json::Value = if file.is_file() {
+        let text = fs::read_to_string(&file).map_err(|e| e.to_string())?;
+        serde_json::from_str(&text).map_err(|e| format!("orchestrator.json: {e}"))?
+    } else {
+        let name = project
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "project".into());
+        serde_json::json!({ "name": name })
+    };
+    let obj = doc
+        .as_object_mut()
+        .ok_or_else(|| "orchestrator.json: корень должен быть объектом".to_string())?;
+    obj.insert("automation".into(), serde_json::json!({ "selected": selected }));
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    fs::write(&file, text + "\n").map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +216,27 @@ mod tests {
     fn missing_files_give_empty_result() {
         let d = tmp("empty");
         assert!(discover(&d).is_empty());
+    }
+
+    #[test]
+    fn save_keeps_other_fields_and_writes_selection() {
+        let d = tmp("save");
+        fs::write(d.join("orchestrator.json"), r#"{"name":"parser","commands":{"dev":"x"}}"#).unwrap();
+        save_selection(&d, &[AutomationSelection { source: "package.json".into(), name: "pipeline".into() }])
+            .unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(d.join("orchestrator.json")).unwrap()).unwrap();
+        assert_eq!(v["name"], "parser");
+        assert_eq!(v["commands"]["dev"], "x");
+        assert_eq!(v["automation"]["selected"][0]["name"], "pipeline");
+    }
+
+    #[test]
+    fn save_creates_file_when_missing() {
+        let d = tmp("create");
+        save_selection(&d, &[]).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(d.join("orchestrator.json")).unwrap()).unwrap();
+        assert!(v["automation"]["selected"].as_array().unwrap().is_empty());
     }
 }

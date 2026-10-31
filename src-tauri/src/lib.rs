@@ -631,6 +631,33 @@ fn discard_agent_run(
     reg.discard(&id)
 }
 
+/// Обнаруженные автозадачи и уже выбранные пользователем (#153, этап B).
+#[derive(serde::Serialize)]
+struct AutomationsView {
+    discovered: Vec<backend::automation::DiscoveredAutomation>,
+    selected: Vec<backend::config::AutomationSelection>,
+}
+
+#[tauri::command]
+fn load_automations(path: String) -> Result<AutomationsView, String> {
+    let dir = std::path::Path::new(&path);
+    let discovered = backend::automation::discover(dir);
+    let selected = backend::config::load_checked(dir)?
+        .and_then(|c| c.automation)
+        .map(|a| a.selected)
+        .unwrap_or_default();
+    Ok(AutomationsView { discovered, selected })
+}
+
+/// Записывает выбор в `orchestrator.json` → `automation.selected`, остальные поля не трогает (#153).
+#[tauri::command]
+fn save_automation_selection(
+    path: String,
+    selected: Vec<backend::config::AutomationSelection>,
+) -> Result<(), String> {
+    backend::automation::save_selection(std::path::Path::new(&path), &selected)
+}
+
 /// Кандидаты автозадач проекта: только чтение, ничего не запускает (#153, этап A).
 #[tauri::command]
 fn discover_automations(path: String) -> Vec<backend::automation::DiscoveredAutomation> {
@@ -1085,6 +1112,8 @@ pub fn run() {
             discover_automations,
             open_agent_install_terminal,
             resolve_preferred_agent,
+            load_automations,
+            save_automation_selection,
             resolve_project_agent_runner,
             start_agent_from_task,
             start_agent_from_alert,
