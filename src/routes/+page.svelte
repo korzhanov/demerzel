@@ -186,7 +186,9 @@
     if (!mounted || portsBusy) return;
     portsBusy = true;
     try {
-      const result = await invoke<PortRow[]>("list_ports");
+      const result = await invoke<PortRow[]>("list_ports", {
+        paths: flatProjects.map((p) => p.path),
+      });
       if (mounted) {
         ports = result;
         portsError = "";

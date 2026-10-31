@@ -1,6 +1,7 @@
 //! Реестр портов: диапазоны, аренда (#13) и фактические слушатели через lsof (#14).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Serialize;
@@ -136,35 +137,93 @@ pub struct PortRow {
     pub managed_id: Option<u64>,
 }
 
+/// cwd процесса → путь известного проекта (самый длинный префикс).
+pub fn match_known_project(cwd: &Path, known: &[PathBuf]) -> Option<PathBuf> {
+    known
+        .iter()
+        .filter(|p| !p.as_os_str().is_empty() && cwd.starts_with(p))
+        .max_by_key(|p| p.as_os_str().len())
+        .cloned()
+}
+
+/// Парсер `lsof -d cwd -Fn`: `pPID` + `n/path`.
+pub fn parse_lsof_cwd(text: &str) -> BTreeMap<u32, PathBuf> {
+    let mut pid = None;
+    let mut out = BTreeMap::new();
+    for line in text.lines() {
+        if let Some(p) = line.strip_prefix('p') {
+            pid = p.parse::<u32>().ok();
+        } else if let Some(path) = line.strip_prefix('n')
+            && let Some(pid) = pid
+            && path.starts_with('/')
+        {
+            out.insert(pid, PathBuf::from(path));
+        }
+    }
+    out
+}
+
+/// cwd слушающих pid через `lsof -d cwd` (macOS/Linux).
+pub fn process_cwds(pids: &[u32]) -> BTreeMap<u32, PathBuf> {
+    if pids.is_empty() {
+        return BTreeMap::new();
+    }
+    let list = pids
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let out = Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-Fn", "-p", &list])
+        .output();
+    let Ok(out) = out else {
+        return BTreeMap::new();
+    };
+    parse_lsof_cwd(&String::from_utf8_lossy(&out.stdout))
+}
+
 pub fn inventory(
     sockets: Vec<Listener>,
     managed: &BTreeMap<u32, (u64, String)>,
     ranges: &BTreeMap<String, PortRange>,
+    known_projects: &[PathBuf],
+    cwds: &BTreeMap<u32, PathBuf>,
 ) -> Vec<PortRow> {
     sockets
         .iter()
         .map(|socket| {
             let owner = managed.get(&socket.pid);
+            let from_cwd = if owner.is_none() {
+                cwds.get(&socket.pid)
+                    .and_then(|cwd| match_known_project(cwd, known_projects))
+            } else {
+                None
+            };
+            let recognized = from_cwd.is_some();
+            let project = owner
+                .map(|(_, project)| project.clone())
+                .or_else(|| from_cwd.map(|p| p.to_string_lossy().into_owned()));
             let conflict = sockets
                 .iter()
                 .any(|other| other.port == socket.port && other.pid != socket.pid)
                 || owner
                     .and_then(|(_, project)| ranges.get(project))
                     .is_some_and(|r| !r.contains(socket.port));
+            // cwd-match → ok (известный проект), без managed_id — остановить нельзя.
+            let status = if conflict {
+                "conflict"
+            } else if owner.is_some() || recognized {
+                "ok"
+            } else {
+                "foreign"
+            };
             PortRow {
                 port: socket.port,
                 pid: socket.pid,
                 command: socket.command.clone(),
-                project: owner.map(|(_, project)| project.clone()),
+                project,
                 managed_id: owner.map(|(id, _)| *id),
-                status: if conflict {
-                    "conflict"
-                } else if owner.is_some() {
-                    "ok"
-                } else {
-                    "foreign"
-                }
-                .into(),
+                status: status.into(),
             }
         })
         .collect()
@@ -249,9 +308,61 @@ mod tests {
             parse_lsof("p1\ncnode\nn*:5200\np2\ncssh\nn*:22"),
             &BTreeMap::from([(1, (8, "api".into()))]),
             &BTreeMap::from([("api".into(), PortRange::new(5100, 5199).unwrap())]),
+            &[],
+            &BTreeMap::new(),
         );
         assert_eq!(rows[0].status, "conflict");
         assert_eq!(rows[1].status, "foreign");
         assert_eq!(rows[1].managed_id, None);
+    }
+
+    #[test]
+    fn cwd_matches_known_project_as_ok_without_managed() {
+        let known = vec![
+            PathBuf::from("/Users/oleg/code/korzhanov/100words"),
+            PathBuf::from("/Users/oleg/code/other"),
+        ];
+        let cwds = BTreeMap::from([(
+            9u32,
+            PathBuf::from("/Users/oleg/code/korzhanov/100words/parser"),
+        )]);
+        let rows = inventory(
+            parse_lsof("p9\ncbun\nn127.0.0.1:3847\np2\ncssh\nn*:22"),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &known,
+            &cwds,
+        );
+        let bun = rows.iter().find(|r| r.port == 3847).expect("bun port");
+        let ssh = rows.iter().find(|r| r.port == 22).expect("ssh port");
+        assert_eq!(bun.status, "ok");
+        assert_eq!(
+            bun.project.as_deref(),
+            Some("/Users/oleg/code/korzhanov/100words")
+        );
+        assert_eq!(bun.managed_id, None);
+        assert_eq!(ssh.status, "foreign");
+    }
+
+    #[test]
+    fn match_known_project_prefers_longest_prefix() {
+        let known = vec![
+            PathBuf::from("/code/app"),
+            PathBuf::from("/code/app/parser"),
+        ];
+        assert_eq!(
+            match_known_project(Path::new("/code/app/parser/src"), &known),
+            Some(PathBuf::from("/code/app/parser"))
+        );
+        assert!(match_known_project(Path::new("/tmp"), &known).is_none());
+    }
+
+    #[test]
+    fn parses_lsof_cwd_records() {
+        let map = parse_lsof_cwd("p79200\nfcwd\nn/Users/oleg/code/korzhanov/100words/parser\n");
+        assert_eq!(
+            map.get(&79200).map(|p| p.to_string_lossy().into_owned()),
+            Some("/Users/oleg/code/korzhanov/100words/parser".into())
+        );
     }
 }
