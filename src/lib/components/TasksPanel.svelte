@@ -99,7 +99,7 @@
               <Badge variant="outline" class="max-w-full truncate">{task.source}</Badge>
               <div class="flex min-w-0 flex-wrap gap-2 pt-1">
                 {#if canOpenTask(task)}
-                  <Button size="sm" variant="outline" class="max-w-full shrink" onclick={() => onOpen(task)}>Открыть источник</Button>
+                  <Button size="sm" variant="outline" class="h-auto max-w-full min-w-0 whitespace-normal py-1 text-left" onclick={() => onOpen(task)}>Открыть источник</Button>
                 {/if}
                 {#if onStartAgent && canStartAgentFromTask(task)}
                   <Button size="sm" class="shrink" disabled={tasksBusy || startBusyTaskId === task.id} onclick={() => onStartAgent(task)}>
