@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.55.0 — 2026-10-31
+
+- Автозадачи, этап A (#153): `discover_automations` находит кандидатов в проекте — скрипты `package.json`, `[project.scripts]` из `pyproject.toml`, цели `Makefile`, наличие `auto-run.json`. Только чтение, ничего не запускает. Тесты на каждый источник.
+
 ## 0.54.9 — 2026-10-31
 
 - Rust: `cargo clippy -D warnings` проходит (отчёт `reports/mac-check-20261031-1516.md`): свернуты вложенные `if`, убраны лишние ссылки и `Default`-присваивания. Поведение не менялось.

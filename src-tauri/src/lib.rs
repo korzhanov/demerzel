@@ -631,6 +631,12 @@ fn discard_agent_run(
     reg.discard(&id)
 }
 
+/// Кандидаты автозадач проекта: только чтение, ничего не запускает (#153, этап A).
+#[tauri::command]
+fn discover_automations(path: String) -> Vec<backend::automation::DiscoveredAutomation> {
+    backend::automation::discover(std::path::Path::new(&path))
+}
+
 /// Реестр CLI-агентов на машине: PATH + `--version`, подсказки установки (#95).
 #[tauri::command]
 fn list_available_agents() -> Vec<backend::agent_catalog::AgentCatalogEntry> {
@@ -1053,6 +1059,7 @@ pub fn run() {
             accept_agent_run,
             discard_agent_run,
             list_available_agents,
+            discover_automations,
             resolve_project_agent_runner,
             start_agent_from_task,
             start_agent_from_alert,
