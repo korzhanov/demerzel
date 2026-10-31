@@ -88,12 +88,12 @@
     {#if projects.length === 0}
       <p class="text-sm text-muted-foreground">Сначала выберите корневые папки и выполните сканирование.</p>
     {/if}
-    <div class="grid min-w-0 grid-cols-1 gap-3 overflow-x-hidden sm:grid-cols-2 xl:grid-cols-4">
+    <div class="grid min-w-0 grid-cols-1 gap-3 overflow-x-hidden md:grid-cols-2 2xl:grid-cols-4">
       {#each TASK_BOARD_COLUMNS as column (column.status)}
         <section class="min-w-0 space-y-2 overflow-hidden rounded-md border border-border/80 bg-muted/50 p-2" aria-label={column.label}>
           <h3 class="truncate text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{column.label}</h3>
           {#each tasksForColumn(visibleTasks, column.status) as task (task.id)}
-            <article class="min-w-0 space-y-1 overflow-hidden rounded-md border border-border bg-card p-2.5 text-sm">
+            <article class="min-w-0 space-y-1 overflow-hidden [overflow-wrap:anywhere] rounded-md border border-border bg-card p-2.5 text-sm">
               <strong class="block break-words font-medium [overflow-wrap:anywhere]">{cleanTaskTitle(task.title)}</strong>
               <p class="truncate text-xs text-muted-foreground" title={task.project}>{task.project}</p>
               <Badge variant="outline" class="max-w-full truncate">{task.source}</Badge>
