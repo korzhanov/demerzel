@@ -11,7 +11,13 @@
     "dialog:default",
     "widgets:default",
     "notification:default",
-    "opener:allow-open-path",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$HOME" },
+        { "path": "$HOME/**" }
+      ]
+    },
     "opener:allow-open-url"
   ]
 }
