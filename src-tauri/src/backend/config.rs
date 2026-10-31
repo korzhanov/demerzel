@@ -222,11 +222,10 @@ pub fn resolve_test_command(commands: &Commands) -> Option<&str> {
 /// Если ни того ни другого нет (как у корня 100words только с `pipeline`) — `None`:
 /// UI должен спросить команду у пользователя.
 pub fn resolve_dev_command(dir: &Path) -> Option<String> {
-    if let Some(cfg) = load_from_dir(dir) {
-        if let Some(dev) = cfg.commands.dev.filter(|s| !s.trim().is_empty()) {
+    if let Some(cfg) = load_from_dir(dir)
+        && let Some(dev) = cfg.commands.dev.filter(|s| !s.trim().is_empty()) {
             return Some(dev);
         }
-    }
     package_json_dev_command(dir)
 }
 
@@ -261,17 +260,15 @@ pub fn validate(cfg: &ProjectConfig) -> Result<(), ConfigError> {
         let range = PortRange::new(ports.range[0], ports.range[1]).ok_or(
             ConfigError::InvalidPortRange { start: ports.range[0], end: ports.range[1] },
         )?;
-        if let Some(d) = ports.default {
-            if !range.contains(d) {
+        if let Some(d) = ports.default
+            && !range.contains(d) {
                 return Err(ConfigError::DefaultOutsideRange { port: d });
             }
-        }
     }
-    if let Some(tasks) = &cfg.tasks {
-        if !TASK_SOURCES.contains(&tasks.source.as_str()) {
+    if let Some(tasks) = &cfg.tasks
+        && !TASK_SOURCES.contains(&tasks.source.as_str()) {
             return Err(ConfigError::UnknownTaskSource(tasks.source.clone()));
         }
-    }
     if let Some(pulse) = &cfg.pulse {
         validate_pulse(pulse)?;
     }

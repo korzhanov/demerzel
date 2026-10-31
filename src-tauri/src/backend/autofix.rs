@@ -76,16 +76,13 @@ pub fn autofix_eligible(event: &AlertEvent) -> bool {
 
 /// Проектный `agents.autofix` перекрывает settings; иначе settings; иначе Off.
 pub fn resolve_autofix_mode(project_path: Option<&Path>, settings_mode: AutofixMode) -> AutofixMode {
-    if let Some(path) = project_path {
-        if let Some(raw) = config::load_from_dir(path)
+    if let Some(path) = project_path
+        && let Some(raw) = config::load_from_dir(path)
             .and_then(|c| c.agents)
             .and_then(|a| a.autofix)
-        {
-            if let Ok(mode) = AutofixMode::parse(&raw) {
+            && let Ok(mode) = AutofixMode::parse(&raw) {
                 return mode;
             }
-        }
-    }
     settings_mode
 }
 

@@ -46,7 +46,7 @@ pub struct AgentCliMeta {
 
 /// Все поддерживаемые в реестре агенты (порядок стабильный для UI).
 pub fn all_agent_meta() -> &'static [AgentCliMeta] {
-    &AGENT_META
+    AGENT_META
 }
 
 const AGENT_META: &[AgentCliMeta] = &[
@@ -130,11 +130,10 @@ impl AgentRunner {
 
 /// Путь к бинарнику: env override → иначе имя для PATH.
 pub fn resolve_agent_bin(runner: AgentRunner) -> PathBuf {
-    if let Some(override_bin) = std::env::var_os(runner.env_bin_override()) {
-        if !override_bin.is_empty() {
+    if let Some(override_bin) = std::env::var_os(runner.env_bin_override())
+        && !override_bin.is_empty() {
             return PathBuf::from(override_bin);
         }
-    }
     PathBuf::from(runner.binary_name())
 }
 

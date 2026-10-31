@@ -39,7 +39,7 @@ pub fn augmented_path(current: Option<&str>, home: Option<&Path>) -> String {
         }
     }
     for d in tool_dirs(home) {
-        if !out.iter().any(|x| *x == d) {
+        if !out.contains(&d) {
             out.push(d);
         }
     }

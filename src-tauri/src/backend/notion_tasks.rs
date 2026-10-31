@@ -74,11 +74,10 @@ fn find_title(
     properties: &serde_json::Map<String, serde_json::Value>,
     preferred: &str,
 ) -> Option<String> {
-    if let Some(prop) = properties.get(preferred) {
-        if prop.get("type").and_then(|t| t.as_str()) == Some("title") {
+    if let Some(prop) = properties.get(preferred)
+        && prop.get("type").and_then(|t| t.as_str()) == Some("title") {
             return plain_title(prop);
         }
-    }
     properties.values().find_map(|prop| {
         (prop.get("type").and_then(|t| t.as_str()) == Some("title")).then(|| plain_title(prop))?
     })
@@ -169,11 +168,10 @@ fn query_page(
         .get_or_init(Default::default)
         .lock()
         .map_err(|e| e.to_string())?;
-    if let Some(entry) = cache.get(&cache_key) {
-        if entry.fetched.elapsed() < MIN_REFRESH {
+    if let Some(entry) = cache.get(&cache_key)
+        && entry.fetched.elapsed() < MIN_REFRESH {
             return Ok((entry.pages.clone(), entry.next_cursor.clone()));
         }
-    }
 
     let mut body = serde_json::json!({ "page_size": 100 });
     if let Some(cursor) = start_cursor {

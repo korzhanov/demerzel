@@ -398,8 +398,8 @@ impl Supervisor {
                     if let Some(log) = self.migration_logs.get(&key) {
                         text.push_str(&format!("\n{}", format_migrate_watch_line(name, log)));
                     }
-                    if let Some(pid) = row.and_then(|r| r.pid) {
-                        if let Ok(metrics) = Command::new("ps")
+                    if let Some(pid) = row.and_then(|r| r.pid)
+                        && let Ok(metrics) = Command::new("ps")
                             .args(["-p", &pid.to_string(), "-o", "%cpu=,rss="])
                             .output()
                         {
@@ -408,7 +408,6 @@ impl Supervisor {
                                 String::from_utf8_lossy(&metrics.stdout).trim()
                             ));
                         }
-                    }
                 }
                 Ok(text)
             })();
@@ -541,12 +540,12 @@ impl Supervisor {
             docker::require_ready(&containers)?;
             self.manifests.insert(req.root.clone(), manifest);
             if req.json {
-                return Ok(serde_json::to_string_pretty(&RestartJson {
+                return serde_json::to_string_pretty(&RestartJson {
                     project: name.into(),
                     status: "restarted".into(),
                     id: None,
                 })
-                .map_err(|e| e.to_string())?);
+                .map_err(|e| e.to_string());
             }
             return Ok(format!("{name}: restarted (compose)"));
         }
@@ -666,7 +665,7 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
                     json: false,
                 };
                 match request(&req) {
-                    Ok(text) => print!("\x1b[2J\x1b[H{text}\n"),
+                    Ok(text) => println!("\x1b[2J\x1b[H{text}"),
                     Err(e) => break Err(e),
                 }
                 std::thread::sleep(Duration::from_secs(1));
