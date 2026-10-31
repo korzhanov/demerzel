@@ -64,6 +64,11 @@ impl Managed {
         for (k, v) in env {
             cmd.env(k, v);
         }
+        if !env.contains_key("PATH") {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            let current = std::env::var("PATH").ok();
+            cmd.env("PATH", super::env::augmented_path(current.as_deref(), home.as_deref()));
+        }
         if let Some(p) = port {
             cmd.env("PORT", p.to_string());
         }
