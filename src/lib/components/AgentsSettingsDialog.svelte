@@ -12,12 +12,9 @@
     type AgentCatalogPref,
   } from "$lib/agent-install";
   import { Button } from "$lib/components/ui/button/index.js";
-  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
-  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { Switch } from "$lib/components/ui/switch/index.js";
   import XIcon from "@lucide/svelte/icons/x";
-  import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
-  import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
-  import DownloadIcon from "@lucide/svelte/icons/download";
+  import GripVerticalIcon from "@lucide/svelte/icons/grip-vertical";
   import BotIcon from "@lucide/svelte/icons/bot";
 
   let {
@@ -42,15 +39,29 @@
   const availableMap = $derived(
     new Map(catalog.map((e) => [e.runner, e] as const)),
   );
-  const used = $derived(merged);
-  const toInstall = $derived(
-    merged.filter((p) => {
-      const e = availableMap.get(p.runner);
-      if (e?.available) return false;
-      const row = installRowFor(p.runner);
-      return Boolean(row?.install);
-    }),
-  );
+
+  const vendorByRunner: Record<AgentRunner, string> = {
+    claude: "Anthropic",
+    cursor_agent: "Cursor",
+    codex: "OpenAI",
+    hermes: "Nous Research",
+    opencode: "Anomaly",
+    gemini: "Google",
+    aider: "Aider",
+    ollama: "Ollama",
+    grok: "xAI",
+  };
+
+  function subtitleFor(runner: AgentRunner, available: boolean): string {
+    const vendor = vendorByRunner[runner] ?? runner;
+    const row = installRowFor(runner);
+    if (!available) {
+      if (row && !row.verified) return `${vendor} · команда не сверена`;
+      return `${vendor} · не установлен`;
+    }
+    if (row && !row.headless_supported) return `${vendor} · только детект`;
+    return vendor;
+  }
 
   $effect(() => {
     const el = dialogEl;
@@ -108,146 +119,112 @@
     if (e.target === dialogEl) open = false;
   }}
 >
-  <Tooltip.Provider delayDuration={250}>
-    <div class="flex max-h-[min(90vh,42rem)] flex-col">
-      <header class="flex items-start gap-2 border-b border-border px-4 py-3">
-        <div class="min-w-0 flex-1 space-y-1">
-          <h2
-            id="agents-settings-title"
-            class="flex items-center gap-2 text-base font-medium tracking-tight"
-          >
-            <BotIcon class="size-4 text-primary" aria-hidden="true" />
-            Агенты
-          </h2>
-          <p class="text-sm text-muted-foreground">
-            Порядок = приоритет. Установка открывает Terminal.app после подтверждения.
-          </p>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          class="size-8 p-0"
-          aria-label="Закрыть"
-          onclick={() => (open = false)}
+  <div class="flex max-h-[min(90vh,42rem)] flex-col">
+    <header class="flex items-start gap-2 border-b border-border px-4 py-3">
+      <div class="min-w-0 flex-1 space-y-1">
+        <h2
+          id="agents-settings-title"
+          class="flex items-center gap-2 text-base font-medium tracking-tight"
         >
-          <XIcon class="size-4" />
-        </Button>
-      </header>
+          <BotIcon class="size-4 text-primary" aria-hidden="true" />
+          Агенты
+        </h2>
+        <p class="text-sm text-muted-foreground">
+          Приоритет — порядок в списке. Перетащите строку. Установка открывает
+          Terminal.app.
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        class="size-8 p-0"
+        aria-label="Закрыть"
+        onclick={() => (open = false)}
+      >
+        <XIcon class="size-4" />
+      </Button>
+    </header>
 
-      <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
-        {#if error}
-          <p class="text-sm text-destructive" role="alert">{error}</p>
-        {/if}
+    <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      {#if error}
+        <p class="text-sm text-destructive" role="alert">{error}</p>
+      {/if}
 
-        <section class="space-y-2" aria-labelledby="agents-used-title">
-          <h3 id="agents-used-title" class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Используемые
-          </h3>
-          <ul class="space-y-1 rounded-md border border-border p-1">
-            {#each used as pref, i (pref.runner)}
-              {@const entry = availableMap.get(pref.runner)}
-              <li
-                class="flex items-center gap-1 rounded-md px-1 py-1 hover:bg-accent/40"
-                draggable="true"
-                ondragstart={() => onDragStart(i)}
-                ondragover={(e) => e.preventDefault()}
-                ondrop={() => void onDrop(i)}
+      <section class="space-y-2" aria-labelledby="agents-list-title">
+        <h3
+          id="agents-list-title"
+          class="px-1 text-[13px] font-medium text-muted-foreground"
+        >
+          Список
+        </h3>
+        <ul class="overflow-hidden rounded-xl border border-border bg-muted/20">
+          {#each merged as pref, i (pref.runner)}
+            {@const entry = availableMap.get(pref.runner)}
+            {@const available = Boolean(entry?.available)}
+            {@const canInstall =
+              Boolean(installRowFor(pref.runner)?.install) && !available}
+            <li
+              class={[
+                "flex items-center gap-2 border-b border-border px-2.5 py-2.5 last:border-b-0",
+                !pref.enabled && available ? "opacity-60" : "",
+                dragFrom === i ? "bg-accent/30" : "",
+              ].join(" ")}
+              draggable="true"
+              ondragstart={() => onDragStart(i)}
+              ondragover={(e) => e.preventDefault()}
+              ondrop={() => void onDrop(i)}
+              ondragend={() => (dragFrom = null)}
+            >
+              <span
+                class="w-5 shrink-0 text-center font-mono text-[11px] tabular-nums text-muted-foreground"
+                aria-hidden="true"
               >
-                <Checkbox
+                {i + 1}
+              </span>
+              <span
+                class="inline-flex shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                aria-hidden="true"
+                title="Перетащить"
+              >
+                <GripVerticalIcon class="size-4" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium leading-tight">
+                  {agentRunnerLabel(pref.runner)}
+                </p>
+                <p class="truncate text-[11px] text-muted-foreground">
+                  {subtitleFor(pref.runner, available)}
+                </p>
+              </div>
+
+              {#if canInstall}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  class="h-7 shrink-0 rounded-full px-3 text-xs font-medium"
+                  onclick={() => (confirmRunner = pref.runner)}
+                >
+                  Установить
+                </Button>
+              {:else}
+                <Switch
                   checked={pref.enabled}
+                  disabled={!available}
                   onCheckedChange={(v) =>
-                    void persist(setCatalogEnabled(merged, pref.runner, v === true))}
+                    void persist(
+                      setCatalogEnabled(merged, pref.runner, v === true),
+                    )}
                   aria-label={`Использовать ${agentRunnerLabel(pref.runner)}`}
                 />
-                <span class="min-w-0 flex-1 truncate text-sm">
-                  {agentRunnerLabel(pref.runner)}
-                  {#if entry?.available}
-                    <span class="text-muted-foreground">· ok</span>
-                  {:else}
-                    <span class="text-muted-foreground">· нет</span>
-                  {/if}
-                  {#if installRowFor(pref.runner)?.verified === false}
-                    <span class="text-primary">· ?</span>
-                  {/if}
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  class="size-7 p-0"
-                  aria-label="Выше"
-                  disabled={i === 0}
-                  onclick={() => void persist(reorderCatalog(merged, i, i - 1))}
-                >
-                  <ArrowUpIcon class="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  class="size-7 p-0"
-                  aria-label="Ниже"
-                  disabled={i >= used.length - 1}
-                  onclick={() => void persist(reorderCatalog(merged, i, i + 1))}
-                >
-                  <ArrowDownIcon class="size-3.5" />
-                </Button>
-              </li>
-            {/each}
-          </ul>
-        </section>
-
-        <section class="space-y-2" aria-labelledby="agents-install-title">
-          <h3
-            id="agents-install-title"
-            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-          >
-            Доступные для установки
-          </h3>
-          {#if toInstall.length === 0}
-            <p class="text-sm text-muted-foreground">Все поддерживаемые агенты уже на PATH.</p>
-          {:else}
-            <ul class="space-y-1 rounded-md border border-border p-1">
-              {#each toInstall as pref (pref.runner)}
-                {@const cmd = buildInstallCommand(pref.runner)}
-                {@const row = installRowFor(pref.runner)}
-                <li class="flex items-center gap-2 rounded-md px-2 py-1.5">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium">{agentRunnerLabel(pref.runner)}</p>
-                    <p class="truncate font-mono text-[11px] text-muted-foreground" title={cmd ?? ""}>
-                      {cmd}
-                    </p>
-                    {#if row && !row.verified}
-                      <p class="text-[11px] text-primary">Команда не сверена с docs.x.ai</p>
-                    {/if}
-                  </div>
-                  <Tooltip.Root>
-                    <Tooltip.Trigger>
-                      {#snippet child({ props })}
-                        <Button
-                          {...props}
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          class="size-8 p-0"
-                          aria-label="Установить"
-                          onclick={() => (confirmRunner = pref.runner)}
-                        >
-                          <DownloadIcon class="size-4" />
-                        </Button>
-                      {/snippet}
-                    </Tooltip.Trigger>
-                    <Tooltip.Content>Установить через Terminal.app</Tooltip.Content>
-                  </Tooltip.Root>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
-      </div>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </section>
     </div>
-  </Tooltip.Provider>
+  </div>
 </dialog>
 
 {#if confirmRunner}
@@ -265,13 +242,22 @@
       <p class="text-xs text-muted-foreground">
         Откроется Terminal.app с командой. Запуск — только после вашего Enter в терминале.
       </p>
-      <pre class="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]">{cmd}</pre>
+      <pre
+        class="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+        >{cmd}</pre
+      >
       <div class="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="outline" onclick={() => (confirmRunner = null)}
-          >Отмена</Button
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onclick={() => (confirmRunner = null)}>Отмена</Button
         >
-        <Button type="button" size="sm" disabled={busy || !cmd} onclick={() => void confirmInstall()}
-          >Открыть Terminal</Button
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy || !cmd}
+          onclick={() => void confirmInstall()}>Открыть Terminal</Button
         >
       </div>
     </div>
