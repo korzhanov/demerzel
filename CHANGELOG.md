@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.55.3 — 2026-10-31
+
+- Clippy: упрощён boolean в `ports::listeners` (`nonminimal_bool`).
+
 ## 0.55.2 — 2026-10-31
 
 - Агенты (#140): таблица `config/agent-install.json`, UI «Агенты» (приоритет / enabled / Install → Terminal.app), `agents.catalog`, `hermes` + `grok` (unverified), Cursor binary `agent`, Gemini с пометкой про Antigravity.

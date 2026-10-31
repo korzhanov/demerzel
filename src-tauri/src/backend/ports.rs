@@ -120,7 +120,7 @@ pub fn listeners() -> Result<Vec<Listener>, String> {
         .output()
         .map_err(|e| format!("lsof: {e}"))?;
     // lsof exits 1 when there are no matching sockets.
-    if !out.status.success() && !(out.status.code() == Some(1) && out.stderr.is_empty()) {
+    if !(out.status.success() || (out.status.code() == Some(1) && out.stderr.is_empty())) {
         return Err(format!("lsof: {}", String::from_utf8_lossy(&out.stderr)));
     }
     Ok(parse_lsof(&String::from_utf8_lossy(&out.stdout)))
