@@ -25,6 +25,7 @@ fn ser_path<S: serde::Serializer>(p: &PathBuf, s: S) -> Result<S::Ok, S::Error> 
 
 /// Маркеры, по которым папка считается проектом.
 /// `orchestrator.json` — явная регистрация (нужен для подпроектов без package.json, напр. parser).
+/// `auto-run.json` и `Makefile` — признаки Python/скриптовых подпроектов без package.json (#153).
 pub const PROJECT_MARKERS: &[&str] = &[
     "package.json",
     "orchestrator.json",
@@ -32,6 +33,8 @@ pub const PROJECT_MARKERS: &[&str] = &[
     "go.mod",
     "pyproject.toml",
     "requirements.txt",
+    "Makefile",
+    "auto-run.json",
     ".git",
 ];
 
@@ -204,6 +207,14 @@ mod tests {
         assert!(is_project_dir(&["src", "package.json"]));
         assert!(is_project_dir(&[".git"]));
         assert!(!is_project_dir(&["src", "README.md"]));
+    }
+
+    #[test]
+    fn detects_script_projects_without_package_json() {
+        // parser в 100words: нет package.json, есть auto-run.json и Makefile (#153)
+        assert!(is_project_dir(&["auto-run.json", "src", "tools"]));
+        assert!(is_project_dir(&["Makefile", "README.md"]));
+        assert!(!is_project_dir(&["README.md", "src"]));
     }
 
     #[test]

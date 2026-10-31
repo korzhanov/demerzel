@@ -2,6 +2,9 @@
 
 Записи для публикаций в соцсетях. Формат: см. [docs/CONVENTIONS.md](docs/CONVENTIONS.md#журналы).
 
+## 0.55.1 — 2026-10-31
+- Улучшено: Demerzel находит скриптовые подпроекты, даже если в них нет package.json.
+
 ## 0.55.0 — 2026-10-31
 - Новое: Demerzel находит автозапуски в проекте сам — pipeline из package.json, скрипты Python, цели Makefile.
 
