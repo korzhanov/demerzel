@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.55.21 — 2026-10-31
+
+- UI: порядок агентов снова тянется в Tauri — перестановка через pointer-события вместо HTML5 DnD (WKWebView/`dragDropEnabled` глушил `dragstart`/`drop`). В окне `dragDropEnabled: false`.
+
 ## 0.55.20 — 2026-10-31
 
 - Тесты (#150): скриншоты снимаются с мок-данными Tauri invoke (`scripts/tauri-mock.js`), без Rust-бэкенда. Неизвестные команды получают `null`, UI показывает пустые состояния.
