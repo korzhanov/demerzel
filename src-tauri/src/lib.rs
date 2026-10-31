@@ -682,6 +682,7 @@ fn discard_agent_run(
 struct AutomationsView {
     discovered: Vec<backend::automation::DiscoveredAutomation>,
     selected: Vec<backend::config::AutomationSelection>,
+    restart: backend::config::RestartRule,
 }
 
 #[tauri::command]
@@ -692,7 +693,11 @@ fn load_automations(path: String) -> Result<AutomationsView, String> {
         .and_then(|c| c.automation)
         .map(|a| a.selected)
         .unwrap_or_default();
-    Ok(AutomationsView { discovered, selected })
+    let restart = backend::config::load_checked(dir)?
+        .and_then(|c| c.automation)
+        .map(|a| a.restart)
+        .unwrap_or_default();
+    Ok(AutomationsView { discovered, selected, restart })
 }
 
 /// Записывает выбор в `orchestrator.json` → `automation.selected`, остальные поля не трогает (#153).
@@ -702,6 +707,12 @@ fn save_automation_selection(
     selected: Vec<backend::config::AutomationSelection>,
 ) -> Result<(), String> {
     backend::automation::save_selection(std::path::Path::new(&path), &selected)
+}
+
+/// Правило перезапуска автозадач (#153, этап D): сохраняет только секцию restart.
+#[tauri::command]
+fn save_restart_rule(path: String, rule: backend::config::RestartRule) -> Result<(), String> {
+    backend::automation::save_restart_rule(std::path::Path::new(&path), &rule)
 }
 
 /// Кандидаты автозадач проекта: только чтение, ничего не запускает (#153, этап A).
@@ -1159,6 +1170,7 @@ pub fn run() {
             open_agent_install_terminal,
             resolve_preferred_agent,
             load_automations,
+            save_restart_rule,
             automation_statuses,
             start_automation,
             save_automation_selection,

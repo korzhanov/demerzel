@@ -146,7 +146,14 @@ pub fn save_selection(project: &Path, selected: &[AutomationSelection]) -> Resul
     let obj = doc
         .as_object_mut()
         .ok_or_else(|| "orchestrator.json: корень должен быть объектом".to_string())?;
-    obj.insert("automation".into(), serde_json::json!({ "selected": selected }));
+    // Сохраняем соседние поля секции automation (например, restart).
+    let section = obj
+        .entry("automation")
+        .or_insert_with(|| serde_json::json!({}));
+    let section = section
+        .as_object_mut()
+        .ok_or_else(|| "orchestrator.json: automation должен быть объектом".to_string())?;
+    section.insert("selected".into(), serde_json::json!(selected));
     let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
     fs::write(&file, text + "\n").map_err(|e| e.to_string())
 }
@@ -356,5 +363,69 @@ mod limit_tests {
         assert!(check_start_allowed(p, &two_running, 2).is_ok());
         let full = vec![st(Some(Status::Running)), st(Some(Status::Starting))];
         assert!(check_start_allowed(p, &full, 2).is_err());
+    }
+}
+
+/// Записывает правило перезапуска в `automation.restart`, выбор и прочие поля не трогает.
+pub fn save_restart_rule(project: &Path, rule: &crate::backend::config::RestartRule) -> Result<(), String> {
+    let file = project.join("orchestrator.json");
+    let mut doc: serde_json::Value = if file.is_file() {
+        serde_json::from_str(&fs::read_to_string(&file).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("orchestrator.json: {e}"))?
+    } else {
+        serde_json::json!({ "name": project.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default() })
+    };
+    let obj = doc
+        .as_object_mut()
+        .ok_or_else(|| "orchestrator.json: корень должен быть объектом".to_string())?;
+    let section = obj.entry("automation").or_insert_with(|| serde_json::json!({}));
+    let section = section
+        .as_object_mut()
+        .ok_or_else(|| "orchestrator.json: automation должен быть объектом".to_string())?;
+    section.insert("restart".into(), serde_json::to_value(rule).map_err(|e| e.to_string())?);
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    fs::write(&file, text + "\n").map_err(|e| e.to_string())
+}
+
+/// Нужно ли перезапускать автозадачу после её статуса (#153, этап D).
+/// Перезапуск — только при сбое (ненулевой выход или Crashed) и если попыток меньше лимита.
+pub fn should_restart(
+    status: &crate::backend::process::Status,
+    attempts: u32,
+    rule: &crate::backend::config::RestartRule,
+) -> bool {
+    use crate::backend::process::Status;
+    if !rule.enabled || attempts >= rule.max_retries {
+        return false;
+    }
+    match status {
+        Status::Crashed => true,
+        Status::Exited(code) => *code != 0,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod restart_tests {
+    use super::*;
+    use crate::backend::config::RestartRule;
+    use crate::backend::process::Status;
+
+    fn on(max: u32) -> RestartRule {
+        RestartRule { enabled: true, max_retries: max }
+    }
+
+    #[test]
+    fn off_by_default() {
+        assert!(!should_restart(&Status::Exited(1), 0, &RestartRule::default()));
+    }
+
+    #[test]
+    fn restarts_only_on_failure_within_limit() {
+        assert!(should_restart(&Status::Exited(1), 0, &on(3)));
+        assert!(should_restart(&Status::Crashed, 2, &on(3)));
+        assert!(!should_restart(&Status::Exited(0), 0, &on(3)));
+        assert!(!should_restart(&Status::Running, 0, &on(3)));
+        assert!(!should_restart(&Status::Exited(1), 3, &on(3)));
     }
 }

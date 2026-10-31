@@ -9,6 +9,7 @@ const view: AutomationsView = {
     { source: "package.json", name: "build", command: "vite build", likely_automation: false },
   ],
   selected: [],
+  restart: { enabled: false, max_retries: 3 },
 };
 
 describe("automation selection", () => {
@@ -40,5 +41,20 @@ describe("automation status", () => {
   test("запущена ли", () => {
     expect(automationIsRunning({ ...base, status: "Running" })).toBe(true);
     expect(automationIsRunning({ ...base, status: { Exited: 0 } })).toBe(false);
+  });
+});
+
+import { shouldRestart } from "./automation";
+describe("restart rule", () => {
+  const on = { enabled: true, max_retries: 2 };
+  test("выключено по умолчанию и без попыток сверх лимита", () => {
+    expect(shouldRestart({ Exited: 1 }, 0, { enabled: false, max_retries: 2 })).toBe(false);
+    expect(shouldRestart({ Exited: 1 }, 2, on)).toBe(false);
+  });
+  test("перезапуск только при сбое", () => {
+    expect(shouldRestart({ Exited: 1 }, 0, on)).toBe(true);
+    expect(shouldRestart("Crashed", 1, on)).toBe(true);
+    expect(shouldRestart({ Exited: 0 }, 0, on)).toBe(false);
+    expect(shouldRestart("Running", 0, on)).toBe(false);
   });
 });

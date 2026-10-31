@@ -111,6 +111,28 @@ pub struct ProjectConfig {
 pub struct AutomationConfig {
     #[serde(default)]
     pub selected: Vec<AutomationSelection>,
+    /// Правило перезапуска упавшей автозадачи (#153, этап D). По умолчанию выключено.
+    #[serde(default)]
+    pub restart: RestartRule,
+}
+
+/// Перезапуск после сбоя: выключен по умолчанию, `max_retries` — сколько раз подряд пробовать.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RestartRule {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+impl Default for RestartRule {
+    fn default() -> Self {
+        Self { enabled: false, max_retries: default_max_retries() }
+    }
 }
 
 /// Одна выбранная пользователем задача: источник и имя (скрипт, цель, ключ).
