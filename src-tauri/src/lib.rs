@@ -238,16 +238,169 @@ fn save_settings(
 }
 
 #[tauri::command]
-fn scan_projects(roots: Vec<String>) -> Result<Vec<Project>, String> {
+fn scan_projects(app: tauri::AppHandle, roots: Vec<String>) -> Result<Vec<Project>, String> {
+    let settings = backend::settings::load(&settings_path(&app)?)
+        .unwrap_or_default();
+    let roots = if roots.is_empty() {
+        settings.scan_roots.clone()
+    } else {
+        backend::settings::normalize_roots(&roots)
+    };
     let mut all = Vec::new();
     for root in roots {
         let path = PathBuf::from(&root);
-        let found = scanner::scan(&path).map_err(|e| {
+        let rules =
+            backend::settings::resolve_rules_for_path(&root, &settings.scan_entries);
+        let opts = scanner::ScanOpts::from_rules(rules);
+        let found = scanner::scan_with_opts(&path, &opts).map_err(|e| {
             scanner::access_hint(&e, &path).unwrap_or_else(|| format!("{}: {e}", path.display()))
         })?;
         all.extend(found);
     }
     Ok(all)
+}
+
+#[derive(serde::Serialize)]
+struct DirChildDto {
+    name: String,
+    path: String,
+    is_dir: bool,
+    orchestration: String,
+}
+
+fn orchestration_status(dir: &Path) -> &'static str {
+    if dir.join("orchestrator.json").is_file() || dir.join("demerzel.yaml").is_file() {
+        "configured"
+    } else {
+        "missing"
+    }
+}
+
+/// Дети каталога для дерева в UI настроек скана.
+#[tauri::command]
+fn list_dir_children(path: String) -> Result<Vec<DirChildDto>, String> {
+    let dir = PathBuf::from(&path);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if scanner::is_ignored(&name) {
+            continue;
+        }
+        let child = entry.path();
+        out.push(DirChildDto {
+            name,
+            path: child.to_string_lossy().into_owned(),
+            is_dir: true,
+            orchestration: orchestration_status(&child).into(),
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+/// Установка сборки в `/Applications` + ad-hoc sign, чтобы виджеты появились в Gallery.
+#[tauri::command]
+fn install_widgets() -> Result<String, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return Err("Установка виджетов доступна только на macOS".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+        let built = cwd.join("src-tauri/target/debug/bundle/macos/Demerzel.app");
+        let built_release = cwd.join("src-tauri/target/release/bundle/macos/Demerzel.app");
+        let src = if built.is_dir() {
+            built
+        } else if built_release.is_dir() {
+            built_release
+        } else {
+            return Err(
+                "Сначала соберите приложение: bun run tauri build --debug (нужен .appex в PlugIns)"
+                    .into(),
+            );
+        };
+        let appex = src.join("Contents/PlugIns/TauriWidgetExtension.appex");
+        if !appex.is_dir() {
+            return Err(format!(
+                "В бандле нет виджета: {}\nПересоберите с beforeBundleCommand.",
+                appex.display()
+            ));
+        }
+        let dest = std::path::PathBuf::from("/Applications/Demerzel.app");
+        if dest.exists() {
+            std::fs::remove_dir_all(&dest).map_err(|e| format!("rm /Applications: {e}"))?;
+        }
+        let status = Command::new("cp")
+            .args(["-R", &src.to_string_lossy(), "/Applications/Demerzel.app"])
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err("cp в /Applications не удался".into());
+        }
+        let sign = cwd.join("scripts/sign-macos.sh");
+        let sign_status = Command::new("bash")
+            .arg(&sign)
+            .arg("/Applications/Demerzel.app")
+            .status()
+            .map_err(|e| format!("sign-macos: {e}"))?;
+        if !sign_status.success() {
+            return Err("Ad-hoc подпись не удалась (scripts/sign-macos.sh)".into());
+        }
+        let _ = Command::new("open")
+            .arg("/Applications/Demerzel.app")
+            .status();
+        Ok(
+            "Demerzel установлен в /Applications. Откройте Edit Widgets и добавьте виджет Demerzel."
+                .into(),
+        )
+    }
+}
+
+/// Статус оркестрации для одной папки (`configured` | `missing`).
+#[tauri::command]
+fn get_orchestration(path: String) -> Result<String, String> {
+    let dir = PathBuf::from(&path);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    Ok(orchestration_status(&dir).into())
+}
+
+/// Создаёт минимальный `orchestrator.json`, если его ещё нет.
+#[tauri::command]
+fn init_orchestrator(path: String) -> Result<String, String> {
+    let dir = PathBuf::from(&path);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    let file = dir.join("orchestrator.json");
+    if file.is_file() {
+        return Ok(file.to_string_lossy().into_owned());
+    }
+    let name = dir
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "project".into());
+    let stub = serde_json::json!({
+        "name": name,
+        "commands": { "dev": "bun run dev" }
+    });
+    std::fs::write(
+        &file,
+        serde_json::to_string_pretty(&stub).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(file.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -755,6 +908,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_widgets::init())
         .manage(WidgetState(Mutex::new(Throttle::new(DEFAULT_MIN_INTERVAL_SECS))))
         .manage(Processes(Mutex::new(Registry::default())))
@@ -793,6 +947,10 @@ pub fn run() {
             sync_summary_to_icloud,
             sync_summary_to_widgetkit,
             scan_projects,
+            list_dir_children,
+            install_widgets,
+            get_orchestration,
+            init_orchestrator,
             get_settings,
             save_settings,
             resolve_dev_command,

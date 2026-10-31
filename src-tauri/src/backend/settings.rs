@@ -15,10 +15,40 @@ use super::widgetkit_fallback::WidgetKitFallbackConfig;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
+/// Правила сканирования для конкретного корня / вложенной папки.
+/// Более длинный префикс пути имеет приоритет над предком.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanRootRules {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_depth: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_nesting: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore: Vec<String>,
+}
+
+/// Корень (или вложенный узел) в дереве сканирования.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanRootEntry {
+    pub path: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<ScanRootRules>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
+    /// Включённые корни (зеркало `scan_entries` для совместимости / Siri).
     #[serde(default)]
     pub scan_roots: Vec<String>,
+    /// Полное дерево выбора: enabled + per-folder rules.
+    #[serde(default)]
+    pub scan_entries: Vec<ScanRootEntry>,
     /// Правила алертов (#20). Отсутствующее поле → `AlertsConfig::default()`.
     #[serde(default)]
     pub alerts: AlertsConfig,
@@ -37,18 +67,113 @@ pub struct Settings {
 pub fn normalize_roots(roots: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for r in roots {
-        let t = r.trim();
-        if !t.is_empty() && !out.iter().any(|x| x == t) {
-            out.push(t.to_string());
+        let t = normalize_path(r);
+        if !t.is_empty() && !out.iter().any(|x| x == &t) {
+            out.push(t);
         }
     }
     out
 }
 
+pub fn normalize_path(path: &str) -> String {
+    let t = path.trim().trim_end_matches('/');
+    if t.is_empty() {
+        String::new()
+    } else {
+        t.to_string()
+    }
+}
+
+pub fn normalize_entries(entries: &[ScanRootEntry]) -> Vec<ScanRootEntry> {
+    let mut out: Vec<ScanRootEntry> = Vec::new();
+    for e in entries {
+        let path = normalize_path(&e.path);
+        if path.is_empty() {
+            continue;
+        }
+        if let Some(existing) = out.iter_mut().find(|x| x.path == path) {
+            *existing = ScanRootEntry {
+                path,
+                enabled: e.enabled,
+                rules: e.rules.clone(),
+            };
+        } else {
+            out.push(ScanRootEntry {
+                path,
+                enabled: e.enabled,
+                rules: e.rules.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// Синхронизирует legacy `scan_roots` ↔ `scan_entries`.
+pub fn sync_scan_fields(settings: &mut Settings) {
+    settings.scan_entries = normalize_entries(&settings.scan_entries);
+    if settings.scan_entries.is_empty() && !settings.scan_roots.is_empty() {
+        settings.scan_entries = normalize_roots(&settings.scan_roots)
+            .into_iter()
+            .map(|path| ScanRootEntry {
+                path,
+                enabled: true,
+                rules: None,
+            })
+            .collect();
+    }
+    settings.scan_roots = settings
+        .scan_entries
+        .iter()
+        .filter(|e| e.enabled)
+        .map(|e| e.path.clone())
+        .collect();
+}
+
+/// Самый специфичный entry (длинный префикс), покрывающий `path`.
+pub fn resolve_entry_for_path<'a>(
+    path: &str,
+    entries: &'a [ScanRootEntry],
+) -> Option<&'a ScanRootEntry> {
+    let path = normalize_path(path);
+    let mut best: Option<&ScanRootEntry> = None;
+    let mut best_len = -1isize;
+    for e in entries {
+        let p = normalize_path(&e.path);
+        if path == p || path.starts_with(&(p.clone() + "/")) {
+            let len = p.len() as isize;
+            if len > best_len {
+                best = Some(e);
+                best_len = len;
+            }
+        }
+    }
+    best
+}
+
+pub fn resolve_rules_for_path<'a>(
+    path: &str,
+    entries: &'a [ScanRootEntry],
+) -> Option<&'a ScanRootRules> {
+    let path = normalize_path(path);
+    let mut covering: Vec<&ScanRootEntry> = entries
+        .iter()
+        .filter(|e| {
+            let p = normalize_path(&e.path);
+            e.rules.is_some() && (path == p || path.starts_with(&(p + "/")))
+        })
+        .collect();
+    covering.sort_by_key(|e| std::cmp::Reverse(normalize_path(&e.path).len()));
+    covering.first().and_then(|e| e.rules.as_ref())
+}
+
 pub fn load(path: &Path) -> io::Result<Settings> {
     match fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
+        Ok(text) => {
+            let mut s: Settings = serde_json::from_str(&text)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            sync_scan_fields(&mut s);
+            Ok(s)
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Settings::default()),
         Err(e) => Err(e),
     }
@@ -59,7 +184,7 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
         fs::create_dir_all(dir)?;
     }
     let mut normalized = settings.clone();
-    normalized.scan_roots = normalize_roots(&settings.scan_roots);
+    sync_scan_fields(&mut normalized);
     let json = serde_json::to_string_pretty(&normalized)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let tmp = path.with_extension("json.tmp");
@@ -94,8 +219,42 @@ mod tests {
         save(&path, &s).unwrap();
         let loaded = load(&path).unwrap();
         assert_eq!(loaded.scan_roots, vec!["/a".to_string(), "/b".to_string()]);
+        assert_eq!(loaded.scan_entries.len(), 2);
+        assert!(loaded.scan_entries.iter().all(|e| e.enabled));
         assert_eq!(loaded.alerts.rules.len(), 4);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn nested_rules_priority() {
+        let entries = vec![
+            ScanRootEntry {
+                path: "/code".into(),
+                enabled: true,
+                rules: Some(ScanRootRules {
+                    max_depth: Some(2),
+                    ..Default::default()
+                }),
+            },
+            ScanRootEntry {
+                path: "/code/app".into(),
+                enabled: true,
+                rules: Some(ScanRootRules {
+                    max_depth: Some(5),
+                    ignore: vec!["tmp".into()],
+                    ..Default::default()
+                }),
+            },
+        ];
+        let r = resolve_rules_for_path("/code/app/src", &entries).unwrap();
+        assert_eq!(r.max_depth, Some(5));
+        assert_eq!(r.ignore, vec!["tmp".to_string()]);
+        assert_eq!(
+            resolve_rules_for_path("/code/other", &entries)
+                .unwrap()
+                .max_depth,
+            Some(2)
+        );
     }
 
     #[test]

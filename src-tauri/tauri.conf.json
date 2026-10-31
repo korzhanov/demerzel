@@ -1,19 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Demerzel",
-  "version": "0.50.0",
+  "version": "0.52.0",
   "identifier": "app.demerzel.orchestrator",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
-    "beforeBundleCommand": "./macos-siri/build-siri.sh && ./macos-widget/build-widget.sh",
+    "beforeBundleCommand": "bash -c 'if [ -f src-tauri/macos-siri/build-siri.sh ]; then S=src-tauri/macos-siri/build-siri.sh; W=src-tauri/macos-widget/build-widget.sh; elif [ -f macos-siri/build-siri.sh ]; then S=macos-siri/build-siri.sh; W=macos-widget/build-widget.sh; else echo \"beforeBundle: build-siri.sh not found (cwd=$(pwd))\" >&2; exit 127; fi; bash \"$S\" && bash \"$W\"'",
     "frontendDist": "../build"
   },
   "app": {
     "windows": [
       {
-        "title": "demerzel-app",
+        "title": "Demerzel",
         "width": 800,
         "height": 600
       }

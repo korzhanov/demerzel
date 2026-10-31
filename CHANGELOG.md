@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.52.0 — 2026-10-31
+
+- UI мониторинга: тултипы поверх `<dialog>` (`portalDisabled` / portal `to`), контрастные чекбоксы + light/dark темы, кнопка установки виджетов (`install_widgets`), шапка и сводка на иконках с tooltip/title.
+
+## 0.51.0 — 2026-10-31
+
+- Корни скана: системный dirpicker вместо textarea; дерево папок (expand/collapse), чекбоксы + «все/ничего», per-folder rules с приоритетом вложенных; статус оркестрации и CTA Setup (`orchestrator.json`); иконки + tooltip (shadcn). Backend: `scan_entries`, `list_dir_children`, `get_orchestration`, `init_orchestrator`, `tauri-plugin-dialog`.
+
+## 0.50.1 — 2026-10-31
+
+- Иконка приложения: `src-tauri/icons/*` из `references/mockups/src/icon.jpg` (замена дефолтной Tauri).
+- Корневые папки сканирования и автофикс вынесены из узкого сайдбара в модалку «Папки»; команда запуска — у focus проекта. Заголовок окна: Demerzel.
+- Панель логов — отдельный слой справа: кнопка «Логи» в шапке, скрытие, ресайз ширины; колонки снова projects + main.
+
 ## 0.50.0 — 2026-10-31
 
 - UI ближе к `references/mockups` (#114): баннер strip, шапка DEMERZEL + icon, сводка «Проектов / Упало / Конфликт портов / Задач», сайдбар со status-dots, focus выбранного проекта (процессы/порты/задачи), логи в стиле мокапа; палитра s2.css (`--status-ok`, window edge). Закрывает #114.

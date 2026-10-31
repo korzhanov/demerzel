@@ -17,7 +17,6 @@
     Task,
   } from "$lib/types";
   import {
-    AUTOFIX_MODES,
     DEFAULT_AGENT_RUNNER,
     DEFAULT_AUTOFIX_MODE,
     parseAgentRunner,
@@ -30,8 +29,12 @@
     type Project,
     type ProcessRow,
   } from "$lib/types";
+  import {
+    enabledRootPaths,
+    entriesFromLegacyRoots,
+    type ScanRootEntry,
+  } from "$lib/scan-roots";
   import { AUTOFIX_OFFER_EVENT, OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
-  import { autofixModeLabel } from "$lib/agents";
   import { clampPortPollInterval, portStatusLabel } from "$lib/ports";
   import {
     canOpenTask,
@@ -53,6 +56,8 @@
   import TasksPanel from "$lib/components/TasksPanel.svelte";
   import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
   import StatusSummary from "$lib/components/StatusSummary.svelte";
+  import ScanSettingsDialog from "$lib/components/ScanSettingsDialog.svelte";
+  import LogsLayer from "$lib/components/LogsLayer.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
@@ -60,11 +65,21 @@
   import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
-  import { Textarea } from "$lib/components/ui/textarea/index.js";
-  import { ScrollArea } from "$lib/components/ui/scroll-area/index.js";
   import * as Resizable from "$lib/components/ui/resizable/index.js";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
+  import ScrollTextIcon from "@lucide/svelte/icons/scroll-text";
+  import Columns2Icon from "@lucide/svelte/icons/columns-2";
+  import LayoutListIcon from "@lucide/svelte/icons/layout-list";
+  import AppWindowIcon from "@lucide/svelte/icons/app-window";
+  import SunIcon from "@lucide/svelte/icons/sun";
+  import MoonIcon from "@lucide/svelte/icons/moon";
+  import { applyTheme, readStoredTheme, toggleTheme, type ThemeMode } from "$lib/theme";
 
-  let roots = $state("");
+  let scanEntries = $state<ScanRootEntry[]>([]);
+  let theme = $state<ThemeMode>("dark");
+  let widgetBusy = $state(false);
+  let widgetMsg = $state("");
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
   let selectedId = $state<number | null>(null);
@@ -104,9 +119,12 @@
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
+  /** Модалка корней сканирования + автофикс (редко нужна в узком сайдбаре). */
+  let scanSettingsOpen = $state(false);
   let taskGeneration = 0;
   let updatedAt = $state(formatUpdatedAt(new Date()));
   const flatProjects = $derived(flattenProjects(projects));
+  const rootsCount = $derived(enabledRootPaths(scanEntries).length);
   const summary = $derived(
     buildDashboardSummary({ projects, processes, ports, tasks }),
   );
@@ -274,18 +292,24 @@
   }
 
   function rootList(): string[] {
-    return roots
-      .split("\n")
-      .map((r) => r.trim())
-      .filter(Boolean);
+    return enabledRootPaths(scanEntries);
   }
 
-  async function saveRoots() {
+  async function saveScanEntries(next?: ScanRootEntry[]) {
+    const entries = next ?? scanEntries;
+    if (next) scanEntries = next;
     try {
+      const current = await invoke<Settings>("get_settings");
       await invoke("save_settings", {
         settings: {
-          scan_roots: rootList(),
-          agents: { runner: settingsAgentRunner, autofix: settingsAutofix },
+          ...current,
+          scan_entries: entries,
+          scan_roots: enabledRootPaths(entries),
+          agents: {
+            ...(current.agents ?? {}),
+            runner: settingsAgentRunner,
+            autofix: settingsAutofix,
+          },
         } as Settings,
       });
     } catch (e) {
@@ -300,6 +324,7 @@
       await invoke("save_settings", {
         settings: {
           ...current,
+          scan_entries: scanEntries,
           scan_roots: rootList().length ? rootList() : current.scan_roots,
           agents: {
             ...(current.agents ?? {}),
@@ -342,11 +367,28 @@
     autofixOffer = null;
   }
 
+  async function installWidgets() {
+    widgetBusy = true;
+    widgetMsg = "";
+    error = "";
+    try {
+      widgetMsg = await invoke<string>("install_widgets");
+    } catch (e) {
+      error = String(e);
+    } finally {
+      widgetBusy = false;
+    }
+  }
+
+  function onToggleTheme() {
+    theme = toggleTheme(theme);
+  }
+
   async function scan() {
     error = "";
     if (scanBusy) return;
     scanBusy = true;
-    await saveRoots();
+    await saveScanEntries();
     try {
       const found = await invoke<Project[]>("scan_projects", { roots: rootList() });
       if (!mounted) return;
@@ -451,6 +493,8 @@
 
   onMount(() => {
     mounted = true;
+    theme = readStoredTheme();
+    applyTheme(theme);
     let unlistenOpen: (() => void) | undefined;
     let unlistenAutofix: (() => void) | undefined;
     void (async () => {
@@ -474,11 +518,14 @@
       try {
         const s = await invoke<Settings>("get_settings");
         if (!mounted) return;
-        roots = s.scan_roots.join("\n");
+        scanEntries =
+          s.scan_entries && s.scan_entries.length > 0
+            ? s.scan_entries
+            : entriesFromLegacyRoots(s.scan_roots ?? []);
         settingsAgentRunner = parseAgentRunner(s.agents?.runner);
         agentRunner = settingsAgentRunner;
         settingsAutofix = parseAutofixMode(s.agents?.autofix);
-        if (roots) await scan();
+        if (rootList().length) await scan();
       } catch (e) {
         if (mounted) error = String(e);
       }
@@ -514,14 +561,13 @@
   });
 
   type ViewMode = "columns" | "tabs";
-  type Tab = "projects" | "processes" | "ports" | "tasks" | "agents" | "logs";
+  type Tab = "projects" | "processes" | "ports" | "tasks" | "agents";
   const TABS: [Tab, string][] = [
     ["projects", "Проекты"],
     ["processes", "Процессы"],
     ["ports", "Порты"],
     ["tasks", "Задачи"],
     ["agents", "Агенты"],
-    ["logs", "Логи"],
   ];
   function readPref(key: string): string | null {
     try {
@@ -530,16 +576,27 @@
       return null;
     }
   }
-  let view = $state<ViewMode>(readPref("demerzel.view") === "tabs" ? "tabs" : "columns");
-  let tab = $state<Tab>("projects");
-  function setView(v: ViewMode) {
-    view = v;
+  function writePref(key: string, value: string) {
     try {
-      localStorage.setItem("demerzel.view", v);
+      localStorage.setItem(key, value);
     } catch {
       /* без хранилища режим не запоминается */
     }
   }
+  let view = $state<ViewMode>(readPref("demerzel.view") === "tabs" ? "tabs" : "columns");
+  let tab = $state<Tab>("projects");
+  let logsOpen = $state(readPref("demerzel.logsOpen") !== "0");
+  let logsWidth = $state(Number(readPref("demerzel.logsWidth")) || 320);
+  function setView(v: ViewMode) {
+    view = v;
+    writePref("demerzel.view", v);
+  }
+  $effect(() => {
+    writePref("demerzel.logsOpen", logsOpen ? "1" : "0");
+  });
+  $effect(() => {
+    writePref("demerzel.logsWidth", String(Math.round(logsWidth)));
+  });
 </script>
 
 {#snippet tree(list: Project[], depth: number)}
@@ -572,44 +629,27 @@
 
 {#snippet projectsView()}
   <section class="flex h-full min-w-0 flex-col overflow-hidden" aria-labelledby="projects-title">
-    <h2
-      id="projects-title"
-      class="px-4 pb-1.5 pt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
-    >
-      Проекты
-    </h2>
-    <div class="min-w-0 space-y-2 overflow-x-hidden px-3 pb-3">
-      <Textarea
-        aria-label="Корневые папки сканирования"
-        bind:value={roots}
-        rows={2}
-        placeholder="/Users/you/code"
-        class="min-w-0 text-xs"
-      />
-      <div class="flex min-w-0 flex-wrap items-center gap-2">
-        <Button size="sm" class="shrink-0" onclick={scan} disabled={scanBusy}>Сканировать</Button>
-        <Input
-          class="min-w-0 flex-1 basis-28 text-xs"
-          bind:value={commandOverride}
-          placeholder="команда (пусто = orchestrator.json)"
-        />
-      </div>
-      <label class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <span class="shrink-0">Автофикс</span>
-        <select
-          class="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs text-foreground"
-          aria-label="Режим автофикса по алерту"
-          value={settingsAutofix}
-          onchange={(e) => {
-            const v = parseAutofixMode((e.currentTarget as HTMLSelectElement).value);
-            void saveAutofixMode(v);
-          }}
-        >
-          {#each AUTOFIX_MODES as mode (mode)}
-            <option value={mode}>{autofixModeLabel(mode)}</option>
-          {/each}
-        </select>
-      </label>
+    <div class="flex items-center gap-2 px-3 pb-1.5 pt-3">
+      <h2
+        id="projects-title"
+        class="min-w-0 flex-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+      >
+        Проекты
+      </h2>
+      <Button
+        size="sm"
+        variant="outline"
+        class="h-7 shrink-0 gap-1 px-2 text-xs"
+        onclick={() => (scanSettingsOpen = true)}
+        aria-haspopup="dialog"
+        aria-label={rootsCount > 0 ? `Корни сканирования · ${rootsCount}` : "Корни сканирования"}
+        title="Корневые папки и автофикс"
+      >
+        <FolderTreeIcon class="size-3.5" />
+        {#if rootsCount > 0}
+          <span class="tabular-nums">{rootsCount}</span>
+        {/if}
+      </Button>
     </div>
     <ul class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto border-t border-border pb-2">
       {@render tree(projects, 0)}
@@ -718,23 +758,6 @@
   />
 {/snippet}
 
-{#snippet logsView()}
-  <section class="flex h-full min-w-0 flex-col overflow-hidden" aria-labelledby="logs-title">
-    <h2
-      id="logs-title"
-      class="px-3.5 pb-1 pt-3 font-sans text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
-    >
-      Логи{#if selectedProject}
-        · {selectedProject.name}{/if}
-    </h2>
-    <ScrollArea class="min-h-0 flex-1 px-1">
-      <pre
-        class="px-3 pb-3 font-mono text-[11.5px] leading-[1.7] text-[#b5a888]">{#each logs as line, i (i)}<span class={line.stream === "stderr" ? "text-primary" : ""}>{line.text}
-</span>{/each}</pre>
-    </ScrollArea>
-  </section>
-{/snippet}
-
 {#snippet projectFocus()}
   {#if selectedProject}
     {@const proc = selectedProcess}
@@ -745,7 +768,7 @@
           app · {selectedProject.path}
         </p>
       </div>
-      <div class="flex flex-wrap gap-1.5">
+      <div class="flex flex-wrap items-center gap-1.5">
         <Button size="sm" onclick={() => start(selectedProject)}>Запустить</Button>
         <Button
           size="sm"
@@ -756,6 +779,12 @@
         <Button size="sm" variant="outline" onclick={() => openInEditor(selectedProject)}
           >Редактор</Button
         >
+        <Input
+          class="min-w-0 flex-1 basis-40 text-xs"
+          bind:value={commandOverride}
+          placeholder="команда (пусто = orchestrator.json)"
+          aria-label="Команда запуска"
+        />
       </div>
 
       <div>
@@ -818,41 +847,145 @@
   {/if}
 {/snippet}
 
-<main class="mx-auto flex min-h-screen max-w-[1400px] flex-col">
-  <header
-    class="flex flex-wrap items-center gap-3 border-b border-border bg-card px-3.5 py-2.5"
-  >
-    <img
-      src="/mockups/icon.jpg"
-      alt=""
-      width="26"
-      height="26"
-      class="size-[26px] rounded-[7px] object-cover"
-    />
-    <h1 class="text-[15px] font-medium tracking-[0.08em] text-primary">DEMERZEL</h1>
-    {#if focusProject}
-      <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
-    {/if}
-    <ToggleGroup.Root
-      type="single"
-      variant="outline"
-      class="ml-auto overflow-hidden rounded-lg border border-border"
-      aria-label="Вид окна"
-      value={view}
-      onValueChange={(v) => v && setView(v as ViewMode)}
+<main class="relative mx-auto flex min-h-screen max-w-[1400px] flex-col">
+  <ScanSettingsDialog
+    bind:open={scanSettingsOpen}
+    bind:entries={scanEntries}
+    bind:autofix={settingsAutofix}
+    {scanBusy}
+    onScan={scan}
+    onAutofixChange={saveAutofixMode}
+    onPersist={saveScanEntries}
+  />
+
+  <Tooltip.Provider delayDuration={300}>
+    <header
+      class="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3.5 py-2.5"
     >
-      <ToggleGroup.Item
-        value="columns"
-        class="rounded-none px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-        >Колонки</ToggleGroup.Item
-      >
-      <ToggleGroup.Item
-        value="tabs"
-        class="rounded-none px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-        >Вкладки</ToggleGroup.Item
-      >
-    </ToggleGroup.Root>
-  </header>
+      <img
+        src="/mockups/icon.jpg"
+        alt=""
+        width="26"
+        height="26"
+        class="size-[26px] rounded-[7px] object-cover"
+      />
+      <h1 class="text-[15px] font-medium tracking-[0.08em] text-primary">DEMERZEL</h1>
+      {#if focusProject}
+        <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
+      {/if}
+      <div class="ml-auto flex flex-wrap items-center gap-1.5">
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                size="sm"
+                variant="outline"
+                class="size-8 p-0"
+                disabled={widgetBusy}
+                aria-label="Установить виджеты"
+                onclick={() => void installWidgets()}
+              >
+                <AppWindowIcon class="size-4" />
+              </Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            >Установить виджеты в /Applications (нужен tauri build --debug)</Tooltip.Content
+          >
+        </Tooltip.Root>
+
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                size="sm"
+                variant={logsOpen ? "default" : "outline"}
+                class="size-8 p-0"
+                aria-pressed={logsOpen}
+                aria-label={logsOpen ? "Скрыть логи" : "Показать логи"}
+                onclick={() => (logsOpen = !logsOpen)}
+              >
+                <ScrollTextIcon class="size-4" />
+              </Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content>{logsOpen ? "Скрыть логи" : "Показать логи"}</Tooltip.Content>
+        </Tooltip.Root>
+
+        <ToggleGroup.Root
+          type="single"
+          variant="outline"
+          class="overflow-hidden rounded-lg border border-border"
+          aria-label="Вид окна"
+          value={view}
+          onValueChange={(v) => v && setView(v as ViewMode)}
+        >
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <div {...props} class="inline-flex">
+                  <ToggleGroup.Item
+                    value="columns"
+                    class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                    aria-label="Колонки"
+                  >
+                    <Columns2Icon class="size-4" />
+                  </ToggleGroup.Item>
+                </div>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content>Вид колонками</Tooltip.Content>
+          </Tooltip.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <div {...props} class="inline-flex">
+                  <ToggleGroup.Item
+                    value="tabs"
+                    class="rounded-none px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                    aria-label="Вкладки"
+                  >
+                    <LayoutListIcon class="size-4" />
+                  </ToggleGroup.Item>
+                </div>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content>Вид вкладками</Tooltip.Content>
+          </Tooltip.Root>
+        </ToggleGroup.Root>
+
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                size="sm"
+                variant="outline"
+                class="size-8 p-0"
+                aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"}
+                onclick={onToggleTheme}
+              >
+                {#if theme === "dark"}
+                  <SunIcon class="size-4" />
+                {:else}
+                  <MoonIcon class="size-4" />
+                {/if}
+              </Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            >{theme === "dark" ? "Светлая тема" : "Тёмная тема"}</Tooltip.Content
+          >
+        </Tooltip.Root>
+      </div>
+    </header>
+  </Tooltip.Provider>
+
+  {#if widgetMsg}
+    <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
+  {/if}
 
   <div
     class="h-[var(--banner-height)] shrink-0 border-b border-border bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
@@ -884,55 +1017,57 @@
     </div>
   {/if}
 
-  {#if view === "columns"}
-    <Resizable.PaneGroup
-      direction="horizontal"
-      class="min-h-[560px] min-w-0 flex-1 border-t border-[var(--window-edge)]/40"
-    >
-      <Resizable.Pane defaultSize={22} minSize={14} class="min-w-0 overflow-hidden bg-card/40">
-        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto border-r border-border">
-          {@render projectsView()}
-        </div>
-      </Resizable.Pane>
-      <Resizable.Handle withHandle />
-      <Resizable.Pane defaultSize={50} minSize={28} class="min-w-0 overflow-hidden">
-        <div class="h-full min-w-0 space-y-3 overflow-x-hidden overflow-y-auto pb-4">
-          {@render projectFocus()}
-          <div class="space-y-3 px-3">
-            {@render portsView()}
-            {@render tasksView()}
-            {@render agentsView()}
+  <div class="relative min-h-0 min-w-0 flex-1">
+    {#if view === "columns"}
+      <Resizable.PaneGroup
+        direction="horizontal"
+        class="min-h-[560px] min-w-0 flex-1 border-t border-[var(--window-edge)]/40"
+      >
+        <Resizable.Pane defaultSize={28} minSize={14} class="min-w-0 overflow-hidden bg-card/40">
+          <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto border-r border-border">
+            {@render projectsView()}
           </div>
+        </Resizable.Pane>
+        <Resizable.Handle withHandle />
+        <Resizable.Pane defaultSize={72} minSize={36} class="min-w-0 overflow-hidden">
+          <div class="h-full min-w-0 space-y-3 overflow-x-hidden overflow-y-auto pb-4">
+            {@render projectFocus()}
+            <div class="space-y-3 px-3">
+              {@render portsView()}
+              {@render tasksView()}
+              {@render agentsView()}
+            </div>
+          </div>
+        </Resizable.Pane>
+      </Resizable.PaneGroup>
+    {:else}
+      <div class="space-y-3 p-4">
+        <Tabs.Root value={tab} onValueChange={(v) => (tab = v as Tab)}>
+          <Tabs.List class="h-auto flex-wrap gap-1 bg-transparent p-0">
+            {#each TABS as [id, label] (id)}
+              <Tabs.Trigger
+                value={id}
+                class="rounded-md border border-[var(--window-edge)] data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >{label}</Tabs.Trigger
+              >
+            {/each}
+          </Tabs.List>
+        </Tabs.Root>
+        <div class="space-y-3">
+          {#if tab === "projects"}{@render projectsView()}{/if}
+          {#if tab === "processes"}{@render processesView()}{/if}
+          {#if tab === "ports"}{@render portsView()}{/if}
+          {#if tab === "tasks"}{@render tasksView()}{/if}
+          {#if tab === "agents"}{@render agentsView()}{/if}
         </div>
-      </Resizable.Pane>
-      <Resizable.Handle withHandle />
-      <Resizable.Pane defaultSize={28} minSize={16} class="min-w-0 overflow-hidden bg-card/40">
-        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto border-l border-border">
-          {@render logsView()}
-        </div>
-      </Resizable.Pane>
-    </Resizable.PaneGroup>
-  {:else}
-    <div class="space-y-3 p-4">
-      <Tabs.Root value={tab} onValueChange={(v) => (tab = v as Tab)}>
-        <Tabs.List class="h-auto flex-wrap gap-1 bg-transparent p-0">
-          {#each TABS as [id, label] (id)}
-            <Tabs.Trigger
-              value={id}
-              class="rounded-md border border-[var(--window-edge)] data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >{label}</Tabs.Trigger
-            >
-          {/each}
-        </Tabs.List>
-      </Tabs.Root>
-      <div class="space-y-3">
-        {#if tab === "projects"}{@render projectsView()}{/if}
-        {#if tab === "processes"}{@render processesView()}{/if}
-        {#if tab === "ports"}{@render portsView()}{/if}
-        {#if tab === "tasks"}{@render tasksView()}{/if}
-        {#if tab === "agents"}{@render agentsView()}{/if}
-        {#if tab === "logs"}{@render logsView()}{/if}
       </div>
-    </div>
-  {/if}
+    {/if}
+
+    <LogsLayer
+      bind:open={logsOpen}
+      bind:width={logsWidth}
+      {logs}
+      projectName={selectedProject?.name ?? null}
+    />
+  </div>
 </main>

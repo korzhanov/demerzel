@@ -284,8 +284,14 @@ export interface StartAgentFromAlertResult {
   mode: AutofixMode;
 }
 
+export type { ScanRootEntry, ScanRootRules } from "$lib/scan-roots";
+import type { ScanRootEntry } from "$lib/scan-roots";
+
 export interface Settings {
+  /** Включённые корни (зеркало scan_entries). */
   scan_roots: string[];
+  /** Дерево выбора + per-folder rules. */
+  scan_entries?: ScanRootEntry[];
   alerts?: AlertsConfig;
   agents?: AgentsConfig;
 }

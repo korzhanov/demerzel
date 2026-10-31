@@ -77,14 +77,61 @@ pub const MAX_DEPTH: usize = 3;
 /// `1` = top-level проект + один уровень детей (dashboard / parsers/news), без глубоких nest package.json.
 pub const MAX_NESTING: usize = 1;
 
-/// Сканирует корневую папку и возвращает найденные проекты с подпроектами.
-pub fn scan(root: &Path) -> io::Result<Vec<Project>> {
-    scan_dir(root, 0, 0)
+/// Опции walk; перекрываются per-folder rules из settings.
+#[derive(Debug, Clone)]
+pub struct ScanOpts {
+    pub max_depth: usize,
+    pub max_nesting: usize,
+    pub extra_ignore: Vec<String>,
 }
 
-fn scan_dir(dir: &Path, depth: usize, nesting: usize) -> io::Result<Vec<Project>> {
-    // depth — уровень относительно корня scan; на MAX_DEPTH детей уже не читаем.
-    if depth >= MAX_DEPTH {
+impl Default for ScanOpts {
+    fn default() -> Self {
+        Self {
+            max_depth: MAX_DEPTH,
+            max_nesting: MAX_NESTING,
+            extra_ignore: Vec::new(),
+        }
+    }
+}
+
+impl ScanOpts {
+    pub fn from_rules(rules: Option<&crate::backend::settings::ScanRootRules>) -> Self {
+        let mut opts = Self::default();
+        if let Some(r) = rules {
+            if let Some(d) = r.max_depth {
+                opts.max_depth = d;
+            }
+            if let Some(n) = r.max_nesting {
+                opts.max_nesting = n;
+            }
+            opts.extra_ignore = r.ignore.clone();
+        }
+        opts
+    }
+
+    fn ignores(&self, name: &str) -> bool {
+        is_ignored(name) || self.extra_ignore.iter().any(|x| x == name)
+    }
+}
+
+/// Сканирует корневую папку и возвращает найденные проекты с подпроектами.
+pub fn scan(root: &Path) -> io::Result<Vec<Project>> {
+    scan_with_opts(root, &ScanOpts::default())
+}
+
+pub fn scan_with_opts(root: &Path, opts: &ScanOpts) -> io::Result<Vec<Project>> {
+    scan_dir(root, 0, 0, opts)
+}
+
+fn scan_dir(
+    dir: &Path,
+    depth: usize,
+    nesting: usize,
+    opts: &ScanOpts,
+) -> io::Result<Vec<Project>> {
+    // depth — уровень относительно корня scan; на max_depth детей уже не читаем.
+    if depth >= opts.max_depth {
         return Ok(Vec::new());
     }
     let mut found = Vec::new();
@@ -94,23 +141,23 @@ fn scan_dir(dir: &Path, depth: usize, nesting: usize) -> io::Result<Vec<Project>
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if is_ignored(&name) {
+        if opts.ignores(&name) {
             continue;
         }
         let path = entry.path();
         let names = child_names(&path)?;
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         if is_project_dir(&refs) {
-            // Внутри найденного проекта ищем детей только пока nesting < MAX_NESTING.
-            let children = if nesting < MAX_NESTING {
-                scan_dir(&path, depth + 1, nesting + 1)?
+            // Внутри найденного проекта ищем детей только пока nesting < max_nesting.
+            let children = if nesting < opts.max_nesting {
+                scan_dir(&path, depth + 1, nesting + 1, opts)?
             } else {
                 Vec::new()
             };
             found.push(Project { name, path, children });
         } else {
             // Не-проект: продолжаем walk с тем же nesting (parsers/ → news).
-            found.extend(scan_dir(&path, depth + 1, nesting)?);
+            found.extend(scan_dir(&path, depth + 1, nesting, opts)?);
         }
     }
     found.sort_by(|a, b| a.name.cmp(&b.name));

@@ -2,8 +2,10 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant light (&:is(.light *));
 
-:root {
+:root,
+.dark {
 	/* Палитра как в references/mockups/src/s2.css */
 	--radius: 0.5rem;
 	--background: #14110d;
@@ -27,6 +29,32 @@
 	--status-ok: #6bb36a;
 	--window-edge: #6b5326;
 	--banner-height: 7.75rem;
+	color-scheme: dark;
+}
+
+.light {
+	--background: #f6f1e6;
+	--foreground: #1c160e;
+	--card: #fffaf0;
+	--card-foreground: #1c160e;
+	--popover: #fffaf0;
+	--popover-foreground: #1c160e;
+	--primary: #b47a12;
+	--primary-foreground: #fff8ea;
+	--secondary: #ebe2d0;
+	--secondary-foreground: #1c160e;
+	--muted: #efe6d4;
+	--muted-foreground: #6b5d45;
+	--accent: #ebe2d0;
+	--accent-foreground: #1c160e;
+	--destructive: #c23b22;
+	--border: #d4c4a4;
+	--input: #d4c4a4;
+	--ring: #b47a12;
+	--status-ok: #3d8f4a;
+	--window-edge: #c4a86a;
+	--banner-height: 7.75rem;
+	color-scheme: light;
 }
 
 @theme inline {
