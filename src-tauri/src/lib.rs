@@ -61,6 +61,13 @@ pub struct DeliveryDecisionDto {
     pub notify: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct NotificationTestResult {
+    pub notified: bool,
+    pub spoken: bool,
+    pub speak_error: Option<String>,
+}
+
 impl From<DeliveryDecision> for DeliveryDecisionDto {
     fn from(d: DeliveryDecision) -> Self {
         Self {
@@ -334,28 +341,28 @@ fn find_widget_source_app() -> Result<std::path::PathBuf, String> {
 
     let mut candidates: Vec<PathBuf> = Vec::new();
 
-    // 1) Текущий бандл (уже /Applications или debug .app)
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(app) = bundle_from_exe(&exe) {
-            candidates.push(app);
-        }
-        // 2) Рядом с бинарём tauri dev/build: target/{debug,release}/demerzel
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("bundle/macos/Demerzel.app"));
-        }
-    }
-
-    // 3) Путь на момент компиляции (src-tauri) — работает даже при чужом cwd
+    // Предпочитаем свежие результаты сборки: при запуске из /Applications
+    // текущий бандл сам указывает туда и иначе заглушал бы обновление виджета.
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     candidates.push(manifest.join("target/debug/bundle/macos/Demerzel.app"));
     candidates.push(manifest.join("target/release/bundle/macos/Demerzel.app"));
 
-    // 4) cwd: корень репо или src-tauri
+    // cwd: корень репо или src-tauri.
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("src-tauri/target/debug/bundle/macos/Demerzel.app"));
         candidates.push(cwd.join("src-tauri/target/release/bundle/macos/Demerzel.app"));
         candidates.push(cwd.join("target/debug/bundle/macos/Demerzel.app"));
         candidates.push(cwd.join("target/release/bundle/macos/Demerzel.app"));
+    }
+
+    // Только fallback: текущий бандл, в том числе установленный в /Applications.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(app) = bundle_from_exe(&exe) {
+            candidates.push(app);
+        }
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("bundle/macos/Demerzel.app"));
+        }
     }
 
     for c in &candidates {
@@ -695,6 +702,7 @@ fn discard_agent_run(
 struct AutomationsView {
     discovered: Vec<backend::automation::DiscoveredAutomation>,
     selected: Vec<backend::config::AutomationSelection>,
+    schedules: Vec<backend::config::AutomationSchedule>,
     restart: backend::config::RestartRule,
 }
 
@@ -702,15 +710,22 @@ struct AutomationsView {
 fn load_automations(path: String) -> Result<AutomationsView, String> {
     let dir = std::path::Path::new(&path);
     let discovered = backend::automation::discover(dir);
-    let selected = backend::config::load_checked(dir)?
-        .and_then(|c| c.automation)
-        .map(|a| a.selected)
+    let automation = backend::config::load_checked(dir)?.and_then(|c| c.automation);
+    let selected = automation
+        .as_ref()
+        .map(|a| a.selected.clone())
         .unwrap_or_default();
-    let restart = backend::config::load_checked(dir)?
-        .and_then(|c| c.automation)
-        .map(|a| a.restart)
+    let schedules = automation
+        .as_ref()
+        .map(|a| a.schedules.clone())
         .unwrap_or_default();
-    Ok(AutomationsView { discovered, selected, restart })
+    let restart = automation.map(|a| a.restart).unwrap_or_default();
+    Ok(AutomationsView {
+        discovered,
+        selected,
+        schedules,
+        restart,
+    })
 }
 
 /// Записывает выбор в `orchestrator.json` → `automation.selected`, остальные поля не трогает (#153).
@@ -720,6 +735,15 @@ fn save_automation_selection(
     selected: Vec<backend::config::AutomationSelection>,
 ) -> Result<(), String> {
     backend::automation::save_selection(std::path::Path::new(&path), &selected)
+}
+
+/// Сохраняет внутреннее расписание для одной автозадачи (#153, этап E).
+#[tauri::command]
+fn save_automation_schedule(
+    path: String,
+    schedule: backend::config::AutomationSchedule,
+) -> Result<(), String> {
+    backend::automation::save_schedule(std::path::Path::new(&path), &schedule)
 }
 
 /// Правило перезапуска автозадач (#153, этап D): сохраняет только секцию restart.
@@ -1040,6 +1064,45 @@ fn ingest_alert_event(
     })
 }
 
+/// Диагностическая проверка системного уведомления и macOS `say`, без gate/dedupe.
+#[tauri::command]
+fn test_notification(app: tauri::AppHandle) -> Result<NotificationTestResult, String> {
+    let payload = NotifyPayload {
+        title: "Demerzel · Проверка уведомлений".into(),
+        body: "Если вы видите это сообщение, системные уведомления работают.".into(),
+        project: None,
+        severity: backend::alerts::Severity::Info,
+        rule_id: "notification_test".into(),
+    };
+    show_os_notification(&app, &payload)?;
+
+    #[cfg(target_os = "macos")]
+    {
+        use backend::speak::VoiceSpeaker;
+        return Ok(
+            match speak::SaySpeaker.speak("Milena", "Проверка голосовых уведомлений Demerzel.") {
+                Ok(()) => NotificationTestResult {
+                    notified: true,
+                    spoken: true,
+                    speak_error: None,
+                },
+                Err(e) => NotificationTestResult {
+                    notified: true,
+                    spoken: false,
+                    speak_error: Some(e.to_string()),
+                },
+            },
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    Ok(NotificationTestResult {
+        notified: true,
+        spoken: false,
+        speak_error: Some("Голосовая проверка доступна только в macOS".into()),
+    })
+}
+
 /// Один клик «Исправить» из предложения алерта (#96).
 #[tauri::command]
 fn start_agent_from_alert(
@@ -1187,10 +1250,12 @@ pub fn run() {
             automation_statuses,
             start_automation,
             save_automation_selection,
+            save_automation_schedule,
             resolve_project_agent_runner,
             start_agent_from_task,
             start_agent_from_alert,
-            ingest_alert_event
+            ingest_alert_event,
+            test_notification
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

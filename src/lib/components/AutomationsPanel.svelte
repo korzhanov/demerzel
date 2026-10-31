@@ -1,6 +1,12 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import type { AutomationSelection, AutomationStatus, AutomationsView, RestartRule } from "$lib/types";
+  import type {
+    AutomationSchedule,
+    AutomationSelection,
+    AutomationStatus,
+    AutomationsView,
+    RestartRule,
+  } from "$lib/types";
   import {
     shouldRestart,
     automationIsRunning,
@@ -19,10 +25,41 @@
   let { path, name }: Props = $props();
 
   let statuses = $state<AutomationStatus[]>([]);
+  let schedules = $state<AutomationSchedule[]>([]);
   let restart = $state<RestartRule>({ enabled: false, max_retries: 3 });
   // Попытки перезапуска по имени и последний обработанный запуск (не даёт повторять один и тот же сбой).
   const attempts = new Map<string, number>();
   const handled = new Map<string, number | null>();
+
+  function scheduleFor(source: string, itemName: string) {
+    return schedules.find((s) => s.source === source && s.name === itemName);
+  }
+
+  async function saveSchedule(source: string, itemName: string, value: string) {
+    const raw = value.trim();
+    const minutes = raw ? Number(raw) : 0;
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 43_200) {
+      error = "Интервал должен быть целым числом от 1 до 43 200 минут";
+      return;
+    }
+    const schedule: AutomationSchedule = {
+      source,
+      name: itemName,
+      interval_minutes: minutes,
+      enabled: minutes > 0,
+    };
+    error = "";
+    try {
+      await invoke("save_automation_schedule", { path, schedule });
+      schedules = [
+        ...schedules.filter((s) => s.source !== source || s.name !== itemName),
+        schedule,
+      ];
+      window.dispatchEvent(new CustomEvent("demerzel:automation-schedule-updated", { detail: { path } }));
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   async function setRestart(enabled: boolean) {
     restart = { ...restart, enabled };
@@ -108,6 +145,7 @@
         if (p !== path) return;
         view = v;
         restart = v.restart;
+        schedules = v.schedules ?? [];
         selected = initialSelection(v);
       })
       .catch((e) => {
@@ -121,6 +159,7 @@
     try {
       await invoke("save_automation_selection", { path, selected });
       saved = true;
+      window.dispatchEvent(new CustomEvent("demerzel:automation-schedule-updated", { detail: { path } }));
     } catch (e) {
       error = String(e);
     } finally {
@@ -159,6 +198,24 @@
                 >{item.command}</span
               >
             {/if}
+            <span class="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <span>Запуск каждые</span>
+              <input
+                type="number"
+                min="1"
+                max="43200"
+                step="1"
+                aria-label={`Интервал запуска ${item.name} в минутах`}
+                class="h-6 w-16 rounded border border-input bg-background px-1 font-mono text-xs text-foreground"
+                value={scheduleFor(item.source, item.name)?.enabled
+                  ? scheduleFor(item.source, item.name)?.interval_minutes
+                  : ""}
+                placeholder="вручную"
+                disabled={!item.command || !isChecked(selected, item)}
+                onchange={(e) => saveSchedule(item.source, item.name, e.currentTarget.value)}
+              />
+              <span>мин · пусто — вручную</span>
+            </span>
           </label>
         </li>
       {/each}

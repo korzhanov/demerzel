@@ -9,6 +9,7 @@ const view: AutomationsView = {
     { source: "package.json", name: "build", command: "vite build", likely_automation: false },
   ],
   selected: [],
+  schedules: [],
   restart: { enabled: false, max_retries: 3 },
 };
 
