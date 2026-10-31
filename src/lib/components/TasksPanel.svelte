@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AgentRunner, Project, Task } from "$lib/types";
+  import type { AgentCatalogEntry, AgentRunner, Project, Task } from "$lib/types";
   import { AGENT_RUNNERS } from "$lib/types";
   import {
     TASK_BOARD_COLUMNS,
@@ -10,7 +10,7 @@
     formatTaskBoardSummary,
     tasksForColumn,
   } from "$lib/tasks";
-  import { agentRunnerLabel } from "$lib/agents";
+  import { agentInstallHint, agentRunnerOptionLabel } from "$lib/agents";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
@@ -21,8 +21,10 @@
     tasksBusy: boolean;
     projectFilter: string;
     projects: Project[];
-    /** Раннер для «Исправить» (#30); Claude по умолчанию. */
+    /** Раннер для «Исправить» (#30 / #95); Claude по умолчанию. */
     agentRunner?: AgentRunner;
+    /** Реестр установленных CLI (#95). */
+    agentCatalog?: AgentCatalogEntry[];
     startBusyTaskId?: string | null;
     onRefresh: () => void;
     onOpen: (task: Task) => void | Promise<void>;
@@ -36,6 +38,7 @@
     projectFilter = $bindable(""),
     projects,
     agentRunner = $bindable("claude"),
+    agentCatalog = [],
     startBusyTaskId = null,
     onRefresh,
     onOpen,
@@ -44,6 +47,7 @@
 
   const visibleTasks = $derived(filterTasksByProject(tasks, projectFilter));
   const boardSummary = $derived(formatTaskBoardSummary(countByStatus(visibleTasks)));
+  const runnerHint = $derived(agentInstallHint(agentRunner, agentCatalog));
 </script>
 
 <Card.Root class="min-w-0 overflow-hidden" aria-labelledby="tasks-title">
@@ -63,7 +67,7 @@
       <label class="flex items-center gap-2">Раннер
         <select class="h-9 rounded-md border border-input bg-background px-2 text-sm" bind:value={agentRunner} aria-label="Раннер агента">
           {#each AGENT_RUNNERS as runner (runner)}
-            <option value={runner}>{agentRunnerLabel(runner)}</option>
+            <option value={runner}>{agentRunnerOptionLabel(runner, agentCatalog)}</option>
           {/each}
         </select>
       </label>
@@ -71,6 +75,9 @@
         {tasksBusy ? "Загрузка…" : "Обновить задачи"}
       </Button>
     </div>
+    {#if runnerHint}
+      <p class="text-xs text-muted-foreground" role="note">{runnerHint}</p>
+    {/if}
     {#if projects.length > 0}
       <p class="text-sm text-muted-foreground" aria-live="polite">{boardSummary}</p>
     {/if}

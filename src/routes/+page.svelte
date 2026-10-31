@@ -5,6 +5,7 @@
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
   import type {
     AcceptAgentRunResult,
+    AgentCatalogEntry,
     AgentRunRecord,
     AgentRunner,
     Settings,
@@ -62,8 +63,11 @@
   let selectedAgentRunId = $state<string | null>(null);
   let agentMergeCommand = $state("");
   let startBusyTaskId = $state<string | null>(null);
-  /** Раннер для «Исправить» (#30); Claude — основной путь. */
+  /** Раннер для «Исправить» (#30 / #95); Claude — основной путь. */
   let agentRunner = $state<AgentRunner>(DEFAULT_AGENT_RUNNER);
+  /** Реестр CLI на машине (#95). */
+  let agentCatalog = $state<AgentCatalogEntry[]>([]);
+  let settingsAgentRunner = $state<AgentRunner>(DEFAULT_AGENT_RUNNER);
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
@@ -73,6 +77,30 @@
   function flatten(list: Project[]): Project[] {
     return [...new Map(list.flatMap((p) => [p, ...flatten(p.children)]).map((p) => [p.path, p])).values()];
   }
+
+  /** Раннер проекта из orchestrator.json, иначе settings (#95). */
+  $effect(() => {
+    const path = projectFilter;
+    if (!mounted) return;
+    if (!path) {
+      agentRunner = settingsAgentRunner;
+      return;
+    }
+    void (async () => {
+      try {
+        const raw = await invoke<string>("resolve_project_agent_runner", {
+          projectPath: path,
+        });
+        if (mounted && projectFilter === path) {
+          agentRunner = parseAgentRunner(raw);
+        }
+      } catch {
+        if (mounted && projectFilter === path) {
+          agentRunner = settingsAgentRunner;
+        }
+      }
+    })();
+  });
 
   async function refreshPorts() {
     if (!mounted || portsBusy) return;
@@ -289,9 +317,16 @@
         const s = await invoke<Settings>("get_settings");
         if (!mounted) return;
         roots = s.scan_roots.join("\n");
-        agentRunner = parseAgentRunner(s.agents?.runner);
+        settingsAgentRunner = parseAgentRunner(s.agents?.runner);
+        agentRunner = settingsAgentRunner;
         if (roots) await scan();
       } catch (e) { if (mounted) error = String(e); }
+      try {
+        const catalog = await invoke<AgentCatalogEntry[]>("list_available_agents");
+        if (mounted) agentCatalog = catalog;
+      } catch (e) {
+        if (mounted) taskErrors = [...taskErrors, String(e)];
+      }
     })();
     void refresh();
     void refreshPorts();
@@ -433,6 +468,7 @@
     {tasksBusy}
     bind:projectFilter
     bind:agentRunner
+    {agentCatalog}
     projects={flatProjects}
     {startBusyTaskId}
     onRefresh={refreshTasks}

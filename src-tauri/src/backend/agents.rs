@@ -24,6 +24,9 @@
 //!
 //! Запуск из задачи (#33): `start_agent_from_task` — статус задачи `in_progress`,
 //! worktree + limiter + выбранный раннер + `collect_review` → registry.
+//!
+//! Реестр CLI (#95): `AgentRunner` (claude/codex/gemini/aider/opencode/cursor_agent/ollama),
+//! детект PATH+`--version` в `agent_catalog`, агент по умолчанию и на проект.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -116,19 +119,44 @@ pub const DEFAULT_OLLAMA_MODEL: &str = "qwen2.5-coder:7b";
 /// Таймаут прогона Ollama по умолчанию (как у Claude — 30 мин).
 pub const DEFAULT_OLLAMA_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
-/// Какой CLI запускать для агента (#28 / #30). По умолчанию Claude.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// Какой CLI запускать для агента (#28 / #30 / #95). По умолчанию Claude.
+///
+/// Headless-прогон сейчас у Claude и Ollama; остальные — в реестре (#95)
+/// с подсказкой установки / «пока без headless».
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRunner {
     #[default]
     Claude,
+    Codex,
+    Gemini,
+    Aider,
+    Opencode,
+    /// Бинарник `cursor-agent`; в JSON — `cursor_agent` или `cursor-agent`.
+    #[serde(alias = "cursor-agent")]
+    CursorAgent,
     Ollama,
 }
 
 impl AgentRunner {
+    pub const ALL: &'static [AgentRunner] = &[
+        Self::Claude,
+        Self::Codex,
+        Self::Gemini,
+        Self::Aider,
+        Self::Opencode,
+        Self::CursorAgent,
+        Self::Ollama,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Gemini => "gemini",
+            Self::Aider => "aider",
+            Self::Opencode => "opencode",
+            Self::CursorAgent => "cursor_agent",
             Self::Ollama => "ollama",
         }
     }
@@ -136,6 +164,11 @@ impl AgentRunner {
     pub fn parse(raw: &str) -> Result<Self, String> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "claude" => Ok(Self::Claude),
+            "codex" => Ok(Self::Codex),
+            "gemini" => Ok(Self::Gemini),
+            "aider" => Ok(Self::Aider),
+            "opencode" | "open_code" => Ok(Self::Opencode),
+            "cursor_agent" | "cursor-agent" => Ok(Self::CursorAgent),
             "ollama" => Ok(Self::Ollama),
             other => Err(format!("unknown agent runner '{other}'")),
         }
@@ -1009,7 +1042,7 @@ pub fn run_ollama(
     handle.wait_until(deadline, cancel)
 }
 
-/// Диспетчер раннера: Claude (основной) или Ollama (опционально, #30).
+/// Диспетчер раннера: Claude / Ollama; остальные из реестра (#95) — ошибка с подсказкой.
 #[cfg(unix)]
 pub fn run_agent_cli(
     runner: AgentRunner,
@@ -1019,10 +1052,30 @@ pub fn run_agent_cli(
     timeout: Duration,
     cancel: Option<&AtomicBool>,
 ) -> Result<ClaudeRunResult, String> {
+    if let Some(err) = super::agent_catalog::runner_readiness_error(runner, None) {
+        return Err(err);
+    }
     match runner {
         AgentRunner::Claude => run_claude(worktree, task, timeout, cancel),
         AgentRunner::Ollama => run_ollama(worktree, task, ollama_model, timeout, cancel),
+        other => Err(format!(
+            "агент '{}' обнаружен, но headless-прогон пока не поддержан ({})",
+            other.as_str(),
+            other.install_hint()
+        )),
     }
+}
+
+/// Раннер проекта (`orchestrator.json` → `agents.runner`) или из settings (#95).
+pub fn resolve_runner_for_project(
+    project_path: &Path,
+    settings_default: AgentRunner,
+) -> AgentRunner {
+    config::load_from_dir(project_path)
+        .and_then(|cfg| cfg.agents)
+        .and_then(|a| a.runner)
+        .and_then(|raw| AgentRunner::parse(&raw).ok())
+        .unwrap_or(settings_default)
 }
 
 // --- Tests + diff after agent (#31) ---
@@ -2302,13 +2355,50 @@ Pages wired down:                         9000.
         assert_eq!(AgentRunner::default(), AgentRunner::Claude);
         assert_eq!(AgentRunner::parse("ollama").unwrap(), AgentRunner::Ollama);
         assert_eq!(AgentRunner::parse("Claude").unwrap(), AgentRunner::Claude);
+        assert_eq!(
+            AgentRunner::parse("cursor-agent").unwrap(),
+            AgentRunner::CursorAgent
+        );
+        assert_eq!(AgentRunner::parse("codex").unwrap(), AgentRunner::Codex);
         assert!(AgentRunner::parse("gpt").is_err());
+        assert_eq!(AgentRunner::ALL.len(), 7);
         assert_eq!(DEFAULT_OLLAMA_MODEL, "qwen2.5-coder:7b");
         assert_eq!(
             resolve_ollama_model(Some("  custom:tag  ")),
             "custom:tag"
         );
         assert_eq!(resolve_ollama_model(None), DEFAULT_OLLAMA_MODEL);
+    }
+
+    #[test]
+    fn resolve_runner_prefers_orchestrator_json() {
+        let dir = std::env::temp_dir().join(format!(
+            "demerzel-runner-project-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("orchestrator.json"),
+            r#"{ "name": "demo", "type": "app", "agents": { "runner": "ollama" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_runner_for_project(&dir, AgentRunner::Claude),
+            AgentRunner::Ollama
+        );
+        let empty = std::env::temp_dir().join(format!(
+            "demerzel-runner-empty-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&empty);
+        fs::create_dir_all(&empty).unwrap();
+        assert_eq!(
+            resolve_runner_for_project(&empty, AgentRunner::Codex),
+            AgentRunner::Codex
+        );
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&empty);
     }
 
     #[test]

@@ -96,8 +96,19 @@ pub struct ProjectConfig {
     /// Опрос прогресса проекта (#97); снимок попадает в summary / виджет (#98).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pulse: Option<PulseConfig>,
+    /// Раннер агента на проект (#95); перекрывает `settings.agents.runner`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents: Option<ProjectAgentsConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+}
+
+/// Секция `agents` в `orchestrator.json` (#95).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ProjectAgentsConfig {
+    /// Идентификатор раннера (`claude`, `ollama`, `codex`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -113,6 +124,7 @@ pub enum ConfigError {
     PulseEmptyFile,
     PulseIntervalZero,
     PulseTimeoutZero,
+    UnknownAgentRunner(String),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -137,6 +149,7 @@ impl std::fmt::Display for ConfigError {
             ConfigError::PulseEmptyFile => write!(f, "pulse.file must not be empty"),
             ConfigError::PulseIntervalZero => write!(f, "pulse.interval_secs must be ≥ 1"),
             ConfigError::PulseTimeoutZero => write!(f, "pulse.timeout_secs must be ≥ 1"),
+            ConfigError::UnknownAgentRunner(s) => write!(f, "unknown agents.runner '{s}'"),
         }
     }
 }
@@ -257,7 +270,45 @@ pub fn validate(cfg: &ProjectConfig) -> Result<(), ConfigError> {
     if let Some(pulse) = &cfg.pulse {
         validate_pulse(pulse)?;
     }
+    if let Some(agents) = &cfg.agents {
+        validate_project_agents(agents)?;
+    }
     Ok(())
+}
+
+/// Известные значения `agents.runner` в `orchestrator.json` (#95).
+const AGENT_RUNNERS: &[&str] = &[
+    "claude",
+    "codex",
+    "gemini",
+    "aider",
+    "opencode",
+    "cursor_agent",
+    "cursor-agent",
+    "ollama",
+];
+
+pub fn validate_project_agents(agents: &ProjectAgentsConfig) -> Result<(), ConfigError> {
+    if let Some(raw) = agents.runner.as_deref() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ConfigError::UnknownAgentRunner(raw.to_string()));
+        }
+        let key = trimmed.to_ascii_lowercase();
+        if !AGENT_RUNNERS.contains(&key.as_str()) {
+            return Err(ConfigError::UnknownAgentRunner(raw.to_string()));
+        }
+    }
+    Ok(())
+}
+
+/// Непустой `agents.runner` из конфига проекта (#95).
+pub fn resolve_project_agent_runner(cfg: &ProjectConfig) -> Option<&str> {
+    cfg.agents
+        .as_ref()
+        .and_then(|a| a.runner.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
 }
 
 /// Валидирует `pulse` в `orchestrator.json` (#97).
@@ -389,6 +440,26 @@ mod tests {
     fn rejects_unknown_task_source() {
         let json = r#"{ "name": "a", "type": "app", "tasks": { "source": "jira" } }"#;
         assert!(matches!(parse(json), Err(ConfigError::UnknownTaskSource(_))));
+    }
+
+    #[test]
+    fn parses_project_agents_runner() {
+        let json = r#"{
+            "name": "a",
+            "type": "app",
+            "agents": { "runner": "ollama" }
+        }"#;
+        let cfg = parse(json).unwrap();
+        assert_eq!(resolve_project_agent_runner(&cfg), Some("ollama"));
+    }
+
+    #[test]
+    fn rejects_unknown_agents_runner() {
+        let json = r#"{ "name": "a", "type": "app", "agents": { "runner": "chatgpt" } }"#;
+        assert!(matches!(
+            parse(json),
+            Err(ConfigError::UnknownAgentRunner(_))
+        ));
     }
 
     #[test]

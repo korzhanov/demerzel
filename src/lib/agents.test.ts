@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentInstallHint,
   agentRunnerLabel,
+  agentRunnerOptionLabel,
   agentRunStatusLabel,
   canAcceptAgentRun,
   canDiscardAgentRun,
@@ -21,17 +23,26 @@ import {
   parseAgentRunner,
   requiredFreeMemoryMb,
   statusAfterTests,
+  type AgentCatalogEntry,
   type AgentRunRecord,
 } from "./types";
 
-describe("agents config defaults (#29 / #30)", () => {
+describe("agents config defaults (#29 / #30 / #95)", () => {
   test("defaults match Rust AgentsConfig", () => {
     expect(DEFAULT_AGENT_CONCURRENCY).toBe(1);
     expect(DEFAULT_MIN_FREE_MEMORY_MB).toBe(2048);
     expect(DEFAULT_OLLAMA_RESERVE_MB).toBe(4096);
     expect(DEFAULT_AGENT_RUNNER).toBe("claude");
     expect(DEFAULT_OLLAMA_MODEL).toBe("qwen2.5-coder:7b");
-    expect([...AGENT_RUNNERS]).toEqual(["claude", "ollama"]);
+    expect([...AGENT_RUNNERS]).toEqual([
+      "claude",
+      "codex",
+      "gemini",
+      "aider",
+      "opencode",
+      "cursor_agent",
+      "ollama",
+    ]);
     expect(agentsConfigOrDefault(undefined)).toEqual({
       max_concurrent: 1,
       min_free_memory_mb: 2048,
@@ -62,12 +73,49 @@ describe("agents config defaults (#29 / #30)", () => {
     ).toBe(1536);
   });
 
-  test("parseAgentRunner and labels (#30)", () => {
+  test("parseAgentRunner and labels (#30 / #95)", () => {
     expect(parseAgentRunner("ollama")).toBe("ollama");
     expect(parseAgentRunner("Claude")).toBe("claude");
+    expect(parseAgentRunner("cursor-agent")).toBe("cursor_agent");
+    expect(parseAgentRunner("codex")).toBe("codex");
     expect(parseAgentRunner(undefined)).toBe("claude");
     expect(agentRunnerLabel("ollama")).toBe("Ollama (локально)");
+    expect(agentRunnerLabel("cursor_agent")).toBe("Cursor Agent");
     expect(agentRunnerLabel(undefined)).toBe("Claude CLI");
+  });
+
+  test("catalog option labels and install hints (#95)", () => {
+    const catalog: AgentCatalogEntry[] = [
+      {
+        runner: "claude",
+        binary: "claude",
+        available: true,
+        version: "1.0.0",
+        install_hint: "install claude",
+        headless_supported: true,
+      },
+      {
+        runner: "gemini",
+        binary: "gemini",
+        available: false,
+        install_hint: "Установите Gemini CLI",
+        headless_supported: false,
+      },
+      {
+        runner: "aider",
+        binary: "aider",
+        available: true,
+        version: "0.9",
+        install_hint: "pipx install aider-chat",
+        headless_supported: false,
+      },
+    ];
+    expect(agentRunnerOptionLabel("claude", catalog)).toContain("1.0.0");
+    expect(agentRunnerOptionLabel("gemini", catalog)).toContain("не установлен");
+    expect(agentRunnerOptionLabel("aider", catalog)).toContain("только детект");
+    expect(agentInstallHint("gemini", catalog)).toContain("Gemini");
+    expect(agentInstallHint("aider", catalog)).toContain("Claude/Ollama");
+    expect(agentInstallHint("claude", catalog)).toBeNull();
   });
 });
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.48.0 — 2026-10-31
+
+- Реестр CLI-агентов (#95): детект `claude` / `codex` / `gemini` / `aider` / `opencode` / `cursor-agent` / `ollama` по PATH + `--version` (без headless-сессии), подсказки установки, единый `AgentRunner`, агент по умолчанию и на проект (`orchestrator.json` → `agents.runner`). Tauri `list_available_agents` / `resolve_project_agent_runner`. Headless по-прежнему Claude/Ollama. Закрывает #95.
+
 ## 0.47.0 — 2026-10-31
 
 - App Intents в продукте (#101): `AskDemerzelStatus` + `RestartProcess` (с подтверждением) в `DemerzelAppIntents.appex`; транспорт `dem.sock`; корень экосистемы в App Group `siri-config.json` из `scan_roots`. Сборка `macos-siri/build-siri.sh` в `beforeBundleCommand`. Контракт/тесты `siri-bridge`. Закрывает #101.
