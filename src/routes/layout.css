@@ -4,7 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	--radius: 0.625rem;
+	/* Палитра как в references/mockups/src/s2.css */
+	--radius: 0.5rem;
 	--background: #14110d;
 	--foreground: #efe3c8;
 	--card: #1d1812;
@@ -23,6 +24,9 @@
 	--border: #3a2f1f;
 	--input: #3a2f1f;
 	--ring: #e0a83a;
+	--status-ok: #6bb36a;
+	--window-edge: #6b5326;
+	--banner-height: 7.75rem;
 }
 
 @theme inline {

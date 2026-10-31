@@ -72,9 +72,9 @@
   import { Input } from "$lib/components/ui/input/index.js";
 </script>
 
-<Card.Root aria-labelledby="agent-runs-title">
-  <Card.Header>
-    <Card.Title id="agent-runs-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Ревью агентов</Card.Title>
+<Card.Root class="gap-3 rounded-lg py-3 shadow-none" aria-labelledby="agent-runs-title">
+  <Card.Header class="px-4 pb-0">
+    <Card.Title id="agent-runs-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Ревью агентов</Card.Title>
   </Card.Header>
   <Card.Content class="space-y-3">
     <Button variant="outline" disabled={runsBusy || actionBusy} onclick={onRefresh}>

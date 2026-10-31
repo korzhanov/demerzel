@@ -41,11 +41,11 @@
   import { Input } from "$lib/components/ui/input/index.js";
 </script>
 
-<Card.Root aria-labelledby="ports-title">
-  <Card.Header>
-    <Card.Title id="ports-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Порты</Card.Title>
+<Card.Root class="gap-3 rounded-lg py-3 shadow-none" aria-labelledby="ports-title">
+  <Card.Header class="px-4 pb-0">
+    <Card.Title id="ports-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Порты</Card.Title>
   </Card.Header>
-  <Card.Content class="space-y-3">
+  <Card.Content class="space-y-3 px-4">
     <div class="flex flex-wrap items-center gap-3">
       <Button variant="outline" disabled={portsBusy || stopping} onclick={onRefresh}>Обновить порты</Button>
       <label class="flex items-center gap-2 text-sm text-muted-foreground">
