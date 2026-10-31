@@ -32,11 +32,27 @@
   } from "$lib/types";
   import { AUTOFIX_OFFER_EVENT, OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
   import { autofixModeLabel } from "$lib/agents";
-  import { clampPortPollInterval } from "$lib/ports";
-  import { canOpenTask, canStartAgentFromTask } from "$lib/tasks";
+  import { clampPortPollInterval, portStatusLabel } from "$lib/ports";
+  import {
+    canOpenTask,
+    canStartAgentFromTask,
+    countByStatus,
+    filterTasksByProject,
+    formatTaskBoardSummary,
+  } from "$lib/tasks";
+  import {
+    buildDashboardSummary,
+    dotToneClass,
+    flattenProjects,
+    formatUpdatedAt,
+    processForProject,
+    projectRowStatus,
+    statusToneClass,
+  } from "$lib/dashboard";
   import PortsPanel from "$lib/components/PortsPanel.svelte";
   import TasksPanel from "$lib/components/TasksPanel.svelte";
   import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
+  import StatusSummary from "$lib/components/StatusSummary.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
@@ -52,6 +68,8 @@
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
   let selectedId = $state<number | null>(null);
+  /** Выбранный проект в сайдбаре (мокup columns). */
+  let selectedProjectPath = $state<string | null>(null);
   /** Проект из клика по системному уведомлению (#22). */
   let focusProject = $state<string | null>(null);
   let logs = $state<LogLine[]>([]);
@@ -87,11 +105,32 @@
   let processBusy = false;
   let scanBusy = $state(false);
   let taskGeneration = 0;
-  const flatProjects = $derived(flatten(projects));
-
-  function flatten(list: Project[]): Project[] {
-    return [...new Map(list.flatMap((p) => [p, ...flatten(p.children)]).map((p) => [p.path, p])).values()];
-  }
+  let updatedAt = $state(formatUpdatedAt(new Date()));
+  const flatProjects = $derived(flattenProjects(projects));
+  const summary = $derived(
+    buildDashboardSummary({ projects, processes, ports, tasks }),
+  );
+  const selectedProject = $derived(
+    selectedProjectPath
+      ? (flatProjects.find((p) => p.path === selectedProjectPath) ?? null)
+      : (flatProjects[0] ?? null),
+  );
+  const selectedProcess = $derived(
+    selectedProject ? processForProject(processes, selectedProject.name) : undefined,
+  );
+  const selectedProjectPorts = $derived(
+    selectedProject
+      ? ports.filter(
+          (row) =>
+            row.project === selectedProject.name || row.project === selectedProject.path,
+        )
+      : [],
+  );
+  const selectedTasksLine = $derived(
+    formatTaskBoardSummary(
+      countByStatus(filterTasksByProject(tasks, selectedProject?.path ?? "")),
+    ),
+  );
 
   /** Раннер проекта из orchestrator.json, иначе settings (#95). */
   $effect(() => {
@@ -122,24 +161,35 @@
     portsBusy = true;
     try {
       const result = await invoke<PortRow[]>("list_ports");
-      if (mounted) { ports = result; portsError = ""; }
+      if (mounted) {
+        ports = result;
+        portsError = "";
+        updatedAt = formatUpdatedAt(new Date());
+      }
     } catch (e) {
       if (mounted) portsError = String(e);
-    } finally { portsBusy = false; }
+    } finally {
+      portsBusy = false;
+    }
   }
 
   async function refreshTasks() {
     const generation = ++taskGeneration;
     tasksBusy = true;
-    const results = await Promise.all(flatProjects.map(async (p) => {
-      try {
-        return { tasks: await invoke<Task[]>("project_tasks", { path: p.path }), error: "" };
-      } catch (e) { return { tasks: [] as Task[], error: `${p.name} (${p.path}): ${String(e)}` }; }
-    }));
+    const results = await Promise.all(
+      flatProjects.map(async (p) => {
+        try {
+          return { tasks: await invoke<Task[]>("project_tasks", { path: p.path }), error: "" };
+        } catch (e) {
+          return { tasks: [] as Task[], error: `${p.name} (${p.path}): ${String(e)}` };
+        }
+      }),
+    );
     if (!mounted || generation !== taskGeneration) return;
     tasks = results.flatMap((result) => result.tasks);
     taskErrors = results.map((result) => result.error).filter(Boolean);
     tasksBusy = false;
+    updatedAt = formatUpdatedAt(new Date());
   }
 
   async function openTask(task: Task) {
@@ -301,11 +351,17 @@
       const found = await invoke<Project[]>("scan_projects", { roots: rootList() });
       if (!mounted) return;
       projects = found;
-      if (!flatProjects.some((p) => p.path === projectFilter)) projectFilter = "";
+      const flat = flattenProjects(found);
+      if (!flat.some((p) => p.path === projectFilter)) projectFilter = "";
+      if (!flat.some((p) => p.path === selectedProjectPath)) {
+        selectedProjectPath = flat[0]?.path ?? null;
+      }
       await refreshTasks();
     } catch (e) {
       error = String(e);
-    } finally { scanBusy = false; }
+    } finally {
+      scanBusy = false;
+    }
   }
 
   async function refresh() {
@@ -317,9 +373,12 @@
         const l = await invoke<LogLine[] | null>("process_logs", { id: selectedId });
         logs = l ?? [];
       }
+      updatedAt = formatUpdatedAt(new Date());
     } catch (e) {
       error = String(e);
-    } finally { processBusy = false; }
+    } finally {
+      processBusy = false;
+    }
   }
 
   async function start(p: Project) {
@@ -342,6 +401,7 @@
         command,
       });
       selectedId = id;
+      selectedProjectPath = p.path;
       await refresh();
     } catch (e) {
       error = String(e);
@@ -362,12 +422,31 @@
     refresh();
   }
 
+  function selectProject(p: Project) {
+    selectedProjectPath = p.path;
+    projectFilter = p.path;
+    focusProject = p.name;
+    const id = processIdForProject(processes, p.name);
+    if (id !== null) select(id);
+  }
+
+  async function openInEditor(p: Project) {
+    try {
+      await openPath(p.path);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   function openProjectFromNotify(project: string) {
     focusProject = project;
     const id = processIdForProject(processes, project);
     if (id !== null) select(id);
     const match = flatProjects.find((p) => p.name === project);
-    if (match) projectFilter = match.path;
+    if (match) {
+      selectedProjectPath = match.path;
+      projectFilter = match.path;
+    }
   }
 
   onMount(() => {
@@ -400,7 +479,9 @@
         agentRunner = settingsAgentRunner;
         settingsAutofix = parseAutofixMode(s.agents?.autofix);
         if (roots) await scan();
-      } catch (e) { if (mounted) error = String(e); }
+      } catch (e) {
+        if (mounted) error = String(e);
+      }
       try {
         const catalog = await invoke<AgentCatalogEntry[]>("list_available_agents");
         if (mounted) agentCatalog = catalog;
@@ -411,7 +492,9 @@
     void refresh();
     void refreshPorts();
     void refreshAgentRuns();
-    const poll = setInterval(() => { void refresh(); }, 1000);
+    const poll = setInterval(() => {
+      void refresh();
+    }, 1000);
     let nextPortPoll = Date.now();
     const portPoll = setInterval(() => {
       const interval = clampPortPollInterval(Number(portInterval));
@@ -461,63 +544,87 @@
 
 {#snippet tree(list: Project[], depth: number)}
   {#each list as p (p.path)}
-    <li
-      style="padding-left: {depth * 12}px"
-      class={[
-        "flex min-w-0 items-center gap-2 rounded-md px-2 py-1 hover:bg-accent",
-        focusProject === p.name && "bg-accent ring-1 ring-primary",
-      ]}
-      title="{p.name} — {p.path}"
-    >
-      <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-      <Button size="sm" variant="outline" class="shrink-0" onclick={() => start(p)}>Запустить</Button>
+    {@const row = projectRowStatus(p, processes)}
+    <li>
+      <button
+        type="button"
+        style="padding-left: {12 + depth * 14}px"
+        class={[
+          "flex w-full min-w-0 items-center gap-2 border-l-2 border-transparent py-1.5 pr-3 text-left text-sm transition-colors hover:bg-accent",
+          selectedProjectPath === p.path && "border-l-primary bg-secondary",
+          focusProject === p.name && selectedProjectPath !== p.path && "bg-accent/60",
+        ]}
+        title="{p.name} — {p.path}"
+        onclick={() => selectProject(p)}
+      >
+        <span class={["inline-block size-2 shrink-0 rounded-full", dotToneClass(row.tone)]} aria-hidden="true"></span>
+        <span class="min-w-0 flex-1 truncate">{p.name}</span>
+        <span class={["shrink-0 text-xs", statusToneClass(row.tone)]}>{row.label}</span>
+      </button>
+      {#if p.children.length}
+        <ul class="min-w-0">
+          {@render tree(p.children, depth + 1)}
+        </ul>
+      {/if}
     </li>
-    {#if p.children.length}
-      {@render tree(p.children, depth + 1)}
-    {/if}
   {/each}
 {/snippet}
 
 {#snippet projectsView()}
-  <Card.Root class="h-full min-w-0 overflow-hidden">
-    <Card.Header class="px-4">
-      <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Проекты</Card.Title>
-    </Card.Header>
-    <Card.Content class="min-w-0 space-y-3 overflow-x-hidden px-4">
-      <Textarea aria-label="Корневые папки сканирования" bind:value={roots} rows={2} placeholder="/Users/you/code" class="min-w-0" />
+  <section class="flex h-full min-w-0 flex-col overflow-hidden" aria-labelledby="projects-title">
+    <h2
+      id="projects-title"
+      class="px-4 pb-1.5 pt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+    >
+      Проекты
+    </h2>
+    <div class="min-w-0 space-y-2 overflow-x-hidden px-3 pb-3">
+      <Textarea
+        aria-label="Корневые папки сканирования"
+        bind:value={roots}
+        rows={2}
+        placeholder="/Users/you/code"
+        class="min-w-0 text-xs"
+      />
       <div class="flex min-w-0 flex-wrap items-center gap-2">
-        <Button class="shrink-0" onclick={scan} disabled={scanBusy}>Сканировать</Button>
-        <Input class="min-w-0 flex-1 basis-32" bind:value={commandOverride} placeholder="команда (пусто = из orchestrator.json)" />
-        <label class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-          <span class="shrink-0">Автофикс</span>
-          <select
-            class="h-8 min-w-0 rounded-md border bg-background px-2 text-xs text-foreground"
-            aria-label="Режим автофикса по алерту"
-            value={settingsAutofix}
-            onchange={(e) => {
-              const v = parseAutofixMode((e.currentTarget as HTMLSelectElement).value);
-              void saveAutofixMode(v);
-            }}
-          >
-            {#each AUTOFIX_MODES as mode (mode)}
-              <option value={mode}>{autofixModeLabel(mode)}</option>
-            {/each}
-          </select>
-        </label>
+        <Button size="sm" class="shrink-0" onclick={scan} disabled={scanBusy}>Сканировать</Button>
+        <Input
+          class="min-w-0 flex-1 basis-28 text-xs"
+          bind:value={commandOverride}
+          placeholder="команда (пусто = orchestrator.json)"
+        />
       </div>
-      <ul class="min-w-0 space-y-0.5 overflow-x-hidden">
-        {@render tree(projects, 0)}
-      </ul>
-    </Card.Content>
-  </Card.Root>
+      <label class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span class="shrink-0">Автофикс</span>
+        <select
+          class="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs text-foreground"
+          aria-label="Режим автофикса по алерту"
+          value={settingsAutofix}
+          onchange={(e) => {
+            const v = parseAutofixMode((e.currentTarget as HTMLSelectElement).value);
+            void saveAutofixMode(v);
+          }}
+        >
+          {#each AUTOFIX_MODES as mode (mode)}
+            <option value={mode}>{autofixModeLabel(mode)}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
+    <ul class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto border-t border-border pb-2">
+      {@render tree(projects, 0)}
+    </ul>
+  </section>
 {/snippet}
 
 {#snippet processesView()}
-  <Card.Root>
-    <Card.Header>
-      <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Процессы</Card.Title>
+  <Card.Root class="gap-3 rounded-lg py-3 shadow-none">
+    <Card.Header class="px-4 pb-0">
+      <Card.Title class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+        >Процессы</Card.Title
+      >
     </Card.Header>
-    <Card.Content>
+    <Card.Content class="px-4">
       {#if processes.length === 0}
         <p class="text-sm text-muted-foreground">Нет запущенных процессов.</p>
       {:else}
@@ -534,15 +641,29 @@
             {#each processes as row (row.id)}
               <Table.Row data-state={row.id === selectedId ? "selected" : undefined}>
                 <Table.Cell>
-                  <Button variant="link" class="h-auto p-0" onclick={() => select(row.id)} aria-pressed={row.id === selectedId}>{row.project}</Button>
+                  <Button
+                    variant="link"
+                    class="h-auto p-0"
+                    onclick={() => select(row.id)}
+                    aria-pressed={row.id === selectedId}>{row.project}</Button
+                  >
                 </Table.Cell>
                 <Table.Cell class="font-mono text-xs">{row.command}</Table.Cell>
                 <Table.Cell>
-                  <Badge variant={isRunning(row.status) ? "default" : "secondary"}>{statusLabel(row.status)}</Badge>
+                  <Badge variant={isRunning(row.status) ? "default" : "secondary"}
+                    >{statusLabel(row.status)}</Badge
+                  >
                 </Table.Cell>
                 <Table.Cell class="text-right">
                   {#if isRunning(row.status)}
-                    <Button size="sm" variant="outline" onclick={(e) => { e.stopPropagation(); stop(row.id); }}>Стоп</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        stop(row.id);
+                      }}>Стоп</Button
+                    >
                   {/if}
                 </Table.Cell>
               </Table.Row>
@@ -555,7 +676,14 @@
 {/snippet}
 
 {#snippet portsView()}
-  <PortsPanel {ports} {portsError} {portsBusy} bind:portInterval onRefresh={refreshPorts} onStopManaged={stopManagedFromPorts} />
+  <PortsPanel
+    {ports}
+    {portsError}
+    {portsBusy}
+    bind:portInterval
+    onRefresh={refreshPorts}
+    onStopManaged={stopManagedFromPorts}
+  />
 {/snippet}
 
 {#snippet tasksView()}
@@ -591,47 +719,156 @@
 {/snippet}
 
 {#snippet logsView()}
-  <Card.Root class="h-full">
-    <Card.Header>
-      <Card.Title class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Логи {selectedId !== null ? `#${selectedId}` : ""}
-      </Card.Title>
-    </Card.Header>
-    <Card.Content>
-      <ScrollArea class="h-96 rounded-md border bg-background">
-        <pre class="p-3 font-mono text-xs leading-relaxed text-muted-foreground">{#each logs as line, i (i)}<span class={line.stream === "stderr" ? "text-destructive" : ""}>{line.text}
+  <section class="flex h-full min-w-0 flex-col overflow-hidden" aria-labelledby="logs-title">
+    <h2
+      id="logs-title"
+      class="px-3.5 pb-1 pt-3 font-sans text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+    >
+      Логи{#if selectedProject}
+        · {selectedProject.name}{/if}
+    </h2>
+    <ScrollArea class="min-h-0 flex-1 px-1">
+      <pre
+        class="px-3 pb-3 font-mono text-[11.5px] leading-[1.7] text-[#b5a888]">{#each logs as line, i (i)}<span class={line.stream === "stderr" ? "text-primary" : ""}>{line.text}
 </span>{/each}</pre>
-      </ScrollArea>
-    </Card.Content>
-  </Card.Root>
+    </ScrollArea>
+  </section>
 {/snippet}
 
-<main class="mx-auto min-h-screen max-w-[1400px] space-y-3 p-4">
-  <header class="flex flex-wrap items-center gap-3">
-    <h1 class="text-base font-medium tracking-widest text-primary">DEMERZEL</h1>
+{#snippet projectFocus()}
+  {#if selectedProject}
+    {@const proc = selectedProcess}
+    <div class="space-y-3 border-b border-border px-5 py-4">
+      <div>
+        <h2 class="text-lg font-medium tracking-tight">{selectedProject.name}</h2>
+        <p class="truncate text-sm text-muted-foreground" title={selectedProject.path}>
+          app · {selectedProject.path}
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <Button size="sm" onclick={() => start(selectedProject)}>Запустить</Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!proc || !isRunning(proc.status)}
+          onclick={() => proc && stop(proc.id)}>Стоп</Button
+        >
+        <Button size="sm" variant="outline" onclick={() => openInEditor(selectedProject)}
+          >Редактор</Button
+        >
+      </div>
+
+      <div>
+        <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Процессы
+        </p>
+        {#if proc}
+          <div
+            class="grid grid-cols-[1fr_90px_70px] gap-2 border-b border-border py-1.5 text-sm"
+          >
+            <span class="truncate font-mono text-xs">{proc.command}</span>
+            <span class={isRunning(proc.status) ? "text-[var(--status-ok)]" : "text-muted-foreground"}
+              >{statusLabel(proc.status)}</span
+            >
+            <span class="text-[var(--status-ok)]"
+              >{proc.port != null ? `:${proc.port}` : "—"}</span
+            >
+          </div>
+        {:else}
+          <p class="text-sm text-muted-foreground">Нет процесса</p>
+        {/if}
+      </div>
+
+      <div>
+        <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Порты
+        </p>
+        {#if selectedProjectPorts.length === 0}
+          <p class="text-sm text-muted-foreground">Нет связанных портов</p>
+        {:else}
+          {#each selectedProjectPorts as row (`${row.pid}:${row.port}`)}
+            <div
+              class="grid grid-cols-[1fr_90px_70px] gap-2 border-b border-border py-1.5 text-sm"
+            >
+              <span>{row.port}</span>
+              <span
+                class={row.status === "conflict"
+                  ? "text-primary"
+                  : row.status === "ok"
+                    ? "text-[var(--status-ok)]"
+                    : "text-muted-foreground"}>{portStatusLabel(row.status)}</span
+              >
+              <span class="truncate font-mono text-xs text-muted-foreground">{row.command}</span>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+      <div>
+        <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Задачи
+        </p>
+        <p class="text-sm text-muted-foreground">{selectedTasksLine}</p>
+      </div>
+    </div>
+  {:else}
+    <div class="border-b border-border px-5 py-6 text-sm text-muted-foreground">
+      Выберите проект в списке слева или выполните сканирование.
+    </div>
+  {/if}
+{/snippet}
+
+<main class="mx-auto flex min-h-screen max-w-[1400px] flex-col">
+  <header
+    class="flex flex-wrap items-center gap-3 border-b border-border bg-card px-3.5 py-2.5"
+  >
+    <img
+      src="/mockups/icon.jpg"
+      alt=""
+      width="26"
+      height="26"
+      class="size-[26px] rounded-[7px] object-cover"
+    />
+    <h1 class="text-[15px] font-medium tracking-[0.08em] text-primary">DEMERZEL</h1>
     {#if focusProject}
       <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
     {/if}
     <ToggleGroup.Root
       type="single"
       variant="outline"
-      class="ml-auto"
+      class="ml-auto overflow-hidden rounded-lg border border-border"
       aria-label="Вид окна"
       value={view}
       onValueChange={(v) => v && setView(v as ViewMode)}
     >
-      <ToggleGroup.Item value="columns">Колонки</ToggleGroup.Item>
-      <ToggleGroup.Item value="tabs">Вкладки</ToggleGroup.Item>
+      <ToggleGroup.Item
+        value="columns"
+        class="rounded-none px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+        >Колонки</ToggleGroup.Item
+      >
+      <ToggleGroup.Item
+        value="tabs"
+        class="rounded-none px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+        >Вкладки</ToggleGroup.Item
+      >
     </ToggleGroup.Root>
   </header>
 
+  <div
+    class="h-[var(--banner-height)] shrink-0 border-b border-border bg-[url('/mockups/strip.jpg')] bg-cover bg-center"
+    role="img"
+    aria-label="DEMERZEL — The Shadow Orchestrator for Your Stack"
+  ></div>
+
+  <StatusSummary {summary} {updatedAt} />
+
   {#if error}
-    <p class="break-words text-sm text-destructive">{error}</p>
+    <p class="break-words px-4 pt-2 text-sm text-destructive">{error}</p>
   {/if}
 
   {#if autofixOffer}
     <div
-      class="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+      class="mx-4 mt-2 flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
       role="status"
       aria-live="polite"
     >
@@ -648,39 +885,54 @@
   {/if}
 
   {#if view === "columns"}
-    <Resizable.PaneGroup direction="horizontal" class="min-h-[560px] min-w-0 rounded-xl border">
-      <Resizable.Pane defaultSize={24} minSize={16} class="min-w-0 overflow-hidden">
-        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto p-2">{@render projectsView()}</div>
-      </Resizable.Pane>
-      <Resizable.Handle withHandle />
-      <Resizable.Pane defaultSize={48} minSize={25} class="min-w-0 overflow-hidden">
-        <div class="min-w-0 space-y-3 overflow-x-hidden p-2">
-          {@render processesView()}
-          {@render portsView()}
-          {@render tasksView()}
-          {@render agentsView()}
+    <Resizable.PaneGroup
+      direction="horizontal"
+      class="min-h-[560px] min-w-0 flex-1 border-t border-[var(--window-edge)]/40"
+    >
+      <Resizable.Pane defaultSize={22} minSize={14} class="min-w-0 overflow-hidden bg-card/40">
+        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto border-r border-border">
+          {@render projectsView()}
         </div>
       </Resizable.Pane>
       <Resizable.Handle withHandle />
-      <Resizable.Pane defaultSize={28} minSize={16} class="min-w-0 overflow-hidden">
-        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto p-2">{@render logsView()}</div>
+      <Resizable.Pane defaultSize={50} minSize={28} class="min-w-0 overflow-hidden">
+        <div class="h-full min-w-0 space-y-3 overflow-x-hidden overflow-y-auto pb-4">
+          {@render projectFocus()}
+          <div class="space-y-3 px-3">
+            {@render portsView()}
+            {@render tasksView()}
+            {@render agentsView()}
+          </div>
+        </div>
+      </Resizable.Pane>
+      <Resizable.Handle withHandle />
+      <Resizable.Pane defaultSize={28} minSize={16} class="min-w-0 overflow-hidden bg-card/40">
+        <div class="h-full min-w-0 overflow-x-hidden overflow-y-auto border-l border-border">
+          {@render logsView()}
+        </div>
       </Resizable.Pane>
     </Resizable.PaneGroup>
   {:else}
-    <Tabs.Root value={tab} onValueChange={(v) => (tab = v as Tab)}>
-      <Tabs.List>
-        {#each TABS as [id, label] (id)}
-          <Tabs.Trigger value={id}>{label}</Tabs.Trigger>
-        {/each}
-      </Tabs.List>
-    </Tabs.Root>
-    <div class="space-y-3">
-      {#if tab === "projects"}{@render projectsView()}{/if}
-      {#if tab === "processes"}{@render processesView()}{/if}
-      {#if tab === "ports"}{@render portsView()}{/if}
-      {#if tab === "tasks"}{@render tasksView()}{/if}
-      {#if tab === "agents"}{@render agentsView()}{/if}
-      {#if tab === "logs"}{@render logsView()}{/if}
+    <div class="space-y-3 p-4">
+      <Tabs.Root value={tab} onValueChange={(v) => (tab = v as Tab)}>
+        <Tabs.List class="h-auto flex-wrap gap-1 bg-transparent p-0">
+          {#each TABS as [id, label] (id)}
+            <Tabs.Trigger
+              value={id}
+              class="rounded-md border border-[var(--window-edge)] data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >{label}</Tabs.Trigger
+            >
+          {/each}
+        </Tabs.List>
+      </Tabs.Root>
+      <div class="space-y-3">
+        {#if tab === "projects"}{@render projectsView()}{/if}
+        {#if tab === "processes"}{@render processesView()}{/if}
+        {#if tab === "ports"}{@render portsView()}{/if}
+        {#if tab === "tasks"}{@render tasksView()}{/if}
+        {#if tab === "agents"}{@render agentsView()}{/if}
+        {#if tab === "logs"}{@render logsView()}{/if}
+      </div>
     </div>
   {/if}
 </main>

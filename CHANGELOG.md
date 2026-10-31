@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.50.0 — 2026-10-31
+
+- UI ближе к `references/mockups` (#114): баннер strip, шапка DEMERZEL + icon, сводка «Проектов / Упало / Конфликт портов / Задач», сайдбар со status-dots, focus выбранного проекта (процессы/порты/задачи), логи в стиле мокапа; палитра s2.css (`--status-ok`, window edge). Закрывает #114.
+
 ## 0.49.0 — 2026-10-31
 
 - Автофикс по алерту (#96): режимы `off` / `suggest` / `auto` (`agents.autofix`, override в `orchestrator.json`), из crash / port conflict / tests failed — агент в worktree с хвостом логов + командой + diff; лимитер и ревью как у #27–#33 (результат не в main). Tauri `start_agent_from_alert`, событие `alerts:autofix-offer`, баннер «Исправить». Закрывает #96.

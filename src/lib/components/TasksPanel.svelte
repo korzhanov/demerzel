@@ -50,11 +50,11 @@
   const runnerHint = $derived(agentInstallHint(agentRunner, agentCatalog));
 </script>
 
-<Card.Root class="min-w-0 overflow-hidden" aria-labelledby="tasks-title">
-  <Card.Header>
-    <Card.Title id="tasks-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Задачи</Card.Title>
+<Card.Root class="min-w-0 gap-3 overflow-hidden rounded-lg py-3 shadow-none" aria-labelledby="tasks-title">
+  <Card.Header class="px-4 pb-0">
+    <Card.Title id="tasks-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Задачи</Card.Title>
   </Card.Header>
-  <Card.Content class="min-w-0 space-y-3">
+  <Card.Content class="min-w-0 space-y-3 px-4">
     <div class="flex min-w-0 flex-wrap items-center gap-3 text-sm text-muted-foreground">
       <label class="flex min-w-0 max-w-full items-center gap-2">Проект
         <select class="h-9 max-w-full min-w-0 truncate rounded-md border border-input bg-background px-2 text-sm" bind:value={projectFilter}>
@@ -89,10 +89,10 @@
     {/if}
     <div class="grid min-w-0 grid-cols-1 gap-3 overflow-x-hidden sm:grid-cols-2 xl:grid-cols-4">
       {#each TASK_BOARD_COLUMNS as column (column.status)}
-        <section class="min-w-0 space-y-2 overflow-hidden rounded-lg bg-muted p-2" aria-label={column.label}>
-          <h3 class="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground">{column.label}</h3>
+        <section class="min-w-0 space-y-2 overflow-hidden rounded-md border border-border/80 bg-muted/50 p-2" aria-label={column.label}>
+          <h3 class="truncate text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{column.label}</h3>
           {#each tasksForColumn(visibleTasks, column.status) as task (task.id)}
-            <article class="min-w-0 space-y-1 overflow-hidden rounded-md border bg-card p-3 text-sm">
+            <article class="min-w-0 space-y-1 overflow-hidden rounded-md border border-border bg-card p-2.5 text-sm">
               <strong class="block break-words font-medium [overflow-wrap:anywhere]">{task.title}</strong>
               <p class="truncate text-xs text-muted-foreground" title={task.project}>{task.project}</p>
               <Badge variant="outline" class="max-w-full truncate">{task.source}</Badge>
