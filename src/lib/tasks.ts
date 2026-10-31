@@ -87,3 +87,15 @@ export function formatTaskBoardSummary(
   if (counts.blocked > 0) parts.push(`Заблок. ${counts.blocked}`);
   return parts.join(" · ");
 }
+
+/**
+ * Убирает Markdown-ссылки из заголовка задачи (#118).
+ * `[#35](https://github.com/x/y/issues/35) Квоты` → `#35 Квоты`.
+ */
+export function cleanTaskTitle(title: string): string {
+  return title
+    .replace(/\[([^\]]+)\]\((?:https?:\/\/|\/)[^)\s]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}

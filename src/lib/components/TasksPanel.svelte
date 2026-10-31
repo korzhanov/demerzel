@@ -9,6 +9,7 @@
     filterTasksByProject,
     formatTaskBoardSummary,
     tasksForColumn,
+    cleanTaskTitle,
   } from "$lib/tasks";
   import { agentInstallHint, agentRunnerOptionLabel } from "$lib/agents";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -93,7 +94,7 @@
           <h3 class="truncate text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{column.label}</h3>
           {#each tasksForColumn(visibleTasks, column.status) as task (task.id)}
             <article class="min-w-0 space-y-1 overflow-hidden rounded-md border border-border bg-card p-2.5 text-sm">
-              <strong class="block break-words font-medium [overflow-wrap:anywhere]">{task.title}</strong>
+              <strong class="block break-words font-medium [overflow-wrap:anywhere]">{cleanTaskTitle(task.title)}</strong>
               <p class="truncate text-xs text-muted-foreground" title={task.project}>{task.project}</p>
               <Badge variant="outline" class="max-w-full truncate">{task.source}</Badge>
               <div class="flex min-w-0 flex-wrap gap-2 pt-1">
