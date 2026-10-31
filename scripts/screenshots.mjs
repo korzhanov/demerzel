@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "docs", "screenshots");
@@ -56,6 +57,8 @@ try {
   await waitForServer(`http://localhost:${PORT}`);
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: 1 });
+  // Мок Tauri invoke: скриншоты без Rust-бэкенда с тестовыми данными (#150).
+  await page.addInitScript({ content: readFileSync(join(root, "scripts", "tauri-mock.js"), "utf8") });
   await page.goto(`http://localhost:${PORT}`);
   for (const s of shots) {
     await page.evaluate((theme) => {
