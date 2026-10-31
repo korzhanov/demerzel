@@ -365,7 +365,6 @@ mod limit_tests {
         assert!(check_start_allowed(p, &full, 2).is_err());
     }
 }
-<<<<<<< HEAD
 
 /// Записывает правило перезапуска в `automation.restart`, выбор и прочие поля не трогает.
 pub fn save_restart_rule(project: &Path, rule: &crate::backend::config::RestartRule) -> Result<(), String> {
@@ -430,5 +429,3 @@ mod restart_tests {
         assert!(!should_restart(&Status::Exited(1), 3, &on(3)));
     }
 }
-=======
->>>>>>> origin/main
