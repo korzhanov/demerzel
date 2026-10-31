@@ -1,6 +1,6 @@
-# Агенты: git worktree, Claude CLI, Ollama, лимиты и ревью
+# Агенты: git worktree, Claude CLI, Ollama, реестр CLI, лимиты и ревью
 
-Phase-6, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #30 (Ollama, опционально), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
+Phase-6/7, issues #27 (worktree), #28 (headless Claude Code CLI), #29 (concurrency + память), #30 (Ollama, опционально), #31 (тесты + diff), #32 (UI ревью), #33 (запуск из задачи), #95 (реестр CLI на машине). Правки агента живут в отдельном worktree и ветке, чтобы основная рабочая копия проекта оставалась чистой.
 
 ## Расположение
 
@@ -59,6 +59,29 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 
 Отсутствующая секция → значения по умолчанию. `runner: "claude"` — основной путь; Ollama не обязателен.
 
+Раннер на проект (#95) — в `orchestrator.json`:
+
+```json
+{
+  "name": "api",
+  "type": "service",
+  "agents": { "runner": "ollama" }
+}
+```
+
+Приоритет: явный выбор в UI → `orchestrator.json` → `agents.runner` → `claude`.
+
+## Реестр CLI (#95)
+
+Известные агенты: `claude`, `codex`, `gemini`, `aider`, `opencode`, `cursor_agent` (бинарник `cursor-agent`), `ollama`.
+
+1. **Детект** — поиск в `PATH` (или `DEMERZEL_*_BIN`), затем лёгкий `--version` (не headless-сессия).
+2. **Подсказка** — если бинарника нет, `install_hint` с инструкцией установки.
+3. **Headless** — сейчас только Claude и Ollama; остальные видны в реестре/селекте как «только детект».
+4. **API** — `list_available_agents`, `resolve_project_agent_runner`, `detect_agent` / `runner_readiness_error` в `backend/agent_catalog`.
+
+Тесты: фейковые исполняемые скрипты в изолированном `PATH`.
+
 ## Ollama (#30)
 
 Опциональный headless-раннер для простых задач (не блокирует Claude CLI):
@@ -104,8 +127,10 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 - `ClaudeHandle::spawn` / `cancel` / `wait_until`
 - `run_claude(worktree, task, timeout, cancel?)` → `ClaudeRunResult`
 - `claude_bin` / `DEFAULT_CLAUDE_TIMEOUT` / `PROJECT_RULES_FILE`
-- `AgentRunner` / `OllamaHandle` / `run_ollama` / `run_agent_cli` (#30)
+- `AgentRunner` / `OllamaHandle` / `run_ollama` / `run_agent_cli` (#30 / #95)
 - `ollama_bin` / `resolve_ollama_model` / `DEFAULT_OLLAMA_MODEL` / `DEFAULT_OLLAMA_TIMEOUT`
+- `agent_catalog::{list_available_agents,detect_agent,install_hint,runner_readiness_error}` (#95)
+- `resolve_runner_for_project` (#95)
 - `AgentsConfig` / `AgentLimiter` / `try_acquire` / `release`
 - `available_memory_mb` / `parse_vm_stat_available_mb` / `ollama_process_running`
 - `DEFAULT_CONCURRENCY` / `DEFAULT_MIN_FREE_MEMORY_MB` / `DEFAULT_OLLAMA_RESERVE_MB`

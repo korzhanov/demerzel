@@ -72,10 +72,36 @@ export interface AlertsConfig {
   timezone?: string;
 }
 
-/** Раннер агента (#28 / #30). Claude — основной путь. */
-export type AgentRunner = "claude" | "ollama";
+/** Раннер агента (#28 / #30 / #95). Claude — основной путь. */
+export type AgentRunner =
+  | "claude"
+  | "codex"
+  | "gemini"
+  | "aider"
+  | "opencode"
+  | "cursor_agent"
+  | "ollama";
 
-export const AGENT_RUNNERS: readonly AgentRunner[] = ["claude", "ollama"] as const;
+export const AGENT_RUNNERS: readonly AgentRunner[] = [
+  "claude",
+  "codex",
+  "gemini",
+  "aider",
+  "opencode",
+  "cursor_agent",
+  "ollama",
+] as const;
+
+/** Запись реестра CLI на машине (#95). */
+export interface AgentCatalogEntry {
+  runner: AgentRunner;
+  binary: string;
+  available: boolean;
+  path?: string | null;
+  version?: string | null;
+  install_hint: string;
+  headless_supported: boolean;
+}
 
 /** Лимит параллельных агентов и порог памяти (#29); раннер Ollama (#30). */
 export interface AgentsConfig {
@@ -111,7 +137,10 @@ export function agentsConfigOrDefault(
 
 export function parseAgentRunner(raw: string | null | undefined): AgentRunner {
   const v = (raw ?? "").trim().toLowerCase();
-  if (v === "ollama") return "ollama";
+  if (v === "cursor-agent") return "cursor_agent";
+  if ((AGENT_RUNNERS as readonly string[]).includes(v)) {
+    return v as AgentRunner;
+  }
   return "claude";
 }
 

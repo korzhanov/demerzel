@@ -99,6 +99,27 @@
         { "required": ["command"], "not": { "required": ["file"] } },
         { "required": ["file"], "not": { "required": ["command"] } }
       ]
+    },
+    "agents": {
+      "type": "object",
+      "description": "Раннер агента на проект (#95). Перекрывает settings.agents.runner.",
+      "additionalProperties": false,
+      "properties": {
+        "runner": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "gemini",
+            "aider",
+            "opencode",
+            "cursor_agent",
+            "cursor-agent",
+            "ollama"
+          ],
+          "description": "CLI-агент по умолчанию для этого проекта"
+        }
+      }
     }
   }
 }

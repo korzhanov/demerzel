@@ -1,18 +1,61 @@
-import type { AgentRunner, AgentRunRecord, AgentRunStatus } from "./types";
+import type {
+  AgentCatalogEntry,
+  AgentRunner,
+  AgentRunRecord,
+  AgentRunStatus,
+} from "./types";
 import { canTransitionAgentRun } from "./types";
 
-/** Подпись раннера для UI (#30). */
+/** Подпись раннера для UI (#30 / #95). */
 export function agentRunnerLabel(runner: AgentRunner | undefined | null): string {
   switch (runner ?? "claude") {
     case "ollama":
       return "Ollama (локально)";
     case "claude":
       return "Claude CLI";
+    case "codex":
+      return "Codex CLI";
+    case "gemini":
+      return "Gemini CLI";
+    case "aider":
+      return "Aider";
+    case "opencode":
+      return "OpenCode";
+    case "cursor_agent":
+      return "Cursor Agent";
     default: {
       const _exhaustive: never = runner as never;
       return _exhaustive;
     }
   }
+}
+
+/** Подпись опции селекта с учётом реестра (#95). */
+export function agentRunnerOptionLabel(
+  runner: AgentRunner,
+  catalog: AgentCatalogEntry[] | null | undefined,
+): string {
+  const base = agentRunnerLabel(runner);
+  const entry = catalog?.find((e) => e.runner === runner);
+  if (!entry) return base;
+  if (!entry.available) return `${base} (не установлен)`;
+  if (!entry.headless_supported) return `${base} (только детект)`;
+  if (entry.version) return `${base} · ${entry.version}`;
+  return base;
+}
+
+/** Подсказка установки для выбранного раннера (#95). */
+export function agentInstallHint(
+  runner: AgentRunner,
+  catalog: AgentCatalogEntry[] | null | undefined,
+): string | null {
+  const entry = catalog?.find((e) => e.runner === runner);
+  if (!entry) return null;
+  if (!entry.available) return entry.install_hint;
+  if (!entry.headless_supported) {
+    return `${entry.install_hint} Headless-прогон пока у Claude/Ollama.`;
+  }
+  return null;
 }
 
 /** Подписи статусов agent run для UI (#32). */

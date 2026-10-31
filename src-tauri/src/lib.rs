@@ -4,7 +4,7 @@ pub mod backend;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use backend::alerts::{AlertEvent, DeliveryDecision, DeliveryGate};
 use backend::notify::{self, NotifyPayload, OpenProjectPayload, EXTRA_PROJECT, OPEN_PROJECT_EVENT};
@@ -387,7 +387,27 @@ fn discard_agent_run(
     reg.discard(&id)
 }
 
-/// Запуск агента из задачи (#33 / #30): статус `in_progress`, worktree; CLI в фоне.
+/// Реестр CLI-агентов на машине: PATH + `--version`, подсказки установки (#95).
+#[tauri::command]
+fn list_available_agents() -> Vec<backend::agent_catalog::AgentCatalogEntry> {
+    backend::agent_catalog::list_available_agents(None)
+}
+
+/// Раннер по умолчанию для проекта: `orchestrator.json` → settings (#95).
+#[tauri::command]
+fn resolve_project_agent_runner(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<String, String> {
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let runner = backend::agents::resolve_runner_for_project(
+        Path::new(&project_path),
+        settings.agents.runner,
+    );
+    Ok(runner.as_str().to_string())
+}
+
+/// Запуск агента из задачи (#33 / #30 / #95): статус `in_progress`, worktree; CLI в фоне.
 #[tauri::command]
 fn start_agent_from_task(
     app: tauri::AppHandle,
@@ -397,23 +417,25 @@ fn start_agent_from_task(
     runner: Option<String>,
 ) -> Result<backend::agents::StartAgentRunResult, String> {
     use backend::agents::{
-        complete_agent_run, prepare_agent_from_task, task_prompt_text, AgentRunner,
-        DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT,
+        complete_agent_run, prepare_agent_from_task, resolve_runner_for_project, task_prompt_text,
+        AgentRunner, DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT,
     };
     use std::thread;
 
     let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let project_path = PathBuf::from(&task.project);
     let runner = match runner.as_deref() {
         Some(raw) => AgentRunner::parse(raw)?,
-        None => settings.agents.runner,
+        None => resolve_runner_for_project(&project_path, settings.agents.runner),
     };
+    if let Some(err) = backend::agent_catalog::runner_readiness_error(runner, None) {
+        return Err(err);
+    }
     let ollama_model = settings.agents.ollama_model.clone();
     let timeout = match runner {
-        AgentRunner::Claude => DEFAULT_CLAUDE_TIMEOUT,
         AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
+        _ => DEFAULT_CLAUDE_TIMEOUT,
     };
-
-    let project_path = PathBuf::from(&task.project);
     let prompt = task_prompt_text(&task);
     let prepared = {
         let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
@@ -567,6 +589,8 @@ pub fn run() {
             upsert_agent_run,
             accept_agent_run,
             discard_agent_run,
+            list_available_agents,
+            resolve_project_agent_runner,
             start_agent_from_task,
             ingest_alert_event
         ])
