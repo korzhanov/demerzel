@@ -1,4 +1,10 @@
-import type { AutomationSelection, AutomationsView, DiscoveredAutomation } from "./types";
+import type {
+  AutomationSelection,
+  AutomationStatus,
+  AutomationsView,
+  DiscoveredAutomation,
+} from "./types";
+import { isRunning, statusLabel } from "./types";
 
 const key = (s: { source: string; name: string }) => `${s.source}\u0000${s.name}`;
 
@@ -21,4 +27,15 @@ export function toggle(selected: AutomationSelection[], item: DiscoveredAutomati
   return isChecked(selected, item)
     ? selected.filter((s) => key(s) !== key(item))
     : [...selected, { source: item.source, name: item.name }];
+}
+
+/** Текст статуса автозадачи для UI (#153, этап B). */
+export function automationStatusText(s: AutomationStatus): string {
+  if (!s.command) return "не найдена в проекте";
+  if (!s.status) return "не запускалась";
+  return statusLabel(s.status);
+}
+
+export function automationIsRunning(s: AutomationStatus): boolean {
+  return s.status !== null && isRunning(s.status);
 }

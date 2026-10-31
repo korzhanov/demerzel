@@ -533,6 +533,24 @@ fn stop_process(processes: tauri::State<'_, Processes>, id: u64) -> Result<Optio
     reg.stop(id, std::time::Duration::from_secs(5)).map_err(|e| e.to_string())
 }
 
+/// Статусы выбранных автозадач проекта по реестру процессов (#153, этап B).
+#[tauri::command]
+fn automation_statuses(
+    processes: tauri::State<'_, Processes>,
+    path: String,
+) -> Result<Vec<backend::automation::AutomationStatus>, String> {
+    let dir = std::path::PathBuf::from(&path);
+    let discovered = backend::automation::discover(&dir);
+    let selected = backend::config::load_checked(&dir)?
+        .and_then(|c| c.automation)
+        .map(|a| a.selected)
+        .unwrap_or_default();
+    let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
+    reg.list().map_err(|e| e.to_string())?;
+    let runs = reg.runs();
+    Ok(backend::automation::match_statuses(&dir, &selected, &discovered, &runs))
+}
+
 #[tauri::command]
 fn list_processes(processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
@@ -1126,6 +1144,7 @@ pub fn run() {
             open_agent_install_terminal,
             resolve_preferred_agent,
             load_automations,
+            automation_statuses,
             save_automation_selection,
             resolve_project_agent_runner,
             start_agent_from_task,

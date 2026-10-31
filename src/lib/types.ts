@@ -336,3 +336,11 @@ export interface AutomationsView {
   discovered: DiscoveredAutomation[];
   selected: AutomationSelection[];
 }
+
+export interface AutomationStatus {
+  source: string;
+  name: string;
+  command: string | null;
+  run_id: number | null;
+  status: ProcessStatus | null;
+}

@@ -1,3 +1,4 @@
+import { automationIsRunning, automationStatusText } from "./automation";
 import { describe, expect, test } from "bun:test";
 import { initialSelection, isChecked, toggle } from "./automation";
 import type { AutomationsView } from "./types";
@@ -26,5 +27,18 @@ describe("automation selection", () => {
     const on = toggle([], build);
     expect(isChecked(on, build)).toBe(true);
     expect(toggle(on, build)).toEqual([]);
+  });
+});
+
+describe("automation status", () => {
+  const base = { source: "s", name: "n", command: "cmd", run_id: 1 };
+  test("текст статуса", () => {
+    expect(automationStatusText({ ...base, command: null, run_id: null, status: null })).toBe("не найдена в проекте");
+    expect(automationStatusText({ ...base, run_id: null, status: null })).toBe("не запускалась");
+    expect(automationStatusText({ ...base, status: { Exited: 2 } })).toBe("Exited(2)");
+  });
+  test("запущена ли", () => {
+    expect(automationIsRunning({ ...base, status: "Running" })).toBe(true);
+    expect(automationIsRunning({ ...base, status: { Exited: 0 } })).toBe(false);
   });
 });
