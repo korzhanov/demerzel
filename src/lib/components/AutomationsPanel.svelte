@@ -44,7 +44,7 @@
       if (automationIsRunning(s) && s.run_id !== null) {
         await invoke("stop_process", { id: s.run_id });
       } else if (s.command) {
-        await invoke("start_process", { project: name, path, command: s.command });
+        await invoke("start_automation", { project: name, path, source: s.source, name: s.name });
       }
     } catch (e) {
       actionError = String(e);

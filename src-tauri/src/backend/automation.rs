@@ -316,3 +316,45 @@ mod status_tests {
         assert_eq!(out[0].command, None);
     }
 }
+
+/// Лимит одновременно работающих автозадач на проект (#153, этап C). Значение по умолчанию.
+pub const MAX_RUNNING_PER_PROJECT: usize = 2;
+
+/// Проверка перед запуском автозадачи: сколько выбранных автозадач уже работают в папке проекта.
+/// Возвращает `Err` с понятным текстом, если лимит достигнут.
+pub fn check_start_allowed(
+    project: &Path,
+    statuses: &[AutomationStatus],
+    limit: usize,
+) -> Result<(), String> {
+    let running = statuses
+        .iter()
+        .filter(|s| s.status.as_ref().is_some_and(|st| *st == crate::backend::process::Status::Running || *st == crate::backend::process::Status::Starting))
+        .count();
+    if running >= limit {
+        return Err(format!(
+            "в {} уже работают {running} автозадач(и) из лимита {limit}; остановите одну или поднимите лимит",
+            project.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+    use crate::backend::process::Status;
+
+    fn st(status: Option<Status>) -> AutomationStatus {
+        AutomationStatus { source: "s".into(), name: "n".into(), command: Some("c".into()), run_id: Some(1), status }
+    }
+
+    #[test]
+    fn allows_below_limit_and_blocks_at_limit() {
+        let p = Path::new("/x");
+        let two_running = vec![st(Some(Status::Running)), st(Some(Status::Exited(0)))];
+        assert!(check_start_allowed(p, &two_running, 2).is_ok());
+        let full = vec![st(Some(Status::Running)), st(Some(Status::Starting))];
+        assert!(check_start_allowed(p, &full, 2).is_err());
+    }
+}

@@ -551,6 +551,34 @@ fn automation_statuses(
     Ok(backend::automation::match_statuses(&dir, &selected, &discovered, &runs))
 }
 
+/// Запуск выбранной автозадачи с лимитом на проект (#153, этап C).
+#[tauri::command]
+fn start_automation(
+    processes: tauri::State<'_, Processes>,
+    project: String,
+    path: String,
+    source: String,
+    name: String,
+) -> Result<u64, String> {
+    let dir = std::path::PathBuf::from(&path);
+    let discovered = backend::automation::discover(&dir);
+    let command = discovered
+        .iter()
+        .find(|d| d.source == source && d.name == name)
+        .and_then(|d| d.command.clone())
+        .ok_or_else(|| format!("автозадача {name} не найдена в {path}"))?;
+    let selected = backend::config::load_checked(&dir)?
+        .and_then(|c| c.automation)
+        .map(|a| a.selected)
+        .unwrap_or_default();
+    let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
+    reg.list().map_err(|e| e.to_string())?;
+    let runs = reg.runs();
+    let statuses = backend::automation::match_statuses(&dir, &selected, &discovered, &runs);
+    backend::automation::check_start_allowed(&dir, &statuses, backend::automation::MAX_RUNNING_PER_PROJECT)?;
+    reg.start_configured(&project, &command, &dir)
+}
+
 #[tauri::command]
 fn list_processes(processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
@@ -1145,6 +1173,7 @@ pub fn run() {
             resolve_preferred_agent,
             load_automations,
             automation_statuses,
+            start_automation,
             save_automation_selection,
             resolve_project_agent_runner,
             start_agent_from_task,
