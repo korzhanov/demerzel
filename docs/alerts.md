@@ -42,7 +42,23 @@ Phase-4, issues #20–#23. Правила и политика живут в **к
 | Клик | Фокус окна + событие `alerts:open-project` с `project` (для `process_exited`) |
 | Focus/DND | Публичного API статуса Focus для non-communication apps нет — см. [ADR-002](./decisions/002-focus-mode.md); опираемся на quiet hours + фильтр macOS |
 
-Команда Tauri: `ingest_alert_event(event)` → `{ matched, decision, notified, spoken, project }`.
+Команда Tauri: `ingest_alert_event(event)` → `{ matched, decision, notified, spoken, project, autofix_offer?, autofix_started? }`.
+
+## Автофикс по алерту (#96)
+
+При `process_exited` (код ≠ 0), `port_conflict`, `tests_failed` можно предложить или запустить агента в worktree. `agent_failed` не запускает автофикс (петля).
+
+| Режим | Где | Поведение |
+|-------|-----|-----------|
+| `off` | по умолчанию | ничего |
+| `suggest` | settings / проект | UI-баннер «Исправить» в один клик |
+| `auto` | settings / проект | сразу `prepare` + CLI в фоне |
+
+Конфиг: `settings.json` → `agents.autofix`; override на проект — `orchestrator.json` → `agents.autofix`. Приоритет: проект → settings → `off`.
+
+Контекст промпта: сообщение алерта + команда + хвост логов (до 80 строк) + `git diff` рабочего дерева / прошлого run. Лимитер (#29) и ревью (#31–#32) как у запуска из задачи: результат → `needs_review` / `failed`, не в main.
+
+Событие UI: `alerts:autofix-offer`. Команда: `start_agent_from_alert(project_path, prompt, runner?)`.
 
 ## Правила по умолчанию
 

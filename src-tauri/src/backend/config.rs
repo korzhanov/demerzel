@@ -103,12 +103,15 @@ pub struct ProjectConfig {
     pub env: BTreeMap<String, String>,
 }
 
-/// Секция `agents` в `orchestrator.json` (#95).
+/// Секция `agents` в `orchestrator.json` (#95 / #96).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProjectAgentsConfig {
     /// Идентификатор раннера (`claude`, `ollama`, `codex`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,
+    /// Автофикс по алерту (#96): `off` / `suggest` / `auto`; перекрывает settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autofix: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -125,6 +128,7 @@ pub enum ConfigError {
     PulseIntervalZero,
     PulseTimeoutZero,
     UnknownAgentRunner(String),
+    UnknownAutofixMode(String),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -150,6 +154,7 @@ impl std::fmt::Display for ConfigError {
             ConfigError::PulseIntervalZero => write!(f, "pulse.interval_secs must be ≥ 1"),
             ConfigError::PulseTimeoutZero => write!(f, "pulse.timeout_secs must be ≥ 1"),
             ConfigError::UnknownAgentRunner(s) => write!(f, "unknown agents.runner '{s}'"),
+            ConfigError::UnknownAutofixMode(s) => write!(f, "unknown agents.autofix '{s}'"),
         }
     }
 }
@@ -297,6 +302,14 @@ pub fn validate_project_agents(agents: &ProjectAgentsConfig) -> Result<(), Confi
         let key = trimmed.to_ascii_lowercase();
         if !AGENT_RUNNERS.contains(&key.as_str()) {
             return Err(ConfigError::UnknownAgentRunner(raw.to_string()));
+        }
+    }
+    if let Some(raw) = agents.autofix.as_deref() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty()
+            || super::agents::AutofixMode::parse(trimmed).is_err()
+        {
+            return Err(ConfigError::UnknownAutofixMode(raw.to_string()));
         }
     }
     Ok(())
@@ -451,6 +464,29 @@ mod tests {
         }"#;
         let cfg = parse(json).unwrap();
         assert_eq!(resolve_project_agent_runner(&cfg), Some("ollama"));
+    }
+
+    #[test]
+    fn parses_project_agents_autofix() {
+        let json = r#"{
+            "name": "a",
+            "type": "app",
+            "agents": { "runner": "claude", "autofix": "suggest" }
+        }"#;
+        let cfg = parse(json).unwrap();
+        assert_eq!(
+            cfg.agents.as_ref().and_then(|a| a.autofix.as_deref()),
+            Some("suggest")
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_agents_autofix() {
+        let json = r#"{ "name": "a", "type": "app", "agents": { "autofix": "maybe" } }"#;
+        assert!(matches!(
+            parse(json),
+            Err(ConfigError::UnknownAutofixMode(_))
+        ));
     }
 
     #[test]

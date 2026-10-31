@@ -161,6 +161,7 @@ mod tests {
                 ollama_reserve_mb: 2048,
                 runner: crate::backend::agents::AgentRunner::Ollama,
                 ollama_model: "qwen2.5-coder:7b".into(),
+                autofix: crate::backend::agents::AutofixMode::Suggest,
             },
             ..Settings::default()
         };
@@ -171,6 +172,10 @@ mod tests {
         assert_eq!(loaded.agents.ollama_reserve_mb, 2048);
         assert_eq!(loaded.agents.runner, crate::backend::agents::AgentRunner::Ollama);
         assert_eq!(loaded.agents.ollama_model, "qwen2.5-coder:7b");
+        assert_eq!(
+            loaded.agents.autofix,
+            crate::backend::agents::AutofixMode::Suggest
+        );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

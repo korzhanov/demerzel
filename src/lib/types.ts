@@ -103,7 +103,18 @@ export interface AgentCatalogEntry {
   headless_supported: boolean;
 }
 
-/** Лимит параллельных агентов и порог памяти (#29); раннер Ollama (#30). */
+/** Режим автофикса по алерту (#96). */
+export type AutofixMode = "off" | "suggest" | "auto";
+
+export const AUTOFIX_MODES: readonly AutofixMode[] = [
+  "off",
+  "suggest",
+  "auto",
+] as const;
+
+export const DEFAULT_AUTOFIX_MODE: AutofixMode = "off";
+
+/** Лимит параллельных агентов и порог памяти (#29); раннер Ollama (#30); автофикс (#96). */
 export interface AgentsConfig {
   /** Одновременно Running; по умолчанию 1. */
   max_concurrent?: number;
@@ -115,6 +126,8 @@ export interface AgentsConfig {
   runner?: AgentRunner;
   /** Модель `ollama run`; по умолчанию qwen2.5-coder:7b. */
   ollama_model?: string;
+  /** Автофикс по алерту; по умолчанию `off`. */
+  autofix?: AutofixMode;
 }
 
 export const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -132,7 +145,15 @@ export function agentsConfigOrDefault(
     ollama_reserve_mb: agents?.ollama_reserve_mb ?? DEFAULT_OLLAMA_RESERVE_MB,
     runner: agents?.runner ?? DEFAULT_AGENT_RUNNER,
     ollama_model: agents?.ollama_model ?? DEFAULT_OLLAMA_MODEL,
+    autofix: agents?.autofix ?? DEFAULT_AUTOFIX_MODE,
   };
+}
+
+export function parseAutofixMode(raw: string | null | undefined): AutofixMode {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "suggest" || v === "offer" || v === "ask") return "suggest";
+  if (v === "auto" || v === "automatic") return "auto";
+  return "off";
 }
 
 export function parseAgentRunner(raw: string | null | undefined): AgentRunner {
@@ -242,6 +263,25 @@ export interface StartAgentRunResult {
   task: Task;
   queued: boolean;
   queue_reason: string | null;
+}
+
+/** Предложение автофикса из алерта (#96). */
+export interface AutofixOffer {
+  mode: AutofixMode;
+  project: string;
+  project_path: string;
+  message: string;
+  kind: AlertEventKind;
+  prompt: string;
+  command?: string | null;
+}
+
+/** Результат `start_agent_from_alert` (#96). */
+export interface StartAgentFromAlertResult {
+  run: AgentRunRecord;
+  queued: boolean;
+  queue_reason: string | null;
+  mode: AutofixMode;
 }
 
 export interface Settings {

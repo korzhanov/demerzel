@@ -192,6 +192,32 @@ impl Registry {
     pub fn logs(&self, id: u64) -> Option<Vec<LogLine>> {
         self.entries.get(&id).map(|e| e.managed.logs())
     }
+
+    /// Контекст для автофикса (#96): путь, команда, логи по имени проекта.
+    pub fn autofix_context_by_project(
+        &self,
+        project: &str,
+    ) -> Option<(std::path::PathBuf, String, Vec<LogLine>)> {
+        self.entries.values().find(|e| e.project == project).map(|e| {
+            (e.path.clone(), e.command.clone(), e.managed.logs())
+        })
+    }
+
+    /// Контекст для автофикса (#96) по выделенному порту процесса.
+    pub fn autofix_context_by_port(
+        &self,
+        port: u16,
+    ) -> Option<(std::path::PathBuf, String, Vec<LogLine>)> {
+        self.entries
+            .values()
+            .find(|e| e.port == Some(port))
+            .map(|e| (e.path.clone(), e.command.clone(), e.managed.logs()))
+    }
+
+    /// Путь проекта по id управляемого процесса.
+    pub fn path_for_id(&self, id: u64) -> Option<std::path::PathBuf> {
+        self.entries.get(&id).map(|e| e.path.clone())
+    }
 }
 
 #[cfg(test)]

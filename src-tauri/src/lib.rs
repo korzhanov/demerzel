@@ -48,6 +48,10 @@ pub struct IngestAlertResult {
     pub notified: bool,
     pub spoken: bool,
     pub project: Option<String>,
+    /// Предложение автофикса в режиме suggest (#96).
+    pub autofix_offer: Option<backend::autofix::AutofixOffer>,
+    /// Автозапуск в режиме auto (#96); run уходит в ревью, не в main.
+    pub autofix_started: Option<backend::autofix::StartAgentFromAlertResult>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -482,13 +486,72 @@ fn start_agent_from_task(
     Ok(prepared)
 }
 
-/// Оценивает событие → gate → OS notify (#22) и `say` (#23) по флагам решения.
+/// Собирает контекст автофикса (#96) из процессов / agent runs.
+fn gather_autofix_context(
+    event: &AlertEvent,
+    processes: &backend::registry::Registry,
+    runs: &backend::agents::AgentRunRegistry,
+) -> Option<backend::autofix::AlertAutofixContext> {
+    use backend::autofix::context_from_parts;
+    match event {
+        AlertEvent::ProcessExited { project, .. } => {
+            let (path, command, logs) = processes.autofix_context_by_project(project)?;
+            context_from_parts(&path, event, Some(command), Some(&logs), None).ok()
+        }
+        AlertEvent::PortConflict { port } => {
+            let (path, command, logs) = processes.autofix_context_by_port(*port)?;
+            context_from_parts(&path, event, Some(command), Some(&logs), None).ok()
+        }
+        AlertEvent::TestsFailed { run_id } => {
+            let run = runs.get(run_id)?;
+            let path = PathBuf::from(&run.project_path);
+            let logs_text = run.tests.as_ref().map(|t| t.log.clone()).filter(|s| !s.is_empty());
+            let diff = run.diff.clone().filter(|s| !s.is_empty());
+            let command = run.tests.as_ref().map(|t| t.command.clone()).filter(|s| !s.is_empty());
+            // Лог тестов уже строка — кладём как хвост без Stream.
+            let mut ctx = context_from_parts(&path, event, command, None, diff).ok()?;
+            if let Some(log) = logs_text {
+                let lines: Vec<_> = log
+                    .lines()
+                    .rev()
+                    .take(backend::autofix::DEFAULT_LOG_TAIL_LINES)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .map(|text| backend::logs::LogLine {
+                        stream: backend::logs::Stream::Stdout,
+                        text: text.to_string(),
+                    })
+                    .collect();
+                ctx.log_tail = Some(backend::autofix::format_log_tail(
+                    &lines,
+                    backend::autofix::DEFAULT_LOG_TAIL_LINES,
+                ))
+                .filter(|s| !s.is_empty());
+            }
+            Some(ctx)
+        }
+        AlertEvent::AgentFailed { .. } => None,
+    }
+}
+
+/// Оценивает событие → gate → OS notify (#22) и `say` (#23); автофикс (#96).
 #[tauri::command]
 fn ingest_alert_event(
     app: tauri::AppHandle,
     gate: tauri::State<'_, AlertGate>,
+    processes: tauri::State<'_, Processes>,
+    runs: tauri::State<'_, AgentRuns>,
+    limit: tauri::State<'_, AgentLimit>,
     event: AlertEvent,
 ) -> Result<IngestAlertResult, String> {
+    use backend::agents::{AutofixMode, DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT};
+    use backend::autofix::{
+        build_alert_autofix_prompt, decide_autofix, prepare_agent_from_alert, resolve_autofix_mode,
+        runner_for_autofix, AutofixDecision, AUTOFIX_OFFER_EVENT,
+    };
+    use std::thread;
+
     let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
     let project = notify::project_hint(&event);
     let Some(candidate) = backend::alerts::evaluate(&settings.alerts.rules, &event) else {
@@ -498,6 +561,8 @@ fn ingest_alert_event(
             notified: false,
             spoken: false,
             project,
+            autofix_offer: None,
+            autofix_started: None,
         });
     };
     let decision = {
@@ -523,13 +588,166 @@ fn ingest_alert_event(
             false
         }
     };
+
+    let mut autofix_offer = None;
+    let mut autofix_started = None;
+    if decision.emit {
+        let ctx = {
+            let reg = processes.0.lock().map_err(|e| e.to_string())?;
+            let runs_g = runs.0.lock().map_err(|e| e.to_string())?;
+            gather_autofix_context(&candidate.event, &reg, &runs_g)
+        };
+        let project_path = ctx
+            .as_ref()
+            .map(|c| PathBuf::from(&c.project_path));
+        let mode = resolve_autofix_mode(project_path.as_deref(), settings.agents.autofix);
+        match decide_autofix(&candidate, ctx, mode) {
+            AutofixDecision::Skip => {}
+            AutofixDecision::Suggest(offer) => {
+                let _ = app.emit(AUTOFIX_OFFER_EVENT, &offer);
+                autofix_offer = Some(offer);
+            }
+            AutofixDecision::AutoStart(ctx) => {
+                let path = PathBuf::from(&ctx.project_path);
+                let runner = runner_for_autofix(&path, settings.agents.runner);
+                if let Some(err) = backend::agent_catalog::runner_readiness_error(runner, None) {
+                    eprintln!("[autofix] skip auto: {err}");
+                } else {
+                    let prompt = build_alert_autofix_prompt(&ctx);
+                    let ollama_model = settings.agents.ollama_model.clone();
+                    let timeout = match runner {
+                        backend::agents::AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
+                        _ => DEFAULT_CLAUDE_TIMEOUT,
+                    };
+                    let prepared = {
+                        let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+                        let mut lim = limit.0.lock().map_err(|e| e.to_string())?;
+                        prepare_agent_from_alert(
+                            &path,
+                            &mut reg,
+                            &mut lim,
+                            Some("HEAD"),
+                            None,
+                            runner,
+                            AutofixMode::Auto,
+                        )?
+                    };
+                    if !prepared.queued {
+                        let run_id = prepared.run.id.clone();
+                        let app_handle = app.clone();
+                        thread::spawn(move || {
+                            let runs_state = app_handle.state::<AgentRuns>();
+                            let limit_state = app_handle.state::<AgentLimit>();
+                            let Ok(mut reg) = runs_state.0.lock() else {
+                                return;
+                            };
+                            let Ok(mut lim) = limit_state.0.lock() else {
+                                return;
+                            };
+                            if let Err(e) = backend::agents::complete_agent_run(
+                                &run_id,
+                                &prompt,
+                                &mut reg,
+                                &mut lim,
+                                timeout,
+                                None,
+                                Some(ollama_model.as_str()),
+                            ) {
+                                eprintln!("[autofix] complete_agent_run failed: {e}");
+                            }
+                        });
+                    }
+                    autofix_started = Some(prepared);
+                }
+            }
+        }
+    }
+
     Ok(IngestAlertResult {
         matched: true,
         decision: Some(decision.into()),
         notified,
         spoken,
         project: notify::project_hint(&candidate.event).or(project),
+        autofix_offer,
+        autofix_started,
     })
+}
+
+/// Один клик «Исправить» из предложения алерта (#96).
+#[tauri::command]
+fn start_agent_from_alert(
+    app: tauri::AppHandle,
+    runs: tauri::State<'_, AgentRuns>,
+    limit: tauri::State<'_, AgentLimit>,
+    project_path: String,
+    prompt: String,
+    runner: Option<String>,
+) -> Result<backend::autofix::StartAgentFromAlertResult, String> {
+    use backend::agents::{
+        complete_agent_run, AgentRunner, AutofixMode, DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT,
+    };
+    use backend::autofix::{prepare_agent_from_alert, runner_for_autofix};
+    use std::thread;
+
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let path = PathBuf::from(&project_path);
+    let runner = match runner.as_deref() {
+        Some(raw) => AgentRunner::parse(raw)?,
+        None => runner_for_autofix(&path, settings.agents.runner),
+    };
+    if let Some(err) = backend::agent_catalog::runner_readiness_error(runner, None) {
+        return Err(err);
+    }
+    let prompt = prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err("autofix prompt must not be empty".into());
+    }
+    let ollama_model = settings.agents.ollama_model.clone();
+    let timeout = match runner {
+        AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
+        _ => DEFAULT_CLAUDE_TIMEOUT,
+    };
+    let prepared = {
+        let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+        let mut lim = limit.0.lock().map_err(|e| e.to_string())?;
+        prepare_agent_from_alert(
+            &path,
+            &mut reg,
+            &mut lim,
+            Some("HEAD"),
+            None,
+            runner,
+            AutofixMode::Suggest,
+        )?
+    };
+    if prepared.queued {
+        return Ok(prepared);
+    }
+    let run_id = prepared.run.id.clone();
+    let app_handle = app.clone();
+    thread::spawn(move || {
+        let runs_state = app_handle.state::<AgentRuns>();
+        let limit_state = app_handle.state::<AgentLimit>();
+        let Ok(mut reg) = runs_state.0.lock() else {
+            return;
+        };
+        let Ok(mut lim) = limit_state.0.lock() else {
+            return;
+        };
+        if let Err(e) = complete_agent_run(
+            &run_id,
+            &prompt,
+            &mut reg,
+            &mut lim,
+            timeout,
+            None,
+            Some(ollama_model.as_str()),
+        ) {
+            eprintln!("[autofix] complete_agent_run failed: {e}");
+        }
+    });
+    Ok(prepared)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -592,6 +810,7 @@ pub fn run() {
             list_available_agents,
             resolve_project_agent_runner,
             start_agent_from_task,
+            start_agent_from_alert,
             ingest_alert_event
         ])
         .run(tauri::generate_context!())

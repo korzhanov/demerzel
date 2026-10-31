@@ -8,12 +8,21 @@
     AgentCatalogEntry,
     AgentRunRecord,
     AgentRunner,
+    AutofixMode,
+    AutofixOffer,
     Settings,
     PortRow,
+    StartAgentFromAlertResult,
     StartAgentRunResult,
     Task,
   } from "$lib/types";
-  import { DEFAULT_AGENT_RUNNER, parseAgentRunner } from "$lib/types";
+  import {
+    AUTOFIX_MODES,
+    DEFAULT_AGENT_RUNNER,
+    DEFAULT_AUTOFIX_MODE,
+    parseAgentRunner,
+    parseAutofixMode,
+  } from "$lib/types";
   import {
     isRunning,
     statusLabel,
@@ -21,7 +30,8 @@
     type Project,
     type ProcessRow,
   } from "$lib/types";
-  import { OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
+  import { AUTOFIX_OFFER_EVENT, OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
+  import { autofixModeLabel } from "$lib/agents";
   import { clampPortPollInterval } from "$lib/ports";
   import { canOpenTask, canStartAgentFromTask } from "$lib/tasks";
   import PortsPanel from "$lib/components/PortsPanel.svelte";
@@ -68,6 +78,11 @@
   /** Реестр CLI на машине (#95). */
   let agentCatalog = $state<AgentCatalogEntry[]>([]);
   let settingsAgentRunner = $state<AgentRunner>(DEFAULT_AGENT_RUNNER);
+  /** Режим автофикса из settings (#96). */
+  let settingsAutofix = $state<AutofixMode>(DEFAULT_AUTOFIX_MODE);
+  /** Предложение «исправить» из алерта (#96). */
+  let autofixOffer = $state<AutofixOffer | null>(null);
+  let autofixBusy = $state(false);
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
@@ -217,10 +232,64 @@
 
   async function saveRoots() {
     try {
-      await invoke("save_settings", { settings: { scan_roots: rootList() } as Settings });
+      await invoke("save_settings", {
+        settings: {
+          scan_roots: rootList(),
+          agents: { runner: settingsAgentRunner, autofix: settingsAutofix },
+        } as Settings,
+      });
     } catch (e) {
       error = String(e);
     }
+  }
+
+  async function saveAutofixMode(mode: AutofixMode) {
+    settingsAutofix = mode;
+    try {
+      const current = await invoke<Settings>("get_settings");
+      await invoke("save_settings", {
+        settings: {
+          ...current,
+          scan_roots: rootList().length ? rootList() : current.scan_roots,
+          agents: {
+            ...(current.agents ?? {}),
+            runner: settingsAgentRunner,
+            autofix: mode,
+          },
+        } as Settings,
+      });
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function confirmAutofixOffer() {
+    const offer = autofixOffer;
+    if (!offer || autofixBusy) return;
+    autofixBusy = true;
+    error = "";
+    try {
+      const result = await invoke<StartAgentFromAlertResult>("start_agent_from_alert", {
+        projectPath: offer.project_path,
+        prompt: offer.prompt,
+        runner: agentRunner,
+      });
+      autofixOffer = null;
+      if (result.queued) {
+        agentRunsError = result.queue_reason ?? "Агент в очереди (лимит / память).";
+      }
+      await refreshAgentRuns();
+      selectedAgentRunId = result.run.id;
+      tab = "agents";
+    } catch (e) {
+      error = String(e);
+    } finally {
+      autofixBusy = false;
+    }
+  }
+
+  function dismissAutofixOffer() {
+    autofixOffer = null;
   }
 
   async function scan() {
@@ -304,10 +373,20 @@
   onMount(() => {
     mounted = true;
     let unlistenOpen: (() => void) | undefined;
+    let unlistenAutofix: (() => void) | undefined;
     void (async () => {
       try {
         unlistenOpen = await listen<{ project: string }>(OPEN_PROJECT_EVENT, (ev) => {
           if (!mounted) return;
+          openProjectFromNotify(ev.payload.project);
+        });
+      } catch (e) {
+        if (mounted) error = String(e);
+      }
+      try {
+        unlistenAutofix = await listen<AutofixOffer>(AUTOFIX_OFFER_EVENT, (ev) => {
+          if (!mounted) return;
+          autofixOffer = ev.payload;
           openProjectFromNotify(ev.payload.project);
         });
       } catch (e) {
@@ -319,6 +398,7 @@
         roots = s.scan_roots.join("\n");
         settingsAgentRunner = parseAgentRunner(s.agents?.runner);
         agentRunner = settingsAgentRunner;
+        settingsAutofix = parseAutofixMode(s.agents?.autofix);
         if (roots) await scan();
       } catch (e) { if (mounted) error = String(e); }
       try {
@@ -346,6 +426,7 @@
       clearInterval(poll);
       clearInterval(portPoll);
       unlistenOpen?.();
+      unlistenAutofix?.();
     };
   });
 
@@ -407,6 +488,22 @@
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <Button class="shrink-0" onclick={scan} disabled={scanBusy}>Сканировать</Button>
         <Input class="min-w-0 flex-1 basis-32" bind:value={commandOverride} placeholder="команда (пусто = из orchestrator.json)" />
+        <label class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          <span class="shrink-0">Автофикс</span>
+          <select
+            class="h-8 min-w-0 rounded-md border bg-background px-2 text-xs text-foreground"
+            aria-label="Режим автофикса по алерту"
+            value={settingsAutofix}
+            onchange={(e) => {
+              const v = parseAutofixMode((e.currentTarget as HTMLSelectElement).value);
+              void saveAutofixMode(v);
+            }}
+          >
+            {#each AUTOFIX_MODES as mode (mode)}
+              <option value={mode}>{autofixModeLabel(mode)}</option>
+            {/each}
+          </select>
+        </label>
       </div>
       <ul class="min-w-0 space-y-0.5 overflow-x-hidden">
         {@render tree(projects, 0)}
@@ -530,6 +627,24 @@
 
   {#if error}
     <p class="break-words text-sm text-destructive">{error}</p>
+  {/if}
+
+  {#if autofixOffer}
+    <div
+      class="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="min-w-0 flex-1 break-words">
+        Автофикс: {autofixOffer.project} — {autofixOffer.message}
+      </span>
+      <Button size="sm" disabled={autofixBusy} onclick={() => void confirmAutofixOffer()}>
+        {autofixBusy ? "Запуск…" : "Исправить"}
+      </Button>
+      <Button size="sm" variant="outline" disabled={autofixBusy} onclick={dismissAutofixOffer}>
+        Отклонить
+      </Button>
+    </div>
   {/if}
 
   {#if view === "columns"}
