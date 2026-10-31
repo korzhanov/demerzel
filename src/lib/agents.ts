@@ -40,6 +40,10 @@ export function agentRunnerLabel(runner: AgentRunner | undefined | null): string
       return "OpenCode";
     case "cursor_agent":
       return "Cursor Agent";
+    case "hermes":
+      return "Hermes";
+    case "grok":
+      return "Grok CLI";
     default: {
       const _exhaustive: never = runner as never;
       return _exhaustive;

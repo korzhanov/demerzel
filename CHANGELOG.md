@@ -1,12 +1,16 @@
 # Changelog
 
+## 0.55.2 — 2026-10-31
+
+- Агенты (#140): таблица `config/agent-install.json`, UI «Агенты» (приоритет / enabled / Install → Terminal.app), `agents.catalog`, `hermes` + `grok` (unverified), Cursor binary `agent`, Gemini с пометкой про Antigravity.
+
 ## 0.55.1 — 2026-10-31
 
 - Сканер видит подпроекты-скрипты без package.json: маркеры `auto-run.json` и `Makefile` (как `parser` в 100words). Закрывает часть #153.
 
 ## 0.55.0 — 2026-10-31
 
-- Автозадачи, этап A (#153): `discover_automations` находит кандидатов в проекте — скрипты `package.json`, `[project.scripts]` из `pyproject.toml`, цели `Makefile`, наличие `auto-run.json`. Только чтение, ничего не запускает. Тесты на каждый источник.
+- Автозадачи, этап A (#153): `discover_automations` находит кандидатов в проекте — скрипты `package.json`, `[project.scripts]` из `pyproject.toml`, цели `Makefile`, файл `auto-run.json`. Только чтение, ничего не запускает. Тесты на каждый источник.
 
 ## 0.54.9 — 2026-10-31
 

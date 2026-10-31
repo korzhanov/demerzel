@@ -287,6 +287,9 @@ const AGENT_RUNNERS: &[&str] = &[
     "opencode",
     "cursor_agent",
     "cursor-agent",
+    "agent",
+    "hermes",
+    "grok",
     "ollama",
 ];
 

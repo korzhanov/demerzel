@@ -45,6 +45,8 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       "aider",
       "opencode",
       "cursor_agent",
+      "hermes",
+      "grok",
       "ollama",
     ]);
     expect(DEFAULT_AUTOFIX_MODE).toBe("off");
@@ -56,6 +58,7 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       runner: "claude",
       ollama_model: "qwen2.5-coder:7b",
       autofix: "off",
+      catalog: [],
     });
   });
 
@@ -67,6 +70,7 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       runner: "claude",
       ollama_model: "qwen2.5-coder:7b",
       autofix: "off",
+      catalog: [],
     });
   });
 

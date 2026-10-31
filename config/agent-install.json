@@ -1,0 +1,107 @@
+{
+  "$schema_comment": "Таблица установки CLI-агентов (#140). Обновлять без релиза логики детекта.",
+  "terminal_default": "Terminal.app",
+  "agents": [
+    {
+      "runner": "claude",
+      "binary": "claude",
+      "binaries": ["claude"],
+      "install": null,
+      "update": null,
+      "install_hint": "Установите Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code",
+      "verified": true,
+      "headless_supported": true,
+      "notes": null
+    },
+    {
+      "runner": "cursor_agent",
+      "binary": "agent",
+      "binaries": ["agent", "cursor-agent"],
+      "install": "curl https://cursor.com/install -fsS | bash",
+      "update": "agent update",
+      "install_hint": "curl https://cursor.com/install -fsS | bash  (обновление: agent update)",
+      "verified": true,
+      "headless_supported": false,
+      "notes": "Официальный бинарник Cursor Agent — `agent`; `cursor-agent` оставляем как алиас."
+    },
+    {
+      "runner": "codex",
+      "binary": "codex",
+      "binaries": ["codex"],
+      "install": "brew install --cask codex",
+      "install_alt": "npm install -g @openai/codex",
+      "update": null,
+      "install_hint": "brew install --cask codex  или  npm install -g @openai/codex",
+      "verified": true,
+      "headless_supported": false,
+      "notes": null
+    },
+    {
+      "runner": "hermes",
+      "binary": "hermes",
+      "binaries": ["hermes"],
+      "install": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+      "update": "hermes update",
+      "install_hint": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash  (обновление: hermes update)",
+      "verified": true,
+      "headless_supported": false,
+      "notes": null
+    },
+    {
+      "runner": "opencode",
+      "binary": "opencode",
+      "binaries": ["opencode"],
+      "install": "brew install anomalyco/tap/opencode",
+      "install_alt": "curl -fsSL https://opencode.ai/install | bash",
+      "update": null,
+      "install_hint": "brew install anomalyco/tap/opencode  или  curl -fsSL https://opencode.ai/install | bash",
+      "verified": true,
+      "headless_supported": false,
+      "notes": null
+    },
+    {
+      "runner": "gemini",
+      "binary": "gemini",
+      "binaries": ["gemini"],
+      "install": "npm install -g @google/gemini-cli",
+      "update": null,
+      "install_hint": "npm install -g @google/gemini-cli  (free tier: с 2026-06-18 Google рекомендует Antigravity CLI — Demerzel пока держит Gemini CLI)",
+      "verified": true,
+      "headless_supported": false,
+      "notes": "Решение #140: оставляем Gemini CLI; Antigravity — отдельным runner позже, если появится стабильный бинарник."
+    },
+    {
+      "runner": "aider",
+      "binary": "aider",
+      "binaries": ["aider"],
+      "install": "pipx install aider-chat",
+      "update": null,
+      "install_hint": "pipx install aider-chat — https://aider.chat",
+      "verified": true,
+      "headless_supported": false,
+      "notes": null
+    },
+    {
+      "runner": "ollama",
+      "binary": "ollama",
+      "binaries": ["ollama"],
+      "install": null,
+      "update": null,
+      "install_hint": "Установите Ollama: https://ollama.com",
+      "verified": true,
+      "headless_supported": true,
+      "notes": null
+    },
+    {
+      "runner": "grok",
+      "binary": "grok",
+      "binaries": ["grok"],
+      "install": "curl -fsSL https://x.ai/cli/install.sh | bash",
+      "update": null,
+      "install_hint": "curl -fsSL https://x.ai/cli/install.sh | bash — НЕ подтверждено на docs.x.ai (third-party); сверить перед продакшеном",
+      "verified": false,
+      "headless_supported": false,
+      "notes": "Unverified install URL. Confirm at docs.x.ai/build/overview before relying."
+    }
+  ]
+}

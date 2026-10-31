@@ -80,6 +80,8 @@ export type AgentRunner =
   | "aider"
   | "opencode"
   | "cursor_agent"
+  | "hermes"
+  | "grok"
   | "ollama";
 
 export const AGENT_RUNNERS: readonly AgentRunner[] = [
@@ -89,6 +91,8 @@ export const AGENT_RUNNERS: readonly AgentRunner[] = [
   "aider",
   "opencode",
   "cursor_agent",
+  "hermes",
+  "grok",
   "ollama",
 ] as const;
 
@@ -128,6 +132,8 @@ export interface AgentsConfig {
   ollama_model?: string;
   /** Автофикс по алерту; по умолчанию `off`. */
   autofix?: AutofixMode;
+  /** Порядок и включение агентов (#140). */
+  catalog?: { runner: AgentRunner; enabled: boolean }[];
 }
 
 export const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -146,6 +152,7 @@ export function agentsConfigOrDefault(
     runner: agents?.runner ?? DEFAULT_AGENT_RUNNER,
     ollama_model: agents?.ollama_model ?? DEFAULT_OLLAMA_MODEL,
     autofix: agents?.autofix ?? DEFAULT_AUTOFIX_MODE,
+    catalog: agents?.catalog ?? [],
   };
 }
 
@@ -158,7 +165,7 @@ export function parseAutofixMode(raw: string | null | undefined): AutofixMode {
 
 export function parseAgentRunner(raw: string | null | undefined): AgentRunner {
   const v = (raw ?? "").trim().toLowerCase();
-  if (v === "cursor-agent") return "cursor_agent";
+  if (v === "cursor-agent" || v === "agent") return "cursor_agent";
   if ((AGENT_RUNNERS as readonly string[]).includes(v)) {
     return v as AgentRunner;
   }

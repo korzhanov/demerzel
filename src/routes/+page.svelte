@@ -57,7 +57,13 @@
   import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
   import StatusSummary from "$lib/components/StatusSummary.svelte";
   import ScanSettingsDialog from "$lib/components/ScanSettingsDialog.svelte";
+  import AgentsSettingsDialog from "$lib/components/AgentsSettingsDialog.svelte";
   import LogsLayer from "$lib/components/LogsLayer.svelte";
+  import {
+    mergeCatalogPrefs,
+    type AgentCatalogPref,
+  } from "$lib/agent-install";
+  import { AGENT_RUNNERS } from "$lib/types";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
@@ -74,12 +80,15 @@
   import AppWindowIcon from "@lucide/svelte/icons/app-window";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
+  import BotIcon from "@lucide/svelte/icons/bot";
   import { applyTheme, readStoredTheme, toggleTheme, type ThemeMode } from "$lib/theme";
 
   let scanEntries = $state<ScanRootEntry[]>([]);
   let theme = $state<ThemeMode>("dark");
   let widgetBusy = $state(false);
   let widgetMsg = $state("");
+  let agentsSettingsOpen = $state(false);
+  let agentCatalogPrefs = $state<AgentCatalogPref[]>([]);
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
   let selectedId = $state<number | null>(null);
@@ -367,6 +376,29 @@
     autofixOffer = null;
   }
 
+  async function saveAgentCatalogPrefs(next: AgentCatalogPref[]) {
+    agentCatalogPrefs = next;
+    try {
+      const current = await invoke<Settings>("get_settings");
+      await invoke("save_settings", {
+        settings: {
+          ...current,
+          agents: {
+            ...(current.agents ?? {}),
+            runner: settingsAgentRunner,
+            autofix: settingsAutofix,
+            catalog: next,
+          },
+        } as Settings,
+      });
+      const preferred = await invoke<string>("resolve_preferred_agent");
+      agentRunner = parseAgentRunner(preferred);
+      settingsAgentRunner = agentRunner;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function installWidgets() {
     widgetBusy = true;
     widgetMsg = "";
@@ -525,6 +557,13 @@
         settingsAgentRunner = parseAgentRunner(s.agents?.runner);
         agentRunner = settingsAgentRunner;
         settingsAutofix = parseAutofixMode(s.agents?.autofix);
+        agentCatalogPrefs = mergeCatalogPrefs(
+          (s.agents?.catalog ?? []).map((p) => ({
+            runner: parseAgentRunner(p.runner),
+            enabled: p.enabled !== false,
+          })),
+          AGENT_RUNNERS,
+        );
         if (rootList().length) await scan();
       } catch (e) {
         if (mounted) error = String(e);
@@ -532,6 +571,15 @@
       try {
         const catalog = await invoke<AgentCatalogEntry[]>("list_available_agents");
         if (mounted) agentCatalog = catalog;
+        try {
+          const preferred = await invoke<string>("resolve_preferred_agent");
+          if (mounted) {
+            agentRunner = parseAgentRunner(preferred);
+            settingsAgentRunner = agentRunner;
+          }
+        } catch {
+          /* optional */
+        }
       } catch (e) {
         if (mounted) taskErrors = [...taskErrors, String(e)];
       }
@@ -860,6 +908,12 @@
     onAutofixChange={saveAutofixMode}
     onPersist={saveScanEntries}
   />
+  <AgentsSettingsDialog
+    bind:open={agentsSettingsOpen}
+    bind:catalog={agentCatalog}
+    bind:prefs={agentCatalogPrefs}
+    onPersist={saveAgentCatalogPrefs}
+  />
 
   <Tooltip.Provider delayDuration={300}>
     <header
@@ -878,6 +932,24 @@
         <Badge variant="outline" role="status">Открыто из уведомления: {focusProject}</Badge>
       {/if}
       <div class="ml-auto flex flex-wrap items-center gap-1.5">
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                size="sm"
+                variant="outline"
+                class="size-8 p-0"
+                aria-label="Агенты"
+                onclick={() => (agentsSettingsOpen = true)}
+              >
+                <BotIcon class="size-4" />
+              </Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content side="bottom" align="end">Агенты: приоритет и установка</Tooltip.Content>
+        </Tooltip.Root>
+
         <Tooltip.Root>
           <Tooltip.Trigger>
             {#snippet child({ props })}

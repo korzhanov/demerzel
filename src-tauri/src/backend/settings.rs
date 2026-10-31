@@ -321,6 +321,7 @@ mod tests {
                 runner: crate::backend::agents::AgentRunner::Ollama,
                 ollama_model: "qwen2.5-coder:7b".into(),
                 autofix: crate::backend::agents::AutofixMode::Suggest,
+                catalog: vec![],
             },
             ..Settings::default()
         };

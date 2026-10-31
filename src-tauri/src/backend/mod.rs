@@ -2,6 +2,7 @@
 pub mod agents;
 pub mod automation;
 pub mod agent_catalog;
+pub mod agent_install;
 pub mod autofix;
 pub mod config;
 pub mod logs;

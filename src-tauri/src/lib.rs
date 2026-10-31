@@ -640,7 +640,30 @@ fn discover_automations(path: String) -> Vec<backend::automation::DiscoveredAuto
 /// Реестр CLI-агентов на машине: PATH + `--version`, подсказки установки (#95).
 #[tauri::command]
 fn list_available_agents() -> Vec<backend::agent_catalog::AgentCatalogEntry> {
-    backend::agent_catalog::list_available_agents(None)
+    backend::agent_install::enrich_catalog(None)
+}
+
+/// Открыть Terminal.app с командой установки агента (#140). UI подтверждает до вызова.
+#[tauri::command]
+fn open_agent_install_terminal(runner: String) -> Result<String, String> {
+    let runner = backend::agents::AgentRunner::parse(&runner)?;
+    let cmd = backend::agent_install::install_command(runner).ok_or_else(|| {
+        format!(
+            "для '{}' нет команды установки в config/agent-install.json",
+            runner.as_str()
+        )
+    })?;
+    backend::agent_install::open_install_in_terminal(&cmd)?;
+    Ok(cmd)
+}
+
+/// Первый включённый+установленный агент по `agents.catalog` (#140).
+#[tauri::command]
+fn resolve_preferred_agent(app: tauri::AppHandle) -> Result<String, String> {
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let preferred = backend::agent_install::pick_preferred_runner(&settings.agents.catalog, None)
+        .unwrap_or(settings.agents.runner);
+    Ok(preferred.as_str().to_string())
 }
 
 /// Раннер по умолчанию для проекта: `orchestrator.json` → settings (#95).
@@ -1060,6 +1083,8 @@ pub fn run() {
             discard_agent_run,
             list_available_agents,
             discover_automations,
+            open_agent_install_terminal,
+            resolve_preferred_agent,
             resolve_project_agent_runner,
             start_agent_from_task,
             start_agent_from_alert,

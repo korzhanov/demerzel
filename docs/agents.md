@@ -75,14 +75,18 @@ Override бинарника для тестов: `DEMERZEL_CLAUDE_BIN`.
 
 ## Реестр CLI (#95)
 
-Известные агенты: `claude`, `codex`, `gemini`, `aider`, `opencode`, `cursor_agent` (бинарник `cursor-agent`), `ollama`.
+Известные агенты: `claude`, `codex`, `gemini`, `aider`, `opencode`, `cursor_agent` (бинарник `agent`, алиас `cursor-agent`), `hermes`, `grok` (install URL не сверен с docs.x.ai), `ollama`.
 
 1. **Детект** — поиск в `PATH` (или `DEMERZEL_*_BIN`), затем лёгкий `--version` (не headless-сессия).
-2. **Подсказка** — если бинарника нет, `install_hint` с инструкцией установки.
-3. **Headless** — сейчас только Claude и Ollama; остальные видны в реестре/селекте как «только детект».
-4. **API** — `list_available_agents`, `resolve_project_agent_runner`, `detect_agent` / `runner_readiness_error` в `backend/agent_catalog`.
+2. **Подсказка / установка (#140)** — таблица `config/agent-install.json`; кнопка «Установить» открывает **Terminal.app** (`osascript do script`) после подтверждения команды. Терминал по умолчанию — Terminal.app (выбор позже в настройках).
+3. **Приоритет** — `agents.catalog` в settings (порядок + enabled); выключенный не вызывается; для задач/алертов — `resolve_preferred_agent` (первый enabled+установленный).
+4. **Headless** — сейчас только Claude и Ollama; остальные видны в реестре/селекте как «только детект».
+5. **API** — `list_available_agents`, `open_agent_install_terminal`, `resolve_preferred_agent`, `resolve_project_agent_runner`, `detect_agent` / `runner_readiness_error`.
 
-Тесты: фейковые исполняемые скрипты в изолированном `PATH`.
+Gemini: оставляем `gemini` CLI; free tier у Google с 2026-06-18 указывает на Antigravity CLI — отдельный runner позже.  
+Grok: в таблице с `verified: false` до сверки docs.x.ai.
+
+Тесты: фейковые исполняемые скрипты в изолированном `PATH`; `agent-install` merge/reorder/pick.
 
 ## Ollama (#30)
 

@@ -135,9 +135,12 @@ pub enum AgentRunner {
     Gemini,
     Aider,
     Opencode,
-    /// Бинарник `cursor-agent`; в JSON — `cursor_agent` или `cursor-agent`.
+    /// Бинарник `agent` (алиас `cursor-agent`); в JSON — `cursor_agent` / `cursor-agent`.
     #[serde(alias = "cursor-agent")]
     CursorAgent,
+    Hermes,
+    /// Unverified install URL (#140) — сверить docs.x.ai перед продакшеном.
+    Grok,
     Ollama,
 }
 
@@ -149,6 +152,8 @@ impl AgentRunner {
         Self::Aider,
         Self::Opencode,
         Self::CursorAgent,
+        Self::Hermes,
+        Self::Grok,
         Self::Ollama,
     ];
 
@@ -160,6 +165,8 @@ impl AgentRunner {
             Self::Aider => "aider",
             Self::Opencode => "opencode",
             Self::CursorAgent => "cursor_agent",
+            Self::Hermes => "hermes",
+            Self::Grok => "grok",
             Self::Ollama => "ollama",
         }
     }
@@ -171,7 +178,9 @@ impl AgentRunner {
             "gemini" => Ok(Self::Gemini),
             "aider" => Ok(Self::Aider),
             "opencode" | "open_code" => Ok(Self::Opencode),
-            "cursor_agent" | "cursor-agent" => Ok(Self::CursorAgent),
+            "cursor_agent" | "cursor-agent" | "agent" => Ok(Self::CursorAgent),
+            "hermes" => Ok(Self::Hermes),
+            "grok" => Ok(Self::Grok),
             "ollama" => Ok(Self::Ollama),
             other => Err(format!("unknown agent runner '{other}'")),
         }
@@ -248,6 +257,21 @@ pub struct AgentsConfig {
     /// Автофикс по алерту (#96): `off` / `suggest` / `auto`. По умолчанию выкл.
     #[serde(default)]
     pub autofix: AutofixMode,
+    /// Порядок и включение агентов в UI (#140). Пусто → все включены в порядке реестра.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub catalog: Vec<AgentCatalogPref>,
+}
+
+/// Запись приоритета агента в settings (#140).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentCatalogPref {
+    pub runner: AgentRunner,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AgentsConfig {
@@ -259,6 +283,7 @@ impl Default for AgentsConfig {
             runner: AgentRunner::Claude,
             ollama_model: DEFAULT_OLLAMA_MODEL.to_string(),
             autofix: AutofixMode::Off,
+            catalog: Vec::new(),
         }
     }
 }
@@ -2397,7 +2422,7 @@ Pages wired down:                         9000.
         );
         assert_eq!(AgentRunner::parse("codex").unwrap(), AgentRunner::Codex);
         assert!(AgentRunner::parse("gpt").is_err());
-        assert_eq!(AgentRunner::ALL.len(), 7);
+        assert_eq!(AgentRunner::ALL.len(), 9);
         assert_eq!(DEFAULT_OLLAMA_MODEL, "qwen2.5-coder:7b");
         assert_eq!(
             resolve_ollama_model(Some("  custom:tag  ")),

@@ -61,35 +61,49 @@ const AGENT_META: &[AgentCliMeta] = &[
         runner: AgentRunner::Codex,
         binary: "codex",
         env_override: "DEMERZEL_CODEX_BIN",
-        install_hint: "Установите OpenAI Codex CLI: npm i -g @openai/codex — https://github.com/openai/codex",
+        install_hint: "brew install --cask codex  или  npm install -g @openai/codex",
         headless_supported: false,
     },
     AgentCliMeta {
         runner: AgentRunner::Gemini,
         binary: "gemini",
         env_override: "DEMERZEL_GEMINI_BIN",
-        install_hint: "Установите Gemini CLI: npm i -g @google/gemini-cli — https://github.com/google-gemini/gemini-cli",
+        install_hint: "npm install -g @google/gemini-cli  (free tier → Antigravity CLI с 2026-06-18; Demerzel пока Gemini CLI)",
         headless_supported: false,
     },
     AgentCliMeta {
         runner: AgentRunner::Aider,
         binary: "aider",
         env_override: "DEMERZEL_AIDER_BIN",
-        install_hint: "Установите aider: pipx install aider-chat — https://aider.chat",
+        install_hint: "pipx install aider-chat — https://aider.chat",
         headless_supported: false,
     },
     AgentCliMeta {
         runner: AgentRunner::Opencode,
         binary: "opencode",
         env_override: "DEMERZEL_OPENCODE_BIN",
-        install_hint: "Установите OpenCode CLI: https://github.com/opencode-ai/opencode",
+        install_hint: "brew install anomalyco/tap/opencode  или  curl -fsSL https://opencode.ai/install | bash",
         headless_supported: false,
     },
     AgentCliMeta {
         runner: AgentRunner::CursorAgent,
-        binary: "cursor-agent",
+        binary: "agent",
         env_override: "DEMERZEL_CURSOR_AGENT_BIN",
-        install_hint: "Установите Cursor Agent CLI из Cursor IDE / документации Cursor",
+        install_hint: "curl https://cursor.com/install -fsS | bash  (обновление: agent update)",
+        headless_supported: false,
+    },
+    AgentCliMeta {
+        runner: AgentRunner::Hermes,
+        binary: "hermes",
+        env_override: "DEMERZEL_HERMES_BIN",
+        install_hint: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash  (hermes update)",
+        headless_supported: false,
+    },
+    AgentCliMeta {
+        runner: AgentRunner::Grok,
+        binary: "grok",
+        env_override: "DEMERZEL_GROK_BIN",
+        install_hint: "curl -fsSL https://x.ai/cli/install.sh | bash — НЕ подтверждено на docs.x.ai",
         headless_supported: false,
     },
     AgentCliMeta {
@@ -100,6 +114,21 @@ const AGENT_META: &[AgentCliMeta] = &[
         headless_supported: true,
     },
 ];
+
+/// Имена бинарников для поиска в PATH (#140: `agent` + алиас `cursor-agent`).
+pub fn binary_aliases(runner: AgentRunner) -> &'static [&'static str] {
+    match runner {
+        AgentRunner::Claude => &["claude"],
+        AgentRunner::Codex => &["codex"],
+        AgentRunner::Gemini => &["gemini"],
+        AgentRunner::Aider => &["aider"],
+        AgentRunner::Opencode => &["opencode"],
+        AgentRunner::CursorAgent => &["agent", "cursor-agent"],
+        AgentRunner::Hermes => &["hermes"],
+        AgentRunner::Grok => &["grok"],
+        AgentRunner::Ollama => &["ollama"],
+    }
+}
 
 impl AgentRunner {
     /// Метаданные CLI для раннера.
@@ -229,7 +258,9 @@ pub fn detect_agent(runner: AgentRunner, path_env: Option<&OsStr>) -> AgentCatal
         let p = PathBuf::from(ov);
         is_executable(&p).then_some(p)
     } else {
-        find_on_path(meta.binary, path_env)
+        binary_aliases(runner)
+            .iter()
+            .find_map(|name| find_on_path(name, path_env))
     };
 
     match found {
