@@ -592,8 +592,21 @@ fn process_logs(processes: tauri::State<'_, Processes>, id: u64) -> Result<Optio
 }
 
 #[tauri::command]
-fn list_ports(processes: tauri::State<'_, Processes>) -> Result<Vec<backend::ports::PortRow>, String> {
-    processes.0.lock().map_err(|e| e.to_string())?.port_inventory()
+fn list_ports(
+    processes: tauri::State<'_, Processes>,
+    paths: Option<Vec<String>>,
+) -> Result<Vec<backend::ports::PortRow>, String> {
+    let known: Vec<PathBuf> = paths
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    processes
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .port_inventory(&known)
 }
 
 #[tauri::command]

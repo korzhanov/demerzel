@@ -1,6 +1,6 @@
 /**
  * Контракт моста App Intents ↔ dem.sock (#101).
- * Production Swift: src-tauri/macos-siri/; эталон спайка: spikes/2-siri-app-intents/.
+ * Swift-реализация: src-tauri/macos-siri/ (спайк #100 удалён, история в git).
  */
 
 export type DemSockAction = "pulse" | "restart" | "status" | "up" | "down" | "sync" | "watch";
