@@ -214,6 +214,14 @@ impl Registry {
     }
 
     /// Путь проекта по id управляемого процесса.
+    /// (id, папка, команда, статус) по всем запускам; вызывать после `list`, чтобы статусы были свежими.
+    pub fn runs(&self) -> Vec<(u64, std::path::PathBuf, String, Status)> {
+        self.entries
+            .iter()
+            .map(|(id, e)| (*id, e.path.clone(), e.command.clone(), e.managed.status()))
+            .collect()
+    }
+
     pub fn path_for_id(&self, id: u64) -> Option<std::path::PathBuf> {
         self.entries.get(&id).map(|e| e.path.clone())
     }

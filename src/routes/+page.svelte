@@ -834,7 +834,7 @@
         aria-label="Команда запуска"
       />
 
-      <AutomationsPanel path={selectedProject.path} />
+      <AutomationsPanel path={selectedProject.path} name={selectedProject.name} />
 
       <div>
         <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
