@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PortRow } from "$lib/types";
-  import { canStopManagedPort, portStatusLabel } from "$lib/ports";
+  import { canStopManagedPort, isSystemPort, portStatusLabel } from "$lib/ports";
 
   interface Props {
     class?: string;
@@ -92,9 +92,13 @@
               <Table.Cell class="font-mono text-xs">{port.command}</Table.Cell>
               <Table.Cell>{port.pid}</Table.Cell>
               <Table.Cell>
-                <Badge variant={port.status === "conflict" ? "destructive" : port.status === "foreign" ? "outline" : "secondary"}>
-                  {portStatusLabel(port.status)}
-                </Badge>
+                {#if isSystemPort(port)}
+                  <Badge variant="outline" class="text-muted-foreground">системный</Badge>
+                {:else}
+                  <Badge variant={port.status === "conflict" ? "destructive" : port.status === "foreign" ? "outline" : "secondary"}>
+                    {portStatusLabel(port.status)}
+                  </Badge>
+                {/if}
               </Table.Cell>
               <Table.Cell>
                 {#if canStopManagedPort(port)}

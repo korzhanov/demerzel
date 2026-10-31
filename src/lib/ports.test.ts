@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   canStopManagedPort,
+  isSystemPort,
   clampPortPollInterval,
   portStatusLabel,
 } from "./ports";
@@ -40,5 +41,21 @@ describe("clampPortPollInterval", () => {
     expect(clampPortPollInterval(99)).toBe(60);
     expect(clampPortPollInterval(3.9)).toBe(3);
     expect(clampPortPollInterval(Number.NaN)).toBe(5);
+  });
+});
+
+describe("isSystemPort", () => {
+  test("macOS system daemons are system", () => {
+    expect(isSystemPort({ command: "rapportd", status: "foreign", managed_id: null })).toBe(true);
+  });
+  test("IDE helpers are system", () => {
+    expect(isSystemPort({ command: "Cursor Helper (Plugin)", status: "foreign", managed_id: null })).toBe(true);
+  });
+  test("a dev server is not system", () => {
+    expect(isSystemPort({ command: "node", status: "foreign", managed_id: null })).toBe(false);
+  });
+  test("managed or conflicting ports are never system", () => {
+    expect(isSystemPort({ command: "rapportd", status: "conflict", managed_id: null })).toBe(false);
+    expect(isSystemPort({ command: "rapportd", status: "ok", managed_id: 3 })).toBe(false);
   });
 });
