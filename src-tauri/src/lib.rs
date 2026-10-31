@@ -306,6 +306,88 @@ fn list_dir_children(path: String) -> Result<Vec<DirChildDto>, String> {
     Ok(out)
 }
 
+/// `.app` с `TauriWidgetExtension.appex` — для копирования в `/Applications`.
+#[cfg(target_os = "macos")]
+fn find_widget_source_app() -> Result<std::path::PathBuf, String> {
+    use std::path::{Path, PathBuf};
+
+    fn has_widget_appex(app: &Path) -> bool {
+        app.join("Contents/PlugIns/TauriWidgetExtension.appex").is_dir()
+    }
+
+    /// `…/Demerzel.app/Contents/MacOS/demerzel` → `…/Demerzel.app`
+    fn bundle_from_exe(exe: &Path) -> Option<PathBuf> {
+        let macos = exe.parent()?;
+        if macos.file_name()?.to_str()? != "MacOS" {
+            return None;
+        }
+        let contents = macos.parent()?;
+        if contents.file_name()?.to_str()? != "Contents" {
+            return None;
+        }
+        let app = contents.parent()?;
+        if app.extension()?.to_str()? != "app" {
+            return None;
+        }
+        Some(app.to_path_buf())
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // 1) Текущий бандл (уже /Applications или debug .app)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(app) = bundle_from_exe(&exe) {
+            candidates.push(app);
+        }
+        // 2) Рядом с бинарём tauri dev/build: target/{debug,release}/demerzel
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("bundle/macos/Demerzel.app"));
+        }
+    }
+
+    // 3) Путь на момент компиляции (src-tauri) — работает даже при чужом cwd
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    candidates.push(manifest.join("target/debug/bundle/macos/Demerzel.app"));
+    candidates.push(manifest.join("target/release/bundle/macos/Demerzel.app"));
+
+    // 4) cwd: корень репо или src-tauri
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("src-tauri/target/debug/bundle/macos/Demerzel.app"));
+        candidates.push(cwd.join("src-tauri/target/release/bundle/macos/Demerzel.app"));
+        candidates.push(cwd.join("target/debug/bundle/macos/Demerzel.app"));
+        candidates.push(cwd.join("target/release/bundle/macos/Demerzel.app"));
+    }
+
+    for c in &candidates {
+        if c.is_dir() && has_widget_appex(c) {
+            return Ok(c.clone());
+        }
+    }
+
+    Err(format!(
+        "Не найден Demerzel.app с TauriWidgetExtension.appex.\n\
+Соберите: bun run tauri build --debug\n\
+Искали, например: {}",
+        candidates
+            .first()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "(пусто)".into())
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn find_sign_macos_script() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let mut paths = Vec::new();
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    paths.push(manifest.join("../scripts/sign-macos.sh"));
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("scripts/sign-macos.sh"));
+        paths.push(cwd.join("../scripts/sign-macos.sh"));
+    }
+    paths.into_iter().find(|p| p.is_file())
+}
+
 /// Установка сборки в `/Applications` + ad-hoc sign, чтобы виджеты появились в Gallery.
 #[tauri::command]
 fn install_widgets() -> Result<String, String> {
@@ -316,27 +398,18 @@ fn install_widgets() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
-        let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-        let built = cwd.join("src-tauri/target/debug/bundle/macos/Demerzel.app");
-        let built_release = cwd.join("src-tauri/target/release/bundle/macos/Demerzel.app");
-        let src = if built.is_dir() {
-            built
-        } else if built_release.is_dir() {
-            built_release
-        } else {
-            return Err(
-                "Сначала соберите приложение: bun run tauri build --debug (нужен .appex в PlugIns)"
+        let src = find_widget_source_app()?;
+        let dest = std::path::PathBuf::from("/Applications/Demerzel.app");
+
+        // Уже запущено из /Applications с виджетом — только подсказка.
+        if src == dest {
+            let _ = Command::new("open").arg("/Applications/Demerzel.app").status();
+            return Ok(
+                "Виджеты уже в /Applications/Demerzel.app. Notification Center → Edit Widgets → Demerzel."
                     .into(),
             );
-        };
-        let appex = src.join("Contents/PlugIns/TauriWidgetExtension.appex");
-        if !appex.is_dir() {
-            return Err(format!(
-                "В бандле нет виджета: {}\nПересоберите с beforeBundleCommand.",
-                appex.display()
-            ));
         }
-        let dest = std::path::PathBuf::from("/Applications/Demerzel.app");
+
         if dest.exists() {
             std::fs::remove_dir_all(&dest).map_err(|e| format!("rm /Applications: {e}"))?;
         }
@@ -347,22 +420,36 @@ fn install_widgets() -> Result<String, String> {
         if !status.success() {
             return Err("cp в /Applications не удался".into());
         }
-        let sign = cwd.join("scripts/sign-macos.sh");
-        let sign_status = Command::new("bash")
-            .arg(&sign)
-            .arg("/Applications/Demerzel.app")
-            .status()
-            .map_err(|e| format!("sign-macos: {e}"))?;
-        if !sign_status.success() {
-            return Err("Ad-hoc подпись не удалась (scripts/sign-macos.sh)".into());
+
+        if let Some(sign) = find_sign_macos_script() {
+            let sign_status = Command::new("bash")
+                .arg(&sign)
+                .arg("/Applications/Demerzel.app")
+                .status()
+                .map_err(|e| format!("sign-macos: {e}"))?;
+            if !sign_status.success() {
+                return Err("Ad-hoc подпись не удалась (scripts/sign-macos.sh)".into());
+            }
+        } else {
+            // Fallback: codesign без скрипта (dev / установленный бандл без репо)
+            let _ = Command::new("codesign")
+                .args([
+                    "--force",
+                    "--deep",
+                    "--sign",
+                    "-",
+                    "/Applications/Demerzel.app",
+                ])
+                .status();
         }
+
         let _ = Command::new("open")
             .arg("/Applications/Demerzel.app")
             .status();
-        Ok(
-            "Demerzel установлен в /Applications. Откройте Edit Widgets и добавьте виджет Demerzel."
-                .into(),
-        )
+        Ok(format!(
+            "Скопировано из {} → /Applications. Edit Widgets → Demerzel.",
+            src.display()
+        ))
     }
 }
 

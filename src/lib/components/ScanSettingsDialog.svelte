@@ -268,7 +268,7 @@
             </Button>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content portalDisabled to={dialogEl ?? undefined}
+        <Tooltip.Content portalDisabled
           >{isOpen ? "Свернуть" : "Развернуть"}</Tooltip.Content
         >
       </Tooltip.Root>
@@ -306,7 +306,7 @@
             </span>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>{orchLabel(orch)}</Tooltip.Content>
+        <Tooltip.Content portalDisabled>{orchLabel(orch)}</Tooltip.Content>
       </Tooltip.Root>
 
       {#if orch === "missing"}
@@ -326,7 +326,7 @@
               </Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Создать orchestrator.json</Tooltip.Content>
+          <Tooltip.Content portalDisabled>Создать orchestrator.json</Tooltip.Content>
         </Tooltip.Root>
       {/if}
 
@@ -346,7 +346,7 @@
             </Button>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Правила скана (приоритет над предком)</Tooltip.Content>
+        <Tooltip.Content portalDisabled>Правила скана (приоритет над предком)</Tooltip.Content>
       </Tooltip.Root>
 
       {#if isRoot}
@@ -366,7 +366,7 @@
               </Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Убрать из списка</Tooltip.Content>
+          <Tooltip.Content portalDisabled>Убрать из списка</Tooltip.Content>
         </Tooltip.Root>
       {/if}
     </div>
@@ -389,7 +389,7 @@
 
 <dialog
   bind:this={dialogEl}
-  class="fixed left-1/2 top-1/2 z-50 w-[min(36rem,calc(100vw-1.5rem))] max-h-[min(90vh,40rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-border bg-card p-0 text-card-foreground shadow-lg backdrop:bg-black/55"
+  class="fixed inset-0 z-50 m-auto h-fit max-h-[min(90vh,40rem)] w-[min(36rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-border bg-card p-0 text-card-foreground shadow-lg backdrop:bg-black/55"
   aria-labelledby="scan-settings-title"
   onclose={onDialogClose}
   onclick={(e) => {
@@ -427,7 +427,7 @@
               </Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Закрыть</Tooltip.Content>
+          <Tooltip.Content portalDisabled>Закрыть</Tooltip.Content>
         </Tooltip.Root>
       </header>
 
@@ -449,7 +449,7 @@
                 </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Добавить папки через системный dirpicker</Tooltip.Content>
+            <Tooltip.Content portalDisabled>Добавить папки через системный dirpicker</Tooltip.Content>
           </Tooltip.Root>
 
           <Tooltip.Root>
@@ -469,7 +469,7 @@
                 </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Выбрать все корни</Tooltip.Content>
+            <Tooltip.Content portalDisabled>Выбрать все корни</Tooltip.Content>
           </Tooltip.Root>
 
           <Tooltip.Root>
@@ -489,7 +489,7 @@
                 </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Снять все корни</Tooltip.Content>
+            <Tooltip.Content portalDisabled>Снять все корни</Tooltip.Content>
           </Tooltip.Root>
 
           <Checkbox
@@ -559,7 +559,7 @@
               </Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content portalDisabled to={dialogEl ?? undefined}>Сканировать включённые</Tooltip.Content>
+          <Tooltip.Content portalDisabled>Сканировать включённые</Tooltip.Content>
         </Tooltip.Root>
         <Button
           type="button"
@@ -581,7 +581,7 @@
   {@const draft = target?.rules ?? {}}
   <dialog
     open
-    class="fixed left-1/2 top-1/2 z-[60] w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-4 shadow-xl backdrop:bg-black/40"
+    class="fixed inset-0 z-[60] m-auto h-fit w-[min(24rem,calc(100vw-2rem))] rounded-lg border border-border bg-card p-4 shadow-xl backdrop:bg-black/40"
     aria-label="Правила папки"
     onclick={(e) => {
       if (e.currentTarget === e.target) rulesPath = null;

@@ -19,7 +19,10 @@
 bun install                          # postinstall патчит Swift Package (нет Tests/)
 bun run tauri build --debug          # beforeBundleCommand → build-widget.sh → embed PlugIns
 bun run widget:install               # ad-hoc sign → /Applications → open
+# или кнопка «установить виджеты» в UI (install_widgets)
 ```
+
+`bundle.targets` = `["app"]` (без DMG): для виджетов нужен `.app` в `target/.../bundle/macos/`. DMG часто падает на `hdiutil … Ресурс занят` из‑за залипшего interstitial volume — для релиза при необходимости временно поставь `"all"` или `["app","dmg"]` и перед сборкой сделай `diskutil eject` залипших `/Volumes/dmg.*`.
 
 Или по шагам:
 

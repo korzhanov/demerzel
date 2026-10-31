@@ -8,9 +8,12 @@
 		class: className,
 		sideOffset = 4,
 		children,
-		/** Куда порталить (по умолчанию body). Для `<dialog>` передай сам dialog — иначе top-layer его перекрывает. */
+		/** Куда порталить (по умолчанию body). */
 		to = undefined as Element | string | undefined,
-		/** Не порталить: контент остаётся в том же top-layer, что и dialog. */
+		/**
+		 * Не порталить — нужно внутри `<dialog>` (top-layer).
+		 * Родитель dialog не должен иметь transform — иначе fixed съезжает.
+		 */
 		portalDisabled = false,
 		...restProps
 	}: ComponentProps<typeof TooltipPrimitive.Content> & {
@@ -25,14 +28,14 @@
 		data-slot="tooltip-content"
 		{sideOffset}
 		class={cn(
-			"bg-primary text-primary-foreground animate-in fade-in-0 zoom-in-95 z-[100] w-fit rounded-md px-3 py-1.5 text-xs text-balance",
+			"bg-foreground text-background animate-in fade-in-0 zoom-in-95 z-[200] w-fit max-w-[min(20rem,calc(100vw-2rem))] rounded-md px-3 py-1.5 text-xs text-balance shadow-md",
 			className
 		)}
 		{...restProps}
 	>
 		{@render children?.()}
 		<TooltipPrimitive.Arrow
-			class="bg-primary fill-primary z-[100] size-2.5 translate-y-[calc(-50%-2px)] rotate-45 rounded-[2px]"
+			class="bg-foreground fill-foreground z-[200] size-2.5 translate-y-[calc(-50%-2px)] rotate-45 rounded-[2px]"
 		/>
 	</TooltipPrimitive.Content>
 </TooltipPrimitive.Portal>
