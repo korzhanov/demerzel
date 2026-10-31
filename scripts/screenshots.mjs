@@ -1,7 +1,7 @@
 // Снимает экраны приложения в docs/screenshots/ (#screenshots-on-test).
 // Запускается из `bun test`: если Playwright недоступен — тихо пропускает шаг.
-// Нужен собранный фронтенд (`bun run build`) и Chromium для Playwright.
-import { spawn } from "node:child_process";
+// Сборку фронтенда делает сам (`bun run build`) перед снимками; нужен Chromium для Playwright.
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,14 @@ let chromium;
 try {
   ({ chromium } = await import("playwright"));
 } catch {
-  console.log("screenshots: playwright не установлен — шаг пропущен");
+  console.log("screenshots: playwright не установлен — шаг пропущен (npm i -D playwright)");
+  process.exit(0);
+}
+
+// Сборка всегда свежая: скриншоты должны показывать текущий код.
+const build = spawnSync("bun", ["run", "build"], { cwd: root, stdio: "ignore" });
+if (build.status !== 0) {
+  console.log("screenshots: сборка не удалась — шаг пропущен");
   process.exit(0);
 }
 
