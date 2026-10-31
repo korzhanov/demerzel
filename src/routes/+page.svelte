@@ -782,13 +782,13 @@
         <Button size="sm" variant="outline" onclick={() => openInEditor(selectedProject)}
           >Редактор</Button
         >
-        <Input
-          class="min-w-0 flex-1 basis-40 text-xs"
-          bind:value={commandOverride}
-          placeholder="команда (пусто = orchestrator.json)"
-          aria-label="Команда запуска"
-        />
       </div>
+      <Input
+        class="w-full min-w-0 text-xs"
+        bind:value={commandOverride}
+        placeholder="команда (пусто = orchestrator.json)"
+        aria-label="Команда запуска"
+      />
 
       <div>
         <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
