@@ -72,4 +72,4 @@ Siri / Shortcuts / Spotlight
 
 ## Эталон спайка
 
-`spikes/2-siri-app-intents/` — исходный эталон #100. Production-код: `src-tauri/macos-siri/`.
+Production-код: `src-tauri/macos-siri/`. Исходный спайк #100 удалён, см. историю git.
