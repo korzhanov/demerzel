@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish macOS universal release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Verify release tag and app versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${RELEASE_TAG#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          CONFIG_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          CARGO_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
+          FILE_VERSION="$(cat VERSION)"
+          for version in "$PACKAGE_VERSION" "$CONFIG_VERSION" "$CARGO_VERSION" "$FILE_VERSION"; do
+            if [ "$version" != "$TAG_VERSION" ]; then
+              echo "Release tag $RELEASE_TAG does not match app version $version" >&2
+              exit 1
+            fi
+          done
+
+      - name: Require updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "Configure repository secret TAURI_SIGNING_PRIVATE_KEY before publishing a release." >&2
+            exit 1
+          fi
+
+      - run: bun install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: bun run tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Demerzel ${{ github.ref_name }}
+          releaseBody: "Demerzel desktop app builds. See the assets below for the macOS installer and updater bundle."
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          args: --target universal-apple-darwin
