@@ -1093,6 +1093,7 @@ fn test_notification(app: tauri::AppHandle) -> Result<NotificationTestResult, St
     show_os_notification(&app, &payload)?;
 
     #[cfg(target_os = "macos")]
+    #[allow(clippy::needless_return)] // return нужен: на не-macOS ниже идёт другой хвост функции
     {
         use backend::speak::VoiceSpeaker;
         return Ok(

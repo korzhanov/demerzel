@@ -383,8 +383,10 @@ mod io_tests {
 
     #[test]
     fn json_and_yaml_roundtrip_keep_roots() {
-        let mut s = Settings::default();
-        s.scan_roots = vec!["/Users/demo/code".into()];
+        let mut s = Settings {
+            scan_roots: vec!["/Users/demo/code".into()],
+            ..Default::default()
+        };
         sync_scan_fields(&mut s);
         for yaml in [false, true] {
             let text = to_text(&s, yaml).unwrap();

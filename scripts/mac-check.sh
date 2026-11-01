@@ -69,7 +69,7 @@ if command -v bun >/dev/null; then
   if env -i /bin/sh -c 'command -v bun' >/dev/null 2>&1; then
     printf -- '- без PATH оболочки bun виден: да\n' >> "$REPORT"
   else
-    printf -- '- без PATH оболочки bun виден: нет (проверить фикс #133 в приложении)\n' >> "$REPORT"
+    printf -- '- без PATH оболочки bun виден: нет. Это ожидаемо: проверяется обычная оболочка, а не приложение. Фикс #133 проверяет cargo test backend::env; реальный запуск — в чеклисте reports/README.md.\n' >> "$REPORT"
   fi
 fi
 
