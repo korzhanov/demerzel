@@ -10,6 +10,7 @@ const host = process.env.TAURI_DEV_HOST;
 const appVersion = readFileSync("VERSION", "utf8").trim();
 let appCommit = "";
 try {
+  /** @param {string} cmd */
   const run = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
   appCommit = run("git rev-parse --short HEAD");
   // Незакоммиченные правки помечаются, чтобы сборку не путали с коммитом.
