@@ -429,3 +429,32 @@ mod restart_tests {
         assert!(!should_restart(&Status::Exited(1), 3, &on(3)));
     }
 }
+
+/// Общий лимит работающих процессов на все проекты (#153, этап F). Решение по умолчанию.
+pub const MAX_RUNNING_TOTAL: usize = 4;
+
+/// Проверка общего лимита по всем запускам реестра (любые процессы, включая не автозадачи).
+pub fn check_total_allowed(runs: &[(u64, std::path::PathBuf, String, crate::backend::process::Status)], limit: usize) -> Result<(), String> {
+    let running = runs
+        .iter()
+        .filter(|(_, _, _, s)| *s == crate::backend::process::Status::Running || *s == crate::backend::process::Status::Starting)
+        .count();
+    if running >= limit {
+        return Err(format!("общий лимит процессов {limit} достигнут ({running} работают); остановите что-нибудь или поднимите лимит"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod total_limit_tests {
+    use super::*;
+    use crate::backend::process::Status;
+
+    #[test]
+    fn total_cap_counts_only_running() {
+        let p = std::path::PathBuf::from("/x");
+        let mk = |s| (1u64, p.clone(), "c".to_string(), s);
+        assert!(check_total_allowed(&[mk(Status::Running), mk(Status::Exited(0))], 2).is_ok());
+        assert!(check_total_allowed(&[mk(Status::Running), mk(Status::Starting)], 2).is_err());
+    }
+}

@@ -576,6 +576,7 @@ fn start_automation(
     let runs = reg.runs();
     let statuses = backend::automation::match_statuses(&dir, &selected, &discovered, &runs);
     backend::automation::check_start_allowed(&dir, &statuses, backend::automation::MAX_RUNNING_PER_PROJECT)?;
+    backend::automation::check_total_allowed(&runs, backend::automation::MAX_RUNNING_TOTAL)?;
     reg.start_configured(&project, &command, &dir)
 }
 
