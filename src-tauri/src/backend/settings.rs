@@ -348,3 +348,55 @@ mod tests {
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }
+
+/// Формат файла по расширению: yaml/yml → YAML, иначе JSON (#settings-io).
+pub fn is_yaml_path(path: &str) -> bool {
+    let p = path.to_ascii_lowercase();
+    p.ends_with(".yaml") || p.ends_with(".yml")
+}
+
+/// Текст настроек для экспорта. Порядок полей — как в структуре.
+pub fn to_text(settings: &Settings, yaml: bool) -> Result<String, String> {
+    let mut normalized = settings.clone();
+    sync_scan_fields(&mut normalized);
+    if yaml {
+        serde_yaml::to_string(&normalized).map_err(|e| e.to_string())
+    } else {
+        serde_json::to_string_pretty(&normalized).map(|t| t + "\n").map_err(|e| e.to_string())
+    }
+}
+
+/// Разбор импортируемого файла с проверкой структуры; ошибка — с указанием места.
+pub fn from_text(text: &str, yaml: bool) -> Result<Settings, String> {
+    let mut s: Settings = if yaml {
+        serde_yaml::from_str(text).map_err(|e| format!("YAML: {e}"))?
+    } else {
+        serde_json::from_str(text).map_err(|e| format!("JSON: {e}"))?
+    };
+    sync_scan_fields(&mut s);
+    Ok(s)
+}
+
+#[cfg(test)]
+mod io_tests {
+    use super::*;
+
+    #[test]
+    fn json_and_yaml_roundtrip_keep_roots() {
+        let mut s = Settings::default();
+        s.scan_roots = vec!["/Users/demo/code".into()];
+        sync_scan_fields(&mut s);
+        for yaml in [false, true] {
+            let text = to_text(&s, yaml).unwrap();
+            let back = from_text(&text, yaml).unwrap();
+            assert_eq!(back.scan_roots, s.scan_roots, "yaml={yaml}");
+        }
+    }
+
+    #[test]
+    fn detects_yaml_extension_and_reports_bad_input() {
+        assert!(is_yaml_path("/a/b.YML"));
+        assert!(!is_yaml_path("/a/b.json"));
+        assert!(from_text("{ broken", false).unwrap_err().starts_with("JSON:"));
+    }
+}
