@@ -1183,6 +1183,16 @@ pub struct AgentRunRecord {
     pub diff: Option<String>,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
+    /// Замечания ревьюера (другой агент), если запрошено (#review).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<AgentReview>,
+}
+
+/// Ревью: кто ревьюил и текст замечаний.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentReview {
+    pub runner: AgentRunner,
+    pub text: String,
 }
 
 /// Результат «принять»: только команда для ручного merge.
@@ -1540,6 +1550,7 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         diff: None,
         started_at: Some(now_rfc3339()),
         finished_at: None,
+        review: None,
     };
     registry.upsert(record.clone())?;
 
@@ -2299,6 +2310,7 @@ Pages wired down:                         9000.
             diff: Some("diff --git a/x b/x\n".into()),
             started_at: Some("2026-10-30T10:00:00Z".into()),
             finished_at: Some("2026-10-30T10:05:00Z".into()),
+            review: None,
         }
     }
 

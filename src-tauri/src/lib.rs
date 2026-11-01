@@ -224,6 +224,58 @@ fn get_settings(app: tauri::AppHandle) -> Result<backend::settings::Settings, St
     backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())
 }
 
+/// Ревью агентом: другой установленный CLI читает diff и пишет замечания; код не меняется (#review).
+#[tauri::command]
+async fn request_agent_review(
+    runs: tauri::State<'_, AgentRuns>,
+    run_id: String,
+    reviewer: Option<String>,
+) -> Result<backend::agents::AgentReview, String> {
+    use backend::agents::{run_agent_cli, AgentReview, AgentRunner, DEFAULT_CLAUDE_TIMEOUT};
+    use backend::review::{clip_diff, pick_reviewer, review_prompt};
+
+    let record = {
+        let reg = runs.0.lock().map_err(|e| e.to_string())?;
+        reg.get(&run_id).cloned().ok_or_else(|| format!("запуск {run_id} не найден"))?
+    };
+    let worktree = record.worktree.clone().ok_or("у запуска нет worktree")?;
+    let diff = record.diff.clone().ok_or("у запуска нет diff — ревью не из чего делать")?;
+
+    let installed: Vec<AgentRunner> = backend::agent_catalog::list_available_agents(None)
+        .into_iter()
+        .filter(|e| e.available)
+        .map(|e| e.runner)
+        .collect();
+    let runner = match reviewer {
+        Some(name) => AgentRunner::parse(&name)?,
+        None => pick_reviewer(record.runner, &installed)
+            .ok_or("нет другого установленного агента для ревью")?,
+    };
+    if runner == record.runner {
+        return Err("ревьюер не должен совпадать с автором".into());
+    }
+
+    let (clipped, truncated) = clip_diff(&diff, 60_000);
+    let prompt = review_prompt(&clipped, truncated);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        run_agent_cli(runner, std::path::Path::new(&worktree), &prompt, "", DEFAULT_CLAUDE_TIMEOUT, None)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let text = result.stdout.trim().to_string();
+    if text.is_empty() {
+        return Err(format!("ревьюер не вернул текст: {}", result.stderr.trim()));
+    }
+
+    let review = AgentReview { runner, text };
+    let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
+    if let Some(mut stored) = reg.get(&run_id).cloned() {
+        stored.review = Some(review.clone());
+        reg.upsert(stored)?;
+    }
+    Ok(review)
+}
+
 /// Экспорт настроек в JSON или YAML (по расширению файла) — #settings-io.
 #[tauri::command]
 fn export_settings(app: tauri::AppHandle, path: String) -> Result<(), String> {
@@ -1270,6 +1322,7 @@ pub fn run() {
             list_ports,
             project_tasks,
             list_agent_runs,
+            request_agent_review,
             get_agent_run,
             upsert_agent_run,
             accept_agent_run,
