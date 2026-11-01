@@ -59,6 +59,7 @@
   import TasksPanel from "$lib/components/TasksPanel.svelte";
   import AgentRunsPanel from "$lib/components/AgentRunsPanel.svelte";
   import StatusSummary from "$lib/components/StatusSummary.svelte";
+  import { buildLabel } from "$lib/build-info";
   import ScanSettingsDialog from "$lib/components/ScanSettingsDialog.svelte";
   import AgentsSettingsDialog from "$lib/components/AgentsSettingsDialog.svelte";
   import AppSettingsDialog from "$lib/components/AppSettingsDialog.svelte";
@@ -975,6 +976,9 @@
       role="img"
       aria-label="DEMERZEL — The Shadow Orchestrator for Your Stack"
     ></div>
+    <p class="px-4 py-1 text-right font-mono text-[11px] text-muted-foreground" title="Версия и коммит сборки">
+      {buildLabel()}
+    </p>
   </header>
 
   {#if widgetMsg}
