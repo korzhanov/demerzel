@@ -3,6 +3,8 @@
   import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import type { Settings } from "$lib/types";
   import { Button } from "$lib/components/ui/button/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import XIcon from "@lucide/svelte/icons/x";
 
   let { open = $bindable(false) }: { open: boolean } = $props();
@@ -59,17 +61,69 @@
     }
   }
 
-  async function loadPreview() {
+  // Редкие параметры алертов (#138, вкладка «Дополнительно»). Значения по умолчанию — как в backend.
+  let dedupe = $state(600);
+  let voiceGap = $state(60);
+  let quietOn = $state(false);
+  let quietStart = $state("23:00");
+  let quietEnd = $state("08:00");
+  let timezone = $state("Europe/Berlin");
+  let loaded = $state<Settings | null>(null);
+
+  async function loadAdvanced() {
     try {
       const s = await invoke<Settings>("get_settings");
+      loaded = s;
       preview = JSON.stringify(s.alerts ?? {}, null, 2);
+      dedupe = s.alerts?.dedupe_window_secs ?? 600;
+      voiceGap = s.alerts?.voice_min_interval_secs ?? 60;
+      quietOn = s.alerts?.quiet_hours?.enabled ?? false;
+      quietStart = s.alerts?.quiet_hours?.start ?? "23:00";
+      quietEnd = s.alerts?.quiet_hours?.end ?? "08:00";
+      timezone = s.alerts?.timezone ?? "Europe/Berlin";
     } catch (e) {
-      preview = String(e);
+      error = String(e);
+    }
+  }
+
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+  async function saveAdvanced() {
+    error = "";
+    message = "";
+    if (!loaded) return;
+    if (!Number.isInteger(dedupe) || dedupe < 0 || !Number.isInteger(voiceGap) || voiceGap < 0) {
+      error = "Интервалы — целые секунды, не меньше нуля.";
+      return;
+    }
+    if (quietOn && (!HHMM.test(quietStart) || !HHMM.test(quietEnd))) {
+      error = "Тихие часы — в формате ЧЧ:ММ, например 23:00.";
+      return;
+    }
+    busy = true;
+    try {
+      const next: Settings = {
+        ...loaded,
+        alerts: {
+          ...(loaded.alerts ?? { rules: [] }),
+          dedupe_window_secs: dedupe,
+          voice_min_interval_secs: voiceGap,
+          quiet_hours: { enabled: quietOn, start: quietStart, end: quietEnd },
+          timezone: timezone.trim() || "Europe/Berlin",
+        },
+      };
+      await invoke("save_settings", { settings: next });
+      loaded = next;
+      message = "Сохранено.";
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
     }
   }
 
   $effect(() => {
-    if (open && tab === "advanced") loadPreview();
+    if (open && tab === "advanced") loadAdvanced();
   });
 </script>
 
@@ -126,13 +180,38 @@
             </div>
           </section>
         {:else}
-          <section class="space-y-2">
-            <p class="font-medium">Редко используемое</p>
-            <p class="text-muted-foreground">
-              Здесь будут настройки, которые нужны не каждый день. Сейчас показан только раздел алертов
-              в том виде, как он хранится.
-            </p>
-            <pre class="max-h-64 overflow-auto rounded-md border border-border bg-background p-2 text-xs">{preview}</pre>
+          <section class="space-y-3">
+            <p class="font-medium">Алерты: редко меняемое</p>
+            <label class="flex items-center justify-between gap-3">
+              <span>Не повторять одно и то же событие, сек</span>
+              <Input class="w-28" type="number" min="0" bind:value={dedupe} />
+            </label>
+            <label class="flex items-center justify-between gap-3">
+              <span>Минимум между голосовыми алертами, сек</span>
+              <Input class="w-28" type="number" min="0" bind:value={voiceGap} />
+            </label>
+            <label class="flex items-center justify-between gap-3">
+              <span>Часовой пояс</span>
+              <Input class="w-44" bind:value={timezone} />
+            </label>
+            <div class="flex items-center gap-2">
+              <Checkbox id="quiet-on" checked={quietOn} onCheckedChange={(v) => (quietOn = v === true)} />
+              <label for="quiet-on" class="cursor-pointer">Тихие часы</label>
+            </div>
+            {#if quietOn}
+              <div class="flex items-center gap-2 pl-6">
+                <Input class="w-24" bind:value={quietStart} aria-label="Начало тихих часов" />
+                <span class="text-muted-foreground">—</span>
+                <Input class="w-24" bind:value={quietEnd} aria-label="Конец тихих часов" />
+              </div>
+            {/if}
+            <div>
+              <Button size="sm" disabled={busy || !loaded} onclick={saveAdvanced}>Сохранить</Button>
+            </div>
+            <details class="text-xs text-muted-foreground">
+              <summary class="cursor-pointer">Сырой JSON алертов (для продвинутых)</summary>
+              <pre class="mt-2 max-h-64 overflow-auto rounded-md border border-border bg-background p-2">{preview}</pre>
+            </details>
           </section>
         {/if}
 
