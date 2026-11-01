@@ -301,6 +301,15 @@ export interface Settings {
   scan_entries?: ScanRootEntry[];
   alerts?: AlertsConfig;
   agents?: AgentsConfig;
+  system_schedules?: { enabled: boolean };
+}
+
+export interface SystemJob {
+  source: "crontab" | "launchd";
+  name: string;
+  schedule: string | null;
+  pid: number | null;
+  last_exit: number | null;
 }
 
 export interface PortRow {

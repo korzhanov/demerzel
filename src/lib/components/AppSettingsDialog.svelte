@@ -5,6 +5,7 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
+  import type { SystemJob } from "$lib/types";
   import XIcon from "@lucide/svelte/icons/x";
 
   let { open = $bindable(false) }: { open: boolean } = $props();
@@ -74,6 +75,8 @@
     try {
       const s = await invoke<Settings>("get_settings");
       loaded = s;
+      sysOn = s.system_schedules?.enabled ?? false;
+      if (sysOn) await refreshSystem();
       preview = JSON.stringify(s.alerts ?? {}, null, 2);
       dedupe = s.alerts?.dedupe_window_secs ?? 600;
       voiceGap = s.alerts?.voice_min_interval_secs ?? 60;
@@ -83,6 +86,34 @@
       timezone = s.alerts?.timezone ?? "Europe/Berlin";
     } catch (e) {
       error = String(e);
+    }
+  }
+
+  // Системные расписания (#153, этап E): по умолчанию выключено; только чтение.
+  let sysOn = $state(false);
+  let sysJobs = $state<SystemJob[]>([]);
+  let sysError = $state("");
+
+  async function toggleSystem(on: boolean) {
+    sysError = "";
+    try {
+      const current = await invoke<Settings>("get_settings");
+      const next: Settings = { ...current, system_schedules: { enabled: on } };
+      await invoke("save_settings", { settings: next });
+      sysOn = on;
+      loaded = next;
+      await refreshSystem();
+    } catch (e) {
+      sysError = String(e);
+    }
+  }
+
+  async function refreshSystem() {
+    sysError = "";
+    try {
+      sysJobs = await invoke<SystemJob[]>("system_schedules");
+    } catch (e) {
+      sysError = String(e);
     }
   }
 
@@ -207,6 +238,34 @@
             {/if}
             <div>
               <Button size="sm" disabled={busy || !loaded} onclick={saveAdvanced}>Сохранить</Button>
+            </div>
+            <div class="space-y-2 border-t border-border pt-3">
+              <p class="font-medium">Системные расписания (только чтение)</p>
+              <p class="text-xs text-muted-foreground">
+                Показывает crontab и launchd (без задач Apple). Demerzel ничего в них не меняет и не запускает.
+              </p>
+              <div class="flex items-center gap-2">
+                <Checkbox id="sys-on" checked={sysOn} onCheckedChange={(v) => toggleSystem(v === true)} />
+                <label for="sys-on" class="cursor-pointer">Показывать системные расписания</label>
+              </div>
+              {#if sysOn}
+                {#if sysError}
+                  <p class="text-xs text-destructive">{sysError}</p>
+                {:else if sysJobs.length === 0}
+                  <p class="text-xs text-muted-foreground">Ничего не найдено.</p>
+                {:else}
+                  <ul class="max-h-40 space-y-1 overflow-auto text-xs">
+                    {#each sysJobs as job (job.source + job.name)}
+                      <li class="flex min-w-0 justify-between gap-2">
+                        <span class="min-w-0 truncate font-mono" title={job.name}>{job.name}</span>
+                        <span class="shrink-0 text-muted-foreground">
+                          {job.source}{job.schedule ? ` · ${job.schedule}` : ""}{job.pid !== null ? ` · PID ${job.pid}` : ""}{job.last_exit !== null ? ` · код ${job.last_exit}` : ""}
+                        </span>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              {/if}
             </div>
             <details class="text-xs text-muted-foreground">
               <summary class="cursor-pointer">Сырой JSON алертов (для продвинутых)</summary>

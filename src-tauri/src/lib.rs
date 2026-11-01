@@ -232,6 +232,17 @@ fn export_settings(app: tauri::AppHandle, path: String) -> Result<(), String> {
     std::fs::write(&path, text).map_err(|e| e.to_string())
 }
 
+/// Системные расписания crontab и launchd — только чтение (#153, этап E).
+/// Если настройка выключена, ничего не читается и возвращается пустой список.
+#[tauri::command]
+fn system_schedules(app: tauri::AppHandle) -> Result<Vec<backend::system_schedules::SystemJob>, String> {
+    let s = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    if !s.system_schedules.enabled {
+        return Ok(Vec::new());
+    }
+    Ok(backend::system_schedules::read_system_jobs())
+}
+
 /// Читает и проверяет файл настроек; сохраняет его вызывающая сторона через save_settings.
 #[tauri::command]
 fn read_settings_file(path: String) -> Result<backend::settings::Settings, String> {
@@ -1249,6 +1260,7 @@ pub fn run() {
             get_settings,
             export_settings,
             read_settings_file,
+            system_schedules,
             save_settings,
             resolve_dev_command,
             start_process,

@@ -61,6 +61,15 @@ pub struct Settings {
     /// Запасной нативный WidgetKit: запись `summary.json` в App Group (#38).
     #[serde(default)]
     pub widgetkit: WidgetKitFallbackConfig,
+    /// Показ системных расписаний crontab и launchd, только чтение (#153, этап E). Выключено по умолчанию.
+    #[serde(default)]
+    pub system_schedules: SystemSchedulesConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemSchedulesConfig {
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 /// Убирает пустые строки и дубликаты, сохраняя порядок.
