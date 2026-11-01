@@ -8,6 +8,7 @@ pub mod config;
 pub mod logs;
 pub mod alerts;
 pub mod env;
+pub mod system_schedules;
 pub mod notify;
 pub mod speak;
 pub mod ports;
