@@ -372,7 +372,7 @@ pub fn match_statuses(
                 name: sel.name.clone(),
                 command,
                 run_id: latest.map(|r| r.0),
-                status: latest.map(|r| r.3.clone()),
+                status: latest.map(|r| r.3),
             }
         })
         .collect()
