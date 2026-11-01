@@ -224,6 +224,21 @@ fn get_settings(app: tauri::AppHandle) -> Result<backend::settings::Settings, St
     backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())
 }
 
+/// Экспорт настроек в JSON или YAML (по расширению файла) — #settings-io.
+#[tauri::command]
+fn export_settings(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let s = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let text = backend::settings::to_text(&s, backend::settings::is_yaml_path(&path))?;
+    std::fs::write(&path, text).map_err(|e| e.to_string())
+}
+
+/// Читает и проверяет файл настроек; сохраняет его вызывающая сторона через save_settings.
+#[tauri::command]
+fn read_settings_file(path: String) -> Result<backend::settings::Settings, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    backend::settings::from_text(&text, backend::settings::is_yaml_path(&path))
+}
+
 #[tauri::command]
 fn save_settings(
     app: tauri::AppHandle,
@@ -1229,6 +1244,8 @@ pub fn run() {
             get_orchestration,
             init_orchestrator,
             get_settings,
+            export_settings,
+            read_settings_file,
             save_settings,
             resolve_dev_command,
             start_process,

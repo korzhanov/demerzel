@@ -60,6 +60,7 @@
   import StatusSummary from "$lib/components/StatusSummary.svelte";
   import ScanSettingsDialog from "$lib/components/ScanSettingsDialog.svelte";
   import AgentsSettingsDialog from "$lib/components/AgentsSettingsDialog.svelte";
+  import AppSettingsDialog from "$lib/components/AppSettingsDialog.svelte";
   import LogsLayer from "$lib/components/LogsLayer.svelte";
   import {
     mergeCatalogPrefs,
@@ -83,6 +84,7 @@
   import MoonIcon from "@lucide/svelte/icons/moon";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
   import BotIcon from "@lucide/svelte/icons/bot";
+  import SettingsIcon from "@lucide/svelte/icons/settings";
   import BellRingIcon from "@lucide/svelte/icons/bell-ring";
   import {
     applyTheme,
@@ -100,6 +102,7 @@
   let notificationBusy = $state(false);
   let notificationMsg = $state("");
   let agentsSettingsOpen = $state(false);
+  let appSettingsOpen = $state(false);
   let agentCatalogPrefs = $state<AgentCatalogPref[]>([]);
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
@@ -955,6 +958,8 @@
     onAutofixChange={saveAutofixMode}
     onPersist={saveScanEntries}
   />
+  <AppSettingsDialog bind:open={appSettingsOpen} />
+
   <AgentsSettingsDialog
     bind:open={agentsSettingsOpen}
     bind:catalog={agentCatalog}
@@ -1023,6 +1028,23 @@
             <Tooltip.Content side="bottom" align="end"
               >Агенты: приоритет и установка</Tooltip.Content
             >
+          </Tooltip.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="outline"
+                  class="size-8 p-0"
+                  aria-label="Настройки приложения"
+                  onclick={() => (appSettingsOpen = true)}
+                >
+                  <SettingsIcon class="size-4" />
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content side="bottom" align="end">Настройки приложения</Tooltip.Content>
           </Tooltip.Root>
 
           <Tooltip.Root>
