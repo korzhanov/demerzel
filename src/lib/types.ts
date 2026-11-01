@@ -256,6 +256,8 @@ export interface AgentRunRecord {
   diff: string | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Замечания другого агента (#review). */
+  review?: { runner: AgentRunner; text: string } | null;
 }
 
 export interface AcceptAgentRunResult {

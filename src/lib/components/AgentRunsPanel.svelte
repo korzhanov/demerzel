@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { AgentRunRecord } from "$lib/types";
+  import type { AgentRunRecord, AgentRunner } from "$lib/types";
+  import { invoke } from "@tauri-apps/api/core";
   import {
     agentRunnerLabel,
     agentRunStatusLabel,
@@ -42,6 +43,26 @@
   function select(id: string) {
     selectedId = id;
     onSelect(id);
+  }
+
+  // Ревью другим агентом (#review): backend сохраняет его в запуске; здесь — запрос и последний ответ.
+  let reviewBusy = $state(false);
+  let reviewError = $state("");
+  let reviewFresh = $state<Record<string, { runner: AgentRunner; text: string }>>({});
+
+  async function requestReview() {
+    if (!selected || reviewBusy) return;
+    const id = selected.id;
+    reviewBusy = true;
+    reviewError = "";
+    try {
+      const rev = await invoke<{ runner: AgentRunner; text: string }>("request_agent_review", { runId: id, reviewer: null });
+      reviewFresh = { ...reviewFresh, [id]: rev };
+    } catch (e) {
+      reviewError = String(e);
+    } finally {
+      reviewBusy = false;
+    }
   }
 
   async function acceptSelected() {
@@ -144,6 +165,17 @@
           </div>
         </header>
         {#if hasAgentRunReviewPayload(selected)}
+          <div class="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={reviewBusy || !selected.diff} onclick={requestReview}>
+              {reviewBusy ? "Ревью идёт…" : "Ревью другим агентом"}
+            </Button>
+            {#if reviewError}<span class="text-xs text-destructive">{reviewError}</span>{/if}
+          </div>
+          {#if reviewFresh[selected.id] ?? selected.review}
+            {@const rev = reviewFresh[selected.id] ?? selected.review}
+            <h4 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Ревью ({agentRunnerLabel(rev!.runner)})</h4>
+            <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-background p-3 text-xs">{rev!.text}</pre>
+          {/if}
           <h4 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Diff</h4>
           <pre class="max-h-72 overflow-auto rounded-md bg-background p-3 font-mono text-xs">{selected.diff ?? "(пусто)"}</pre>
           <h4 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Лог тестов</h4>
