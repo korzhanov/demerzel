@@ -31,6 +31,7 @@
 | [widget-macos.md](widget-macos.md) | Сборка `.appex`, embed PlugIns, Widget Gallery (#103), пульс в small/medium (#98); источник опроса — [pulse.md](pulse.md) (#97) |
 | [widgetkit-fallback.md](widgetkit-fallback.md) | Native Swift WidgetKit fallback, App Group (#38) |
 | [siri-app-intents.md](siri-app-intents.md) | App Intents / Siri: AskDemerzelStatus + RestartProcess, dem.sock (#101) |
+| [releasing.md](releasing.md) | Подпись обновлений, GitHub Releases и первый updater-enabled install |
 
 ## ADR (Architecture Decision Records)
 
