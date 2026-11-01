@@ -4,7 +4,7 @@
 //! `[project.scripts]` / `[tool.poetry.scripts]`, `Makefile` → цели, `auto-run.json`
 //! (факт наличия и верхний уровень ключей). Имена, похожие на автозапуски, помечаются.
 
-use crate::backend::config::AutomationSelection;
+use crate::backend::config::{AutomationSchedule, AutomationSelection};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -158,6 +158,52 @@ pub fn save_selection(project: &Path, selected: &[AutomationSelection]) -> Resul
     fs::write(&file, text + "\n").map_err(|e| e.to_string())
 }
 
+/// Добавляет или обновляет внутреннее расписание выбранной автозадачи.
+/// Интервал ограничен 1 минутой — 30 днями; запуск выполняет Demerzel, без launchd.
+pub fn save_schedule(project: &Path, schedule: &AutomationSchedule) -> Result<(), String> {
+    if schedule.enabled && !(1..=43_200).contains(&schedule.interval_minutes) {
+        return Err("интервал должен быть от 1 минуты до 30 дней".into());
+    }
+    let file = project.join("orchestrator.json");
+    let mut doc: serde_json::Value = if file.is_file() {
+        let text = fs::read_to_string(&file).map_err(|e| e.to_string())?;
+        serde_json::from_str(&text).map_err(|e| format!("orchestrator.json: {e}"))?
+    } else {
+        let name = project
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "project".into());
+        serde_json::json!({ "name": name })
+    };
+    let obj = doc
+        .as_object_mut()
+        .ok_or_else(|| "orchestrator.json: корень должен быть объектом".to_string())?;
+    let section = obj
+        .entry("automation")
+        .or_insert_with(|| serde_json::json!({}));
+    let section = section
+        .as_object_mut()
+        .ok_or_else(|| "orchestrator.json: automation должен быть объектом".to_string())?;
+    let schedules = section
+        .entry("schedules")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or_else(|| {
+            "orchestrator.json: automation.schedules должен быть массивом".to_string()
+        })?;
+    let value = serde_json::to_value(schedule).map_err(|e| e.to_string())?;
+    if let Some(existing) = schedules
+        .iter_mut()
+        .find(|entry| entry["source"] == schedule.source && entry["name"] == schedule.name)
+    {
+        *existing = value;
+    } else {
+        schedules.push(value);
+    }
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    fs::write(&file, text + "\n").map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +291,48 @@ mod tests {
         let v: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(d.join("orchestrator.json")).unwrap()).unwrap();
         assert!(v["automation"]["selected"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn save_schedule_preserves_selection_and_restart_rule() {
+        let d = tmp("schedule");
+        fs::write(
+            d.join("orchestrator.json"),
+            r#"{"name":"parser","automation":{"selected":[{"source":"package.json","name":"pipeline"}],"restart":{"enabled":true,"max_retries":2}}}"#,
+        )
+        .unwrap();
+        save_schedule(
+            &d,
+            &AutomationSchedule {
+                source: "package.json".into(),
+                name: "pipeline".into(),
+                interval_minutes: 15,
+                enabled: true,
+            },
+        )
+        .unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(d.join("orchestrator.json")).unwrap())
+                .unwrap();
+        assert_eq!(v["automation"]["selected"][0]["name"], "pipeline");
+        assert_eq!(v["automation"]["restart"]["max_retries"], 2);
+        assert_eq!(v["automation"]["schedules"][0]["interval_minutes"], 15);
+    }
+
+    #[test]
+    fn enabled_schedule_rejects_zero_interval() {
+        let d = tmp("schedule-invalid");
+        let err = save_schedule(
+            &d,
+            &AutomationSchedule {
+                source: "package.json".into(),
+                name: "pipeline".into(),
+                interval_minutes: 0,
+                enabled: true,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("от 1 минуты"));
     }
 }
 

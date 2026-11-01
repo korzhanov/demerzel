@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import AutomationsPanel from "$lib/components/AutomationsPanel.svelte";
+  import AutomationScheduler from "$lib/components/AutomationScheduler.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
@@ -82,6 +83,7 @@
   import MoonIcon from "@lucide/svelte/icons/moon";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
   import BotIcon from "@lucide/svelte/icons/bot";
+  import BellRingIcon from "@lucide/svelte/icons/bell-ring";
   import {
     applyTheme,
     nextTheme,
@@ -95,6 +97,8 @@
   let theme = $state<ThemeMode>("dark");
   let widgetBusy = $state(false);
   let widgetMsg = $state("");
+  let notificationBusy = $state(false);
+  let notificationMsg = $state("");
   let agentsSettingsOpen = $state(false);
   let agentCatalogPrefs = $state<AgentCatalogPref[]>([]);
   let projects = $state<Project[]>([]);
@@ -417,6 +421,25 @@
       error = String(e);
     } finally {
       widgetBusy = false;
+    }
+  }
+
+  async function testNotifications() {
+    notificationBusy = true;
+    notificationMsg = "";
+    try {
+      const result = await invoke<{
+        notified: boolean;
+        spoken: boolean;
+        speak_error: string | null;
+      }>("test_notification");
+      notificationMsg = result.spoken
+        ? "Уведомление и голос запущены"
+        : `Уведомление запущено · голос: ${result.speak_error ?? "не запущен"}`;
+    } catch (e) {
+      notificationMsg = `Ошибка уведомления: ${String(e)}`;
+    } finally {
+      notificationBusy = false;
     }
   }
 
@@ -922,6 +945,7 @@
 {/snippet}
 
 <main class="relative mx-auto flex min-h-screen max-w-[1400px] flex-col">
+  <AutomationScheduler projects={flatProjects} />
   <ScanSettingsDialog
     bind:open={scanSettingsOpen}
     bind:entries={scanEntries}
@@ -950,6 +974,9 @@
   {#if widgetMsg}
     <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
   {/if}
+  {#if notificationMsg}
+    <p class="px-4 pt-2 text-sm text-muted-foreground" role="status">{notificationMsg}</p>
+  {/if}
 
   <Tooltip.Provider delayDuration={300}>
     <StatusSummary {summary} {updatedAt}>
@@ -959,6 +986,25 @@
           role="toolbar"
           aria-label="Панель окна"
         >
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="outline"
+                  class="size-8 p-0"
+                  disabled={notificationBusy}
+                  aria-label="Проверить уведомления"
+                  onclick={() => void testNotifications()}
+                >
+                  <BellRingIcon class="size-4" />
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content side="bottom" align="end">Проверить уведомление и голос</Tooltip.Content>
+          </Tooltip.Root>
+
           <Tooltip.Root>
             <Tooltip.Trigger>
               {#snippet child({ props })}

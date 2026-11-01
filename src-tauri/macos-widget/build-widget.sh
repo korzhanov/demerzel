@@ -118,6 +118,11 @@ rm -rf "$APPEX_PATH/Contents/Frameworks"
 
 # ─── Sign .appex with WidgetKit entitlements ─────────────────────────────────
 
+# Xcode debug builds include an unsigned SwiftUI preview dylib inside the
+# extension. Sign nested code before signing the containing appex.
+find "$APPEX_PATH/Contents" -type f -name '*.dylib' \
+    -exec codesign --force --options runtime --sign "$IDENTITY" {} \;
+
 if [ -f "$EXT_ENTS" ]; then
     codesign --force --options runtime --sign "$IDENTITY" \
         --entitlements "$EXT_ENTS" \

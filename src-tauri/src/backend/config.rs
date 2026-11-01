@@ -111,9 +111,22 @@ pub struct ProjectConfig {
 pub struct AutomationConfig {
     #[serde(default)]
     pub selected: Vec<AutomationSelection>,
+    /// Internal app schedule (minutes; zero/disabled means manual only).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub schedules: Vec<AutomationSchedule>,
     /// Правило перезапуска упавшей автозадачи (#153, этап D). По умолчанию выключено.
     #[serde(default)]
     pub restart: RestartRule,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationSchedule {
+    pub source: String,
+    pub name: String,
+    #[serde(default)]
+    pub interval_minutes: u32,
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 /// Перезапуск после сбоя: выключен по умолчанию, `max_retries` — сколько раз подряд пробовать.

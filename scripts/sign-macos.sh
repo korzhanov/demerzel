@@ -18,6 +18,8 @@ echo "[sign] $APP (identity=$IDENTITY)"
 codesign --force --sign "$IDENTITY" --entitlements "$ENTS" "$APP/Contents/MacOS/"*
 # Re-sign appex first (nested), then the bundle.
 if [[ -d "$APP/Contents/PlugIns/TauriWidgetExtension.appex" ]]; then
+  find "$APP/Contents/PlugIns/TauriWidgetExtension.appex/Contents" -type f -name '*.dylib' \
+    -exec codesign --force --sign "$IDENTITY" {} \;
   codesign --force --sign "$IDENTITY" \
     --entitlements "$ROOT/src-tauri/macos-widget/TauriWidgetExtension.entitlements" \
     "$APP/Contents/PlugIns/TauriWidgetExtension.appex"

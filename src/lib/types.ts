@@ -332,6 +332,11 @@ export interface AutomationSelection {
   source: string;
   name: string;
 }
+
+export interface AutomationSchedule extends AutomationSelection {
+  interval_minutes: number;
+  enabled: boolean;
+}
 export interface RestartRule {
   enabled: boolean;
   max_retries: number;
@@ -339,6 +344,7 @@ export interface RestartRule {
 export interface AutomationsView {
   discovered: DiscoveredAutomation[];
   selected: AutomationSelection[];
+  schedules: AutomationSchedule[];
   restart: RestartRule;
 }
 

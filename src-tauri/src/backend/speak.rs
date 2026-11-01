@@ -158,7 +158,14 @@ pub struct SaySpeaker;
 
 impl VoiceSpeaker for SaySpeaker {
     fn speak(&self, voice: &str, phrase: &str) -> io::Result<()> {
-        Command::new("say")
+        // GUI apps launched from Finder/Dock do not inherit a shell PATH.
+        // macOS ships `say` at a stable system path.
+        #[cfg(target_os = "macos")]
+        let executable = "/usr/bin/say";
+        #[cfg(not(target_os = "macos"))]
+        let executable = "say";
+
+        Command::new(executable)
             .arg("-v")
             .arg(voice)
             .arg(phrase)

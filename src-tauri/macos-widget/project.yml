@@ -20,7 +20,8 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: TauriWidgetExtension
+        CFBundleDisplayName: Demerzel
+        CFBundleName: Demerzel
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
@@ -33,5 +34,6 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Demerzel
+        INFOPLIST_KEY_CFBundleName: Demerzel
     dependencies:
       - package: TauriWidgets

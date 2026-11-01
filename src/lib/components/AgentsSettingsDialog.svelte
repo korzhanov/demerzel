@@ -88,35 +88,45 @@
     }
   }
 
-  function onGripDragStart(e: DragEvent, i: number) {
+  /** Индекс строки под курсором — без HTML5 DnD (WKWebView/Tauri его глушит). */
+  function rowIndexFromPoint(x: number, y: number): number | null {
+    const el = document.elementFromPoint(x, y);
+    const row = el?.closest<HTMLElement>("[data-agent-row-index]");
+    if (!row) return null;
+    const n = Number(row.dataset.agentRowIndex);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function onGripPointerDown(e: PointerEvent, i: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const grip = e.currentTarget as HTMLElement;
+    grip.setPointerCapture(e.pointerId);
     dragFrom = i;
     dragOver = i;
-    try {
-      e.dataTransfer?.setData("text/plain", String(i));
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-    } catch {
-      /* WebView без dataTransfer */
+
+    function onMove(ev: PointerEvent) {
+      const over = rowIndexFromPoint(ev.clientX, ev.clientY);
+      if (over != null) dragOver = over;
     }
-  }
 
-  function onRowDragOver(e: DragEvent, i: number) {
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    dragOver = i;
-  }
+    async function onUp(ev: PointerEvent) {
+      grip.releasePointerCapture(ev.pointerId);
+      grip.removeEventListener("pointermove", onMove);
+      grip.removeEventListener("pointerup", onUp);
+      grip.removeEventListener("pointercancel", onUp);
 
-  async function onRowDrop(e: DragEvent, to: number) {
-    e.preventDefault();
-    const from = dragFrom;
-    dragFrom = null;
-    dragOver = null;
-    if (from == null || from === to) return;
-    await persist(reorderCatalog(merged, from, to));
-  }
+      const from = dragFrom;
+      const to = rowIndexFromPoint(ev.clientX, ev.clientY) ?? dragOver;
+      dragFrom = null;
+      dragOver = null;
+      if (from == null || to == null || from === to) return;
+      await persist(reorderCatalog(merged, from, to));
+    }
 
-  function onDragEnd() {
-    dragFrom = null;
-    dragOver = null;
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onUp);
+    grip.addEventListener("pointercancel", onUp);
   }
 
   function close() {
@@ -196,6 +206,7 @@
               {@const canInstall =
                 Boolean(installRowFor(pref.runner)?.install) && !available}
               <li
+                data-agent-row-index={i}
                 class={[
                   "flex items-center gap-2 border-b border-border px-2.5 py-2.5 last:border-b-0",
                   !pref.enabled ? "opacity-70" : "",
@@ -204,8 +215,6 @@
                     : "",
                   dragFrom === i ? "opacity-50" : "",
                 ].join(" ")}
-                ondragover={(e) => onRowDragOver(e, i)}
-                ondrop={(e) => void onRowDrop(e, i)}
               >
                 <span
                   class="w-5 shrink-0 text-center font-mono text-[11px] tabular-nums text-muted-foreground"
@@ -216,10 +225,8 @@
                 <button
                   type="button"
                   class="inline-flex shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                  draggable="true"
                   aria-label={`Перетащить ${agentRunnerLabel(pref.runner)}`}
-                  ondragstart={(e) => onGripDragStart(e, i)}
-                  ondragend={onDragEnd}
+                  onpointerdown={(e) => onGripPointerDown(e, i)}
                 >
                   <GripVerticalIcon class="size-4" />
                 </button>
