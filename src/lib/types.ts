@@ -269,6 +269,21 @@ export interface AcceptAgentRunResult {
   merge_command: string;
 }
 
+/** Новая задача проекта: создаётся как issue в бэклоге (#issues). */
+export interface NewTaskInput {
+  path: string;
+  title: string;
+  body: string;
+  startAgent: boolean;
+}
+
+/** Результат `create_project_task` и `report_process_problems`: issue и, если запущен, агент. */
+export interface CreateProjectTaskResult {
+  issue: { repository: string; number: number; url: string };
+  run: StartAgentRunResult | null;
+  agent_error: string | null;
+}
+
 /** Результат `start_agent_from_task` (#33). */
 export interface StartAgentRunResult {
   run: AgentRunRecord;

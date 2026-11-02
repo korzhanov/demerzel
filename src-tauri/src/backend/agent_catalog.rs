@@ -1,19 +1,97 @@
 //! Реестр CLI-агентов на машине (#95).
 //!
-//! Детект: наличие бинарника в `PATH` (или override `DEMERZEL_*_BIN`), затем
-//! лёгкий `--version` — без headless-сессии агента. Для тестов — фейковые
-//! скрипты в изолированном `PATH`.
+//! Детект: наличие бинарника (override `DEMERZEL_*_BIN`, затем login-оболочка
+//! пользователя — тот же PATH, что во встроенном терминале, затем PATH приложения),
+//! и версия через `--version`, снятый там же. Без headless-сессии агента.
+//! Для тестов — фейковые скрипты в изолированном `PATH` (`path_env`).
 
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use super::agents::AgentRunner;
 
 /// Таймаут `--version` при детектe (не headless-прогон).
 pub const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Таймаут проверки через login-оболочку: профиль с nvm и плагинами может грузиться заметно.
+pub const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+/// Сколько секунд держим результат детекта, чтобы не запускать оболочки на каждый запрос.
+pub const CATALOG_TTL: Duration = Duration::from_secs(30);
+
+/// Маркер, которым отделяем путь из `command -v` от вывода `--version` в оболочке.
+pub const PROBE_MARK: &str = "__DEMERZEL_VERSION__";
+
+static CATALOG_CACHE: Mutex<Option<(Instant, Vec<AgentCatalogEntry>)>> = Mutex::new(None);
+
+/// Оболочка входа пользователя. Её профиль задаёт PATH (nvm, asdf, ~/.local/bin, Homebrew),
+/// которого нет в окружении приложения, запущенного из Finder.
+pub fn login_shell() -> PathBuf {
+    std::env::var_os("SHELL")
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/bin/zsh"))
+}
+
+/// Разбирает вывод проверки: путь (последняя непустая строка до маркера) и первая строка версии после него.
+pub fn parse_probe_output(text: &str) -> (Option<PathBuf>, Option<String>) {
+    let (before, after) = match text.split_once(PROBE_MARK) {
+        Some((b, a)) => (b, Some(a)),
+        None => (text, None),
+    };
+    let path = before
+        .lines()
+        .map(str::trim)
+        .rfind(|l| !l.is_empty())
+        .filter(|l| l.starts_with('/'))
+        .map(PathBuf::from);
+    let version = after.and_then(|a| {
+        a.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .map(str::to_string)
+    });
+    (path, version)
+}
+
+/// Запускает команду и ждёт не дольше `timeout`. Возвращает stdout, если процесс завершился.
+fn run_capture(mut cmd: Command, timeout: Duration) -> Option<String> {
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = cmd.spawn().ok()?;
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(_) => return None,
+        }
+    }
+    let output = child.wait_with_output().ok()?;
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Ищет агента в login-оболочке пользователя и снимает версию там же.
+/// Возвращает путь и версию, если бинарник нашёлся.
+pub fn shell_probe(name: &str) -> Option<(PathBuf, Option<String>)> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)) {
+        return None;
+    }
+    let script = format!(
+        "p=$(command -v {name}) && printf '%s\\n' \"$p\" && printf '%s\\n' '{PROBE_MARK}' && \"$p\" --version 2>&1"
+    );
+    let mut cmd = Command::new(login_shell());
+    cmd.args(["-l", "-i", "-c", &script]);
+    let out = run_capture(cmd, SHELL_PROBE_TIMEOUT)?;
+    let (path, version) = parse_probe_output(&out);
+    path.map(|p| (p, version))
+}
 
 /// Запись реестра: установлен ли агент и как его поставить, если нет.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -247,25 +325,36 @@ pub fn probe_version_with_timeout(bin: &Path, timeout: Duration) -> Option<Strin
     Some(line)
 }
 
-/// Детект одного раннера: PATH / override, затем `--version`.
+/// Детект одного раннера: override, затем login-оболочка, затем PATH приложения; версия — `--version`.
 ///
-/// `path_env` — подмена `PATH` в тестах. Override `DEMERZEL_*_BIN` имеет приоритет.
+/// `path_env` задан только в тестах: тогда оболочка не используется. Override `DEMERZEL_*_BIN` имеет приоритет.
 pub fn detect_agent(runner: AgentRunner, path_env: Option<&OsStr>) -> AgentCatalogEntry {
     let meta = runner.meta();
     let override_bin = std::env::var_os(meta.env_override).filter(|v| !v.is_empty());
 
-    let found = if let Some(ref ov) = override_bin {
+    let found: Option<(PathBuf, Option<String>)> = if let Some(ref ov) = override_bin {
         let p = PathBuf::from(ov);
-        is_executable(&p).then_some(p)
+        is_executable(&p).then_some((p, None))
+    } else if path_env.is_none() {
+        binary_aliases(runner)
+            .iter()
+            .find_map(|name| shell_probe(name))
+            .or_else(|| {
+                binary_aliases(runner)
+                    .iter()
+                    .find_map(|name| find_on_path(name, None))
+                    .map(|p| (p, None))
+            })
     } else {
         binary_aliases(runner)
             .iter()
             .find_map(|name| find_on_path(name, path_env))
+            .map(|p| (p, None))
     };
 
     match found {
-        Some(path) => {
-            let version = probe_version(&path);
+        Some((path, shell_version)) => {
+            let version = shell_version.or_else(|| probe_version(&path));
             AgentCatalogEntry {
                 runner,
                 binary: meta.binary.to_string(),
@@ -288,12 +377,32 @@ pub fn detect_agent(runner: AgentRunner, path_env: Option<&OsStr>) -> AgentCatal
     }
 }
 
-/// Полный реестр известных агентов на текущем `PATH`.
+/// Полный реестр известных агентов. Агенты проверяются параллельно; без `path_env`
+/// результат кэшируется на `CATALOG_TTL`.
 pub fn list_available_agents(path_env: Option<&OsStr>) -> Vec<AgentCatalogEntry> {
-    all_agent_meta()
-        .iter()
-        .map(|m| detect_agent(m.runner, path_env))
-        .collect()
+    if path_env.is_none()
+        && let Ok(guard) = CATALOG_CACHE.lock()
+        && let Some((at, list)) = guard.as_ref()
+        && at.elapsed() < CATALOG_TTL
+    {
+        return list.clone();
+    }
+    let list: Vec<AgentCatalogEntry> = std::thread::scope(|scope| {
+        let handles: Vec<_> = all_agent_meta()
+            .iter()
+            .map(|m| scope.spawn(move || detect_agent(m.runner, path_env)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("agent detection thread panicked"))
+            .collect()
+    });
+    if path_env.is_none()
+        && let Ok(mut guard) = CATALOG_CACHE.lock()
+    {
+        *guard = Some((Instant::now(), list.clone()));
+    }
+    list
 }
 
 /// Сообщение, если агент не установлен или headless ещё не поддержан.
@@ -332,6 +441,25 @@ mod tests {
         perms.set_mode(0o755);
         fs::set_permissions(&bin, perms).unwrap();
         bin
+    }
+
+    #[test]
+    fn parse_probe_output_takes_path_and_first_version_line() {
+        let text = "\nbanner noise\n/usr/local/bin/codex\n__DEMERZEL_VERSION__\n1.2.3 (codex)\nmore\n";
+        let (path, version) = parse_probe_output(text);
+        assert_eq!(path, Some(PathBuf::from("/usr/local/bin/codex")));
+        assert_eq!(version.as_deref(), Some("1.2.3 (codex)"));
+    }
+
+    #[test]
+    fn parse_probe_output_without_path_is_not_found() {
+        assert_eq!(parse_probe_output("zsh: command not found: claude\n"), (None, None));
+    }
+
+    #[test]
+    fn shell_probe_rejects_unsafe_names() {
+        assert!(shell_probe("bad name; rm -rf /").is_none());
+        assert!(shell_probe("").is_none());
     }
 
     #[test]

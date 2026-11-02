@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { AgentCatalogEntry, AgentRunner, Project, Task } from "$lib/types";
+  import type { AgentCatalogEntry, AgentRunRecord, AgentRunner, NewTaskInput, Project, Task } from "$lib/types";
   import { AGENT_RUNNERS } from "$lib/types";
+  import { latestRunForTask, runProgress, type RunProgress } from "$lib/run-progress";
   import {
     TASK_BOARD_COLUMNS,
     TASK_COLUMN_PREVIEW,
@@ -17,6 +18,9 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Textarea } from "$lib/components/ui/textarea/index.js";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import WandSparklesIcon from "@lucide/svelte/icons/wand-sparkles";
@@ -36,6 +40,10 @@
     onRefresh: () => void;
     onOpen: (task: Task) => void | Promise<void>;
     onStartAgent?: (task: Task) => void | Promise<void>;
+    /** Запуски агентов: по ним показываем прогресс у задач. */
+    agentRuns?: AgentRunRecord[];
+    onCreateTask?: (input: NewTaskInput) => void | Promise<void>;
+    createBusy?: boolean;
   }
 
   let {
@@ -50,7 +58,35 @@
     onRefresh,
     onOpen,
     onStartAgent,
+    agentRuns = [],
+    onCreateTask,
+    createBusy = false,
   }: Props = $props();
+
+  let newProjectPath = $state("");
+  let newTitle = $state("");
+  let newBody = $state("");
+  let newStart = $state(true);
+
+  $effect(() => {
+    if (!newProjectPath && projects.length > 0) {
+      newProjectPath = projectFilter || projects[0].path;
+    }
+  });
+
+  async function submitNewTask(e: SubmitEvent) {
+    e.preventDefault();
+    const title = newTitle.trim();
+    if (!title || !newProjectPath || !onCreateTask) return;
+    await onCreateTask({ path: newProjectPath, title, body: newBody.trim(), startAgent: newStart });
+    newTitle = "";
+    newBody = "";
+  }
+
+  function progressFor(task: Task): RunProgress | null {
+    const run = latestRunForTask(agentRuns, task.id);
+    return run ? runProgress(run) : null;
+  }
 
   const visibleTasks = $derived(filterTasksByProject(tasks, projectFilter));
   const boardSummary = $derived(formatTaskBoardSummary(countByStatus(visibleTasks)));
@@ -115,6 +151,34 @@
       </div>
     </div>
     <p class="truncate text-xs text-muted-foreground" title={task.project}>{task.project}</p>
+    {#if progressFor(task)}
+      {@const p = progressFor(task)}
+      {#if p}
+        <div class="space-y-1 pt-0.5">
+          <div class="flex justify-between gap-2 text-[11px] text-muted-foreground">
+            <span class="truncate">{p.label}</span>
+            <span class="shrink-0 tabular-nums">{p.percent}%</span>
+          </div>
+          <div
+            role="progressbar"
+            aria-label="Прогресс агента: {p.label}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={p.percent}
+            class="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+          >
+            <div
+              class={[
+                "h-full rounded-full transition-[width] duration-500",
+                p.tone === "failed" ? "bg-destructive" : p.tone === "idle" ? "bg-muted-foreground/50" : "bg-primary",
+                p.indeterminate && "animate-pulse",
+              ]}
+              style="width: {p.percent}%"
+            ></div>
+          </div>
+        </div>
+      {/if}
+    {/if}
     <Badge variant="outline" class="max-w-full truncate">{task.source}</Badge>
   </article>
 {/snippet}
@@ -182,6 +246,39 @@
         <p class="text-sm text-muted-foreground">
           Сначала выберите корневые папки и выполните сканирование.
         </p>
+      {/if}
+      {#if onCreateTask && projects.length > 0}
+        <details class="rounded-md border border-border bg-background/40 p-3 text-sm">
+          <summary class="cursor-pointer font-medium">Новая задача</summary>
+          <form class="mt-3 space-y-2" onsubmit={submitNewTask}>
+            <label class="block space-y-1">
+              <span class="text-xs text-muted-foreground">Проект</span>
+              <select
+                class="h-9 w-full min-w-0 truncate rounded-md border border-input bg-background px-2 text-sm"
+                bind:value={newProjectPath}
+              >
+                {#each projects as p (p.path)}
+                  <option value={p.path}>{p.name}</option>
+                {/each}
+              </select>
+            </label>
+            <Input bind:value={newTitle} placeholder="Что нужно сделать" aria-label="Название задачи" required />
+            <Textarea bind:value={newBody} placeholder="Описание (необязательно)" aria-label="Описание задачи" rows={3} />
+            <label class="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={newStart}
+                onCheckedChange={(v) => (newStart = v === true)}
+                aria-label="Сразу запустить агента"
+              />
+              Сразу запустить агента
+            </label>
+            <div>
+              <Button type="submit" disabled={createBusy || !newTitle.trim() || !newProjectPath}>
+                {createBusy ? "Создание…" : "Создать issue"}
+              </Button>
+            </div>
+          </form>
+        </details>
       {/if}
       <div
         class="grid min-w-0 grid-cols-1 gap-3 overflow-x-hidden md:grid-cols-2 2xl:grid-cols-4"
