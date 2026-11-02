@@ -88,6 +88,8 @@ pub struct ScanOpts {
     pub max_depth: usize,
     pub max_nesting: usize,
     pub extra_ignore: Vec<String>,
+    /// Отключённые папки: пропускаются вместе с содержимым, даже внутри включённого корня.
+    pub excluded: Vec<PathBuf>,
 }
 
 impl Default for ScanOpts {
@@ -96,6 +98,7 @@ impl Default for ScanOpts {
             max_depth: MAX_DEPTH,
             max_nesting: MAX_NESTING,
             extra_ignore: Vec::new(),
+            excluded: Vec::new(),
         }
     }
 }
@@ -150,6 +153,9 @@ fn scan_dir(
             continue;
         }
         let path = entry.path();
+        if opts.excluded.iter().any(|x| x == &path) {
+            continue;
+        }
         let names = child_names(&path)?;
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         if is_project_dir(&refs) {
@@ -180,6 +186,28 @@ fn child_names(dir: &Path) -> io::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn excluded_folder_is_skipped_inside_enabled_root() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("demerzel-scan-excl-{nanos}"));
+        for name in ["app", "skip"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+            std::fs::write(root.join(name).join("package.json"), "{}").unwrap();
+        }
+        let mut opts = ScanOpts::default();
+        opts.excluded = vec![root.join("skip")];
+        let names: Vec<String> = scan_with_opts(&root, &opts)
+            .unwrap()
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert_eq!(names, vec!["app".to_string()]);
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     #[test]
     fn permission_error_gets_hint() {

@@ -44,35 +44,46 @@ describe("flattenProjects", () => {
 });
 
 describe("projectRowStatus", () => {
+  const www = { name: "www", path: "/work/shop/www" };
+  const words = { name: "100words", path: "/work/100words" };
+
   test("idle без процесса", () => {
-    expect(projectRowStatus({ name: "www" }, [])).toEqual({
+    expect(projectRowStatus(www, [])).toEqual({
       tone: "idle",
       label: "нет процесса",
     });
   });
 
   test("ok с портом", () => {
-    const processes = [proc({ id: 1, project: "www", status: "Running", port: 5174 })];
-    expect(projectRowStatus({ name: "www" }, processes)).toEqual({
+    const processes = [proc({ id: 1, project: "www", path: www.path, status: "Running", port: 5174 })];
+    expect(projectRowStatus(www, processes)).toEqual({
       tone: "ok",
       label: ":5174",
     });
   });
 
   test("bad при Exited ≠ 0", () => {
-    const processes = [proc({ id: 2, project: "100words", status: { Exited: 1 } })];
-    expect(projectRowStatus({ name: "100words" }, processes)).toEqual({
+    const processes = [proc({ id: 2, project: "100words", path: words.path, status: { Exited: 1 } })];
+    expect(projectRowStatus(words, processes)).toEqual({
       tone: "bad",
       label: "Exited 1",
     });
   });
+
+  test("подпроект с тем же именем не получает чужой процесс", () => {
+    // Два подпроекта называются www: запущен только один, из папки shop.
+    const processes = [proc({ id: 3, project: "www", path: "/work/shop/www", status: "Running", port: 5174 })];
+    const other = { name: "www", path: "/work/blog/www" };
+    expect(projectRowStatus(other, processes)).toEqual({ tone: "idle", label: "нет процесса" });
+    expect(projectRowStatus(www, processes).tone).toBe("ok");
+  });
 });
 
 describe("processForProject", () => {
-  test("находит по имени", () => {
-    const processes = [proc({ id: 1, project: "www", status: "Running" })];
-    expect(processForProject(processes, "www")?.id).toBe(1);
-    expect(processForProject(processes, "other")).toBeUndefined();
+  test("находит по папке, а не по имени", () => {
+    const processes = [proc({ id: 1, project: "www", path: "/work/shop/www", status: "Running" })];
+    expect(processForProject(processes, { path: "/work/shop/www" })?.id).toBe(1);
+    expect(processForProject(processes, { path: "/work/blog/www" })).toBeUndefined();
   });
 });
 

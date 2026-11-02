@@ -83,8 +83,38 @@ export function entriesFromLegacyRoots(roots: readonly string[]): ScanRootEntry[
   return out;
 }
 
+/** `ancestor` — строгий предок `path` (не сама папка). */
+export function isProperAncestor(ancestor: string, path: string): boolean {
+  const a = normalizePath(ancestor);
+  const p = normalizePath(path);
+  if (a === p) return false;
+  return p.startsWith(a === "/" ? "/" : `${a}/`);
+}
+
+/**
+ * Верхний уровень списка: записи без предка среди записей. Вложенные записи
+ * (переопределения подпапок) показываются под своим родителем, а не в корне.
+ */
+export function topLevelEntries(entries: readonly ScanRootEntry[]): ScanRootEntry[] {
+  return entries.filter((e) => !entries.some((o) => isProperAncestor(o.path, e.path)));
+}
+
+/**
+ * Пути, которые реально сканируются: включённые записи, у которых нет включённого предка
+ * (его обход и так захватит эту папку).
+ */
 export function enabledRootPaths(entries: readonly ScanRootEntry[]): string[] {
-  return entries.filter((e) => e.enabled).map((e) => normalizePath(e.path));
+  return entries
+    .filter(
+      (e) =>
+        e.enabled && !entries.some((o) => o.enabled && isProperAncestor(o.path, e.path)),
+    )
+    .map((e) => normalizePath(e.path));
+}
+
+/** Отключённые папки: сканер пропускает их внутри включённых корней. */
+export function disabledPaths(entries: readonly ScanRootEntry[]): string[] {
+  return entries.filter((e) => !e.enabled).map((e) => normalizePath(e.path));
 }
 
 export function allEnabled(entries: readonly ScanRootEntry[]): boolean {
@@ -147,16 +177,29 @@ export function effectiveEnabled(entries: readonly ScanRootEntry[], path: string
   return best ? best.enabled : false;
 }
 
-/** Ставит флажок папке и всем уже загруженным подпапкам (каскад для подпунктов). */
+/**
+ * Ставит флажок папке и каскадом всем подпапкам. Подпапки не получают своих записей:
+ * их переопределения удаляются, и они наследуют значение папки. Так в списке
+ * не появляется лишних записей, а отключённая подпапка остаётся только у себя.
+ */
 export function setSubtreeEnabled(
   entries: readonly ScanRootEntry[],
   path: string,
-  descendants: readonly string[],
   enabled: boolean,
 ): ScanRootEntry[] {
-  let next = upsertEntry(entries, path, { enabled });
-  for (const d of descendants) {
-    next = upsertEntry(next, d, { enabled });
+  const norm = normalizePath(path);
+  const kept = entries.filter((e) => !isProperAncestor(norm, e.path));
+  return upsertEntry(kept, norm, { enabled });
+}
+
+/** Ставит флажок всем папкам верхнего уровня (каскад на их подпапки). */
+export function setTopLevelEnabled(
+  entries: readonly ScanRootEntry[],
+  enabled: boolean,
+): ScanRootEntry[] {
+  let next = [...entries];
+  for (const top of topLevelEntries(entries)) {
+    next = setSubtreeEnabled(next, top.path, enabled);
   }
   return next;
 }

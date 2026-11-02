@@ -364,7 +364,13 @@ fn scan_projects(app: tauri::AppHandle, roots: Vec<String>) -> Result<Vec<Projec
         let path = PathBuf::from(&root);
         let rules =
             backend::settings::resolve_rules_for_path(&root, &settings.scan_entries);
-        let opts = scanner::ScanOpts::from_rules(rules);
+        let mut opts = scanner::ScanOpts::from_rules(rules);
+        opts.excluded = settings
+            .scan_entries
+            .iter()
+            .filter(|e| !e.enabled)
+            .map(|e| PathBuf::from(backend::settings::normalize_path(&e.path)))
+            .collect();
         let found = scanner::scan_with_opts(&path, &opts).map_err(|e| {
             scanner::access_hint(&e, &path).unwrap_or_else(|| format!("{}: {e}", path.display()))
         })?;

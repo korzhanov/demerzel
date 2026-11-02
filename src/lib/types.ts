@@ -16,6 +16,8 @@ export interface Project {
 export interface ProcessRow {
   id: number;
   project: string;
+  /** Папка процесса: по ней процесс относится к проекту. */
+  path?: string;
   command: string;
   status: ProcessStatus;
   pid?: number | null;
