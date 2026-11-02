@@ -1043,7 +1043,7 @@
                   variant="outline"
                   class="size-8 p-0"
                   aria-label="Настройки приложения"
-                  onclick={() => (appSettingsOpen = true)}
+                  onclick={() => void invoke("open_settings_window").catch(() => (appSettingsOpen = true))}
                 >
                   <SettingsIcon class="size-4" />
                 </Button>

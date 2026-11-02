@@ -7,6 +7,8 @@
   import { autofixModeLabel } from "$lib/agents";
   import {
     allEnabled,
+    effectiveEnabled,
+    setSubtreeEnabled,
     enabledRootPaths,
     hasCustomRules,
     noneEnabled,
@@ -161,8 +163,21 @@
     if (willOpen) await ensureChildren(key);
   }
 
+  // Каскад: папка и все уже загруженные подпапки получают тот же флажок (#scan-cascade).
+  function loadedDescendants(path: string): string[] {
+    const out: string[] = [];
+    const walk = (p: string) => {
+      for (const kid of childrenCache[normalizePath(p)] ?? []) {
+        out.push(normalizePath(kid.path));
+        walk(kid.path);
+      }
+    };
+    walk(path);
+    return out;
+  }
+
   async function setEnabled(path: string, enabled: boolean) {
-    await persist(upsertEntry(entries, path, { enabled }));
+    await persist(setSubtreeEnabled(entries, path, loadedDescendants(path), enabled));
   }
 
   async function toggleSelectAll(wantAll: boolean) {
@@ -241,7 +256,7 @@
   {@const isOpen = !!expanded[key]}
   {@const kids = childrenCache[key]}
   {@const orch = orchOf(key)}
-  {@const checked = entry?.enabled ?? false}
+  {@const checked = effectiveEnabled(entries, key)}
   <li class="rounded-md">
     <div
       class="flex min-w-0 items-center gap-0.5 rounded-md px-1 py-0.5 hover:bg-accent/40"

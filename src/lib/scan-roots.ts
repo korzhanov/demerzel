@@ -133,3 +133,30 @@ export function hasCustomRules(entry: ScanRootEntry | null | undefined): boolean
     (r.ignore != null && r.ignore.length > 0)
   );
 }
+
+/** Включена ли папка с учётом родителей: собственная запись или ближайшая включённая/выключенная родительская. */
+export function effectiveEnabled(entries: readonly ScanRootEntry[], path: string): boolean {
+  const norm = normalizePath(path);
+  let best: ScanRootEntry | null = null;
+  for (const e of entries) {
+    const ep = normalizePath(e.path);
+    if ((norm === ep || norm.startsWith(ep + "/")) && (!best || ep.length > normalizePath(best.path).length)) {
+      best = e;
+    }
+  }
+  return best ? best.enabled : false;
+}
+
+/** Ставит флажок папке и всем уже загруженным подпапкам (каскад для подпунктов). */
+export function setSubtreeEnabled(
+  entries: readonly ScanRootEntry[],
+  path: string,
+  descendants: readonly string[],
+  enabled: boolean,
+): ScanRootEntry[] {
+  let next = upsertEntry(entries, path, { enabled });
+  for (const d of descendants) {
+    next = upsertEntry(next, d, { enabled });
+  }
+  return next;
+}
