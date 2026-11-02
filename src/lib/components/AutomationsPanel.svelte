@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import type {
+    DiscoveredAutomation,
     AutomationSchedule,
     AutomationSelection,
     AutomationStatus,
@@ -115,6 +116,39 @@
     return () => clearInterval(timer);
   });
 
+  // Запуск одного скрипта из списка (#scripts-run): отдельно от «по умолчанию».
+  let runMsg = $state("");
+  async function runOne(item: DiscoveredAutomation) {
+    actionError = "";
+    runMsg = "";
+    try {
+      await invoke("start_automation", { project: name, path, source: item.source, name: item.name });
+      runMsg = `Запущено: ${item.name}`;
+    } catch (e) {
+      actionError = `${item.name}: ${String(e)}`;
+    }
+    await refreshStatuses();
+  }
+
+  // «Запустить выбранные» — набор по умолчанию, по одному, с учётом лимита (#scripts-run).
+  async function runDefaults() {
+    actionError = "";
+    runMsg = "";
+    const items = (view?.discovered ?? []).filter((d) => d.command && isChecked(selected, d));
+    let started = 0;
+    for (const item of items) {
+      try {
+        await invoke("start_automation", { project: name, path, source: item.source, name: item.name });
+        started += 1;
+      } catch (e) {
+        actionError = `${item.name}: ${String(e)}`;
+        break;
+      }
+    }
+    runMsg = started ? `Запущено: ${started} из ${items.length}` : "Нечего запускать: отметьте скрипты по умолчанию";
+    await refreshStatuses();
+  }
+
   async function runAutomation(s: AutomationStatus) {
     actionError = "";
     try {
@@ -188,9 +222,18 @@
           <Checkbox
             id={`auto-${item.source}-${item.name}`}
             checked={isChecked(selected, item)}
+            aria-label={`По умолчанию: ${item.name}`}
             onCheckedChange={() => (selected = toggle(selected, item))}
           />
-          <label for={`auto-${item.source}-${item.name}`} class="min-w-0 cursor-pointer">
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-6 shrink-0 px-2 text-xs"
+            disabled={!item.command}
+            aria-label={`Запустить ${item.name}`}
+            onclick={() => runOne(item)}>Запустить</Button
+          >
+          <label for={`auto-${item.source}-${item.name}`} class="min-w-0 flex-1 cursor-pointer">
             <span class="font-mono text-xs">{item.name}</span>
             <span class="text-xs text-muted-foreground"> · {item.source}</span>
             {#if item.command}
@@ -220,9 +263,11 @@
         </li>
       {/each}
     </ul>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
       <Button size="sm" variant="outline" disabled={saving} onclick={save}>Сохранить</Button>
+      <Button size="sm" variant="outline" onclick={runDefaults}>Запустить выбранные</Button>
       {#if saved}<span class="text-xs text-muted-foreground">Сохранено</span>{/if}
+      {#if runMsg}<span class="text-xs text-muted-foreground">{runMsg}</span>{/if}
     </div>
     {#if statuses.length > 0}
       <p class="pt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">

@@ -8,7 +8,8 @@
   import type { SystemJob } from "$lib/types";
   import XIcon from "@lucide/svelte/icons/x";
 
-  let { open = $bindable(false) }: { open: boolean } = $props();
+  // windowed: окно самой программы (нативное окно настроек), без затемнения и с рамкой окна.
+  let { open = $bindable(false), windowed = false }: { open: boolean; windowed?: boolean } = $props();
 
   type Tab = "general" | "advanced";
   let tab = $state<Tab>("general");
@@ -160,14 +161,16 @@
 
 {#if open}
   <div
-    class="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-3"
+    class={windowed ? "flex min-h-screen flex-col" : "fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-3"}
     role="presentation"
     onclick={(e) => {
       if (e.target === e.currentTarget) close();
     }}
   >
     <div
-      class="flex max-h-[min(90vh,42rem)] w-[min(34rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-lg"
+      class={windowed
+        ? "flex min-h-screen w-full flex-col bg-card text-card-foreground"
+        : "flex max-h-[min(90vh,42rem)] w-[min(34rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-lg"}
       role="dialog"
       aria-modal="true"
       aria-labelledby="app-settings-title"

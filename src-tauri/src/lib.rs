@@ -224,6 +224,34 @@ fn get_settings(app: tauri::AppHandle) -> Result<backend::settings::Settings, St
     backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())
 }
 
+/// Открывает нативное окно настроек (маршрут /settings) или фокусирует уже открытое (#settings-window).
+#[tauri::command]
+fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("settings") {
+        win.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App("settings".into()))
+        .title("Настройки Demerzel")
+        .inner_size(560.0, 640.0)
+        .min_inner_size(480.0, 480.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Закрывает окно настроек, если оно открыто.
+#[tauri::command]
+fn close_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("settings") {
+        win.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Ревью агентом: другой установленный CLI читает diff и пишет замечания; код не меняется (#review).
 #[tauri::command]
 async fn request_agent_review(
@@ -593,16 +621,13 @@ fn start_process(
         let trimmed = command.trim();
         let use_disk = trimmed.is_empty() || trimmed == "bun run dev";
         if use_disk {
-            if let Some(resolved) = backend::config::resolve_dev_command(&cwd) {
-                resolved
-            } else if trimmed.is_empty() {
-                return Err(format!(
+            // Без реальной команды не запускаем: иначе `bun run dev` в проекте без скрипта даёт exit (1).
+            backend::config::resolve_dev_command(&cwd).ok_or_else(|| {
+                format!(
                     "нет commands.dev в {} и нет scripts.dev в package.json — укажите команду в поле «команда»",
                     backend::config::CONFIG_FILE
-                ));
-            } else {
-                trimmed.to_string()
-            }
+                )
+            })?
         } else {
             trimmed.to_string()
         }
@@ -1323,6 +1348,8 @@ pub fn run() {
             project_tasks,
             list_agent_runs,
             request_agent_review,
+            open_settings_window,
+            close_settings_window,
             get_agent_run,
             upsert_agent_run,
             accept_agent_run,

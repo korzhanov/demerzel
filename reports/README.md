@@ -18,3 +18,14 @@
 - **#141 уведомления:** системное уведомление и голос `say` приходят при падении процесса; в тихие часы — не приходят; повтор того же события в окне dedupe — один раз.
 - **#153 автозадачи:** выбрать скрипт, запустить; при лимите 2 на проект третий запуск даёт понятную ошибку; при галочке «перезапуск после сбоя» упавший скрипт поднимается снова (не больше 3 раз).
 - **#153 расписание:** если расписание включено, автозадача стартует по интервалу (проверить после слияния коммита «scheduling»).
+
+### Иконка в виджетах и Dock
+
+Если в «Edit Widgets» или в Dock старая иконка, это кеш macOS, а не файлы репозитория:
+
+    sudo rm -rf /Library/Caches/com.apple.iconservices.store
+    killall Dock
+    killall NotificationCenter 2>/dev/null
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Demerzel.app
+
+После этого переустановите приложение (`bun run widget:install`) и перезапустите виджет.
