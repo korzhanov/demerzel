@@ -14,7 +14,8 @@
     noneEnabled,
     normalizePath,
     removeEntry,
-    setAllEnabled,
+    setTopLevelEnabled,
+    topLevelEntries,
     upsertEntry,
     type DirChild,
     type OrchestrationStatus,
@@ -65,10 +66,12 @@
   let rulesPath = $state<string | null>(null);
   let pickBusy = $state(false);
   let error = $state("");
+  // Корни списка: вложенные переопределения показываются под своей папкой.
+  const topLevel = $derived(topLevelEntries(entries));
   const selectAllState = $derived(
-    allEnabled(entries) ? true : noneEnabled(entries) ? false : "indeterminate",
+    allEnabled(topLevel) ? true : noneEnabled(topLevel) ? false : "indeterminate",
   );
-  const enabledCount = $derived(enabledRootPaths(entries).length);
+  const enabledCount = $derived(topLevel.filter((e) => e.enabled).length);
 
   $effect(() => {
     const el = dialogEl;
@@ -163,25 +166,13 @@
     if (willOpen) await ensureChildren(key);
   }
 
-  // Каскад: папка и все уже загруженные подпапки получают тот же флажок (#scan-cascade).
-  function loadedDescendants(path: string): string[] {
-    const out: string[] = [];
-    const walk = (p: string) => {
-      for (const kid of childrenCache[normalizePath(p)] ?? []) {
-        out.push(normalizePath(kid.path));
-        walk(kid.path);
-      }
-    };
-    walk(path);
-    return out;
-  }
-
+  // Каскад: папка и её подпапки получают тот же флажок; у подпапок нет своих записей (#scan-cascade).
   async function setEnabled(path: string, enabled: boolean) {
-    await persist(setSubtreeEnabled(entries, path, loadedDescendants(path), enabled));
+    await persist(setSubtreeEnabled(entries, path, enabled));
   }
 
   async function toggleSelectAll(wantAll: boolean) {
-    await persist(setAllEnabled(entries, wantAll));
+    await persist(setTopLevelEnabled(entries, wantAll));
   }
 
   async function removeRoot(path: string) {
@@ -219,7 +210,8 @@
   async function openRules(path: string) {
     const key = normalizePath(path);
     if (!entryFor(key)) {
-      await persist(upsertEntry(entries, key, { enabled: false }));
+      // Запись создаётся с текущим значением: открытие правил не должно отключать папку.
+      await persist(upsertEntry(entries, key, { enabled: effectiveEnabled(entries, key) }));
     }
     rulesPath = key;
   }
@@ -515,7 +507,7 @@
           />
 
           <div class="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-            {enabledCount}/{entries.length}
+            {enabledCount}/{topLevel.length}
           </div>
         </div>
 
@@ -531,7 +523,7 @@
           </p>
         {:else}
           <ul class="space-y-0.5 rounded-md border border-border p-1">
-            {#each entries as entry (entry.path)}
+            {#each topLevel as entry (entry.path)}
               {@render treeNode(entry.path, entry.path, 0, true)}
             {/each}
           </ul>

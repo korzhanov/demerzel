@@ -25,12 +25,15 @@ export function flattenProjects(list: readonly Project[]): Project[] {
   ];
 }
 
-/** Последний известный процесс с именем проекта (как в supervisor list). */
+/**
+ * Процесс проекта. Сопоставление по папке: имена подпроектов (www, frontend) повторяются,
+ * и по имени чужой процесс подсветился бы как запущенный.
+ */
 export function processForProject(
   processes: readonly ProcessRow[],
-  projectName: string,
+  project: Pick<Project, "path">,
 ): ProcessRow | undefined {
-  return processes.find((row) => row.project === projectName);
+  return processes.find((row) => row.path === project.path);
 }
 
 function isCrashedStatus(status: ProcessStatus): boolean {
@@ -41,10 +44,10 @@ function isCrashedStatus(status: ProcessStatus): boolean {
 
 /** Точка + подпись справа в строке проекта (мокup: `:5174` / `Exited 1` / `нет конфига`). */
 export function projectRowStatus(
-  project: Pick<Project, "name">,
+  project: Pick<Project, "path">,
   processes: readonly ProcessRow[],
 ): ProjectRowStatus {
-  const row = processForProject(processes, project.name);
+  const row = processForProject(processes, project);
   if (!row) return { tone: "idle", label: "нет процесса" };
   if (isRunning(row.status)) {
     return {

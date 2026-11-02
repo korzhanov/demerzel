@@ -84,6 +84,13 @@ pub fn normalize_roots(roots: &[String]) -> Vec<String> {
     out
 }
 
+/// `ancestor` — строгий предок `path` по компонентам пути.
+pub fn is_proper_ancestor(ancestor: &str, path: &str) -> bool {
+    let a = normalize_path(ancestor);
+    let p = normalize_path(path);
+    a != p && p.starts_with(&format!("{a}/"))
+}
+
 pub fn normalize_path(path: &str) -> String {
     let t = path.trim().trim_end_matches('/');
     if t.is_empty() {
@@ -130,10 +137,16 @@ pub fn sync_scan_fields(settings: &mut Settings) {
             })
             .collect();
     }
-    settings.scan_roots = settings
-        .scan_entries
+    // Корни обхода: включённые записи без включённого предка (его обход и так захватит папку).
+    let entries = &settings.scan_entries;
+    settings.scan_roots = entries
         .iter()
-        .filter(|e| e.enabled)
+        .filter(|e| {
+            e.enabled
+                && !entries
+                    .iter()
+                    .any(|o| o.enabled && is_proper_ancestor(&o.path, &e.path))
+        })
         .map(|e| e.path.clone())
         .collect();
 }
@@ -210,6 +223,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("demerzel-settings-{}-{}", name, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir.join(SETTINGS_FILE)
+    }
+
+    #[test]
+    fn roots_skip_disabled_and_nested_enabled_entries() {
+        let mut s = Settings {
+            scan_entries: vec![
+                ScanRootEntry { path: "/work/shop".into(), enabled: true, rules: None },
+                ScanRootEntry { path: "/work/shop/www".into(), enabled: true, rules: None },
+                ScanRootEntry { path: "/work/shop/api".into(), enabled: false, rules: None },
+                ScanRootEntry { path: "/work/blog".into(), enabled: true, rules: None },
+            ],
+            ..Settings::default()
+        };
+        sync_scan_fields(&mut s);
+        assert_eq!(s.scan_roots, vec!["/work/shop".to_string(), "/work/blog".to_string()]);
     }
 
     #[test]

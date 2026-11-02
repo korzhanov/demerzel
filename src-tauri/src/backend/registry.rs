@@ -34,7 +34,10 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Row {
     pub id: u64,
+    /// Имя проекта. Не уникально: подпроекты часто называются одинаково (www, frontend).
     pub project: String,
+    /// Папка процесса. По ней сопоставляется с проектом.
+    pub path: String,
     pub command: String,
     pub status: Status,
     pub pid: Option<u32>,
@@ -256,6 +259,7 @@ impl Registry {
             rows.push(Row {
                 id: *id,
                 project: e.project.clone(),
+                path: e.path.to_string_lossy().into_owned(),
                 command: e.command.clone(),
                 status,
                 pid: e.managed.pid(),
@@ -378,9 +382,13 @@ impl Registry {
         &self,
         project: &str,
     ) -> Option<(std::path::PathBuf, String, Vec<LogLine>)> {
-        self.entries.values().find(|e| e.project == project).map(|e| {
-            (e.path.clone(), e.command.clone(), e.managed.logs())
-        })
+        // Сначала по пути (однозначно), потом по имени для старых отправителей.
+        let entry = self
+            .entries
+            .values()
+            .find(|e| e.path.to_string_lossy() == project)
+            .or_else(|| self.entries.values().find(|e| e.project == project))?;
+        Some((entry.path.clone(), entry.command.clone(), entry.managed.logs()))
     }
 
     /// Контекст для автофикса (#96) по выделенному порту процесса.

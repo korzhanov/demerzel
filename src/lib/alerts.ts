@@ -162,13 +162,18 @@ export function renderVoicePhrase(template: string, vars: SpeakEventVars): strin
     .replaceAll("{run_id}", vars.run_id ?? "");
 }
 
-/** Выбор процесса по имени проекта из уведомления. */
+/**
+ * Выбор процесса по проекту: сначала по папке (однозначно), затем по имени —
+ * для уведомлений, которые несут только имя. Имена подпроектов могут совпадать.
+ */
 export function processIdForProject(
-  processes: ReadonlyArray<{ id: number; project: string }>,
+  processes: ReadonlyArray<{ id: number; project: string; path?: string }>,
   project: string,
 ): number | null {
-  const hit = processes.find((p) => p.project === project);
-  return hit ? hit.id : null;
+  const byPath = processes.find((p) => p.path === project);
+  if (byPath) return byPath.id;
+  const byName = processes.find((p) => p.project === project);
+  return byName ? byName.id : null;
 }
 
 /** Виды алертов, из которых можно стартовать автофикс (#96). */

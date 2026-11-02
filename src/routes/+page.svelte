@@ -163,14 +163,11 @@
       : (flatProjects[0] ?? null),
   );
   const selectedProcess = $derived(
-    selectedProject ? processForProject(processes, selectedProject.name) : undefined,
+    selectedProject ? processForProject(processes, selectedProject) : undefined,
   );
   const selectedProjectPorts = $derived(
     selectedProject
-      ? ports.filter(
-          (row) =>
-            row.project === selectedProject.name || row.project === selectedProject.path,
-        )
+      ? ports.filter((row) => row.project === selectedProject.path)
       : [],
   );
   const selectedTasksLine = $derived(
@@ -610,7 +607,7 @@
   function selectProject(p: Project) {
     selectedProjectPath = p.path;
     projectFilter = p.path;
-    const id = processIdForProject(processes, p.name);
+    const id = processIdForProject(processes, p.path);
     if (id !== null) select(id);
   }
 
