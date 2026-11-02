@@ -690,6 +690,20 @@ fn start_automation(
     reg.start_configured(&project, &command, &dir)
 }
 
+/// Присоединяет процесс, запущенный вне Demerzel, по PID из списка портов (#присоединение).
+#[tauri::command]
+fn attach_process(
+    processes: tauri::State<'_, Processes>,
+    pid: u32,
+    port: Option<u16>,
+    project: String,
+    path: Option<String>,
+) -> Result<u64, String> {
+    let cwd = path.map(PathBuf::from).unwrap_or_default();
+    let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
+    reg.attach(&project, pid, &cwd, port)
+}
+
 #[tauri::command]
 fn list_processes(processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
@@ -1306,6 +1320,13 @@ pub fn run() {
                     .and_then(|n| notify::project_from_extra(n.extra()));
                 handle_notification_action(&handle, performed.action_id(), project);
             })?;
+            // Процессы, которые пережили прошлый запуск приложения, снова под управлением (#присоединение).
+            if let Ok(data) = app.path().app_data_dir()
+                && let Ok(mut reg) = app.state::<Processes>().0.lock()
+            {
+                reg.configure(data.join(backend::session::SESSION_FILE), data.join("process-logs"));
+                reg.restore();
+            }
             // Подтянуть quiet/dedupe и agents limiter из settings при старте.
             if let Ok(path) = settings_path(app.handle())
                 && let Ok(settings) = backend::settings::load(&path)
@@ -1342,6 +1363,7 @@ pub fn run() {
             resolve_dev_command,
             start_process,
             stop_process,
+            attach_process,
             list_processes,
             process_logs,
             list_ports,

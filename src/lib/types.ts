@@ -20,6 +20,9 @@ export interface ProcessRow {
   status: ProcessStatus;
   pid?: number | null;
   port?: number | null;
+  /** started — запущен здесь; restored — пережил перезапуск; attached — присоединён по PID. */
+  origin?: "started" | "restored" | "attached";
+  owned?: boolean;
 }
 
 export interface LogLine {

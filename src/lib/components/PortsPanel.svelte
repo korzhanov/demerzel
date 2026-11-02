@@ -10,6 +10,8 @@
     portInterval: number;
     onRefresh: () => void;
     onStopManaged: (managedId: number) => Promise<void>;
+    /** Присоединить процесс, который запущен не Demerzel (#присоединение). */
+    onAttach?: (row: PortRow) => Promise<void>;
   }
 
   let {
@@ -20,7 +22,20 @@
     portInterval = $bindable(5),
     onRefresh,
     onStopManaged,
+    onAttach,
   }: Props = $props();
+
+  let attaching = $state<number | null>(null);
+
+  async function attach(row: PortRow) {
+    if (!onAttach) return;
+    attaching = row.pid;
+    try {
+      await onAttach(row);
+    } finally {
+      attaching = null;
+    }
+  }
 
   let confirmPort = $state<PortRow | null>(null);
   let stopping = $state(false);
@@ -61,8 +76,8 @@
     {#if confirmPort}
       <div class="space-y-2 rounded-md border border-destructive p-3 text-sm" role="alertdialog" aria-labelledby="ports-confirm-title">
         <p id="ports-confirm-title">
-          Остановить управляемый процесс {confirmPort.command} (PID {confirmPort.pid}) проекта {confirmPort.project}?
-          Будет остановлена вся группа процесса.
+          Остановить процесс {confirmPort.command} (PID {confirmPort.pid}) проекта {confirmPort.project}?
+          Если Demerzel его запустила, остановится и вся группа процесса; присоединённый процесс остановится сам.
         </p>
         <div class="flex gap-2">
           <Button variant="destructive" disabled={stopping} onclick={confirmStop}>Да, остановить</Button>
@@ -103,6 +118,8 @@
               <Table.Cell>
                 {#if canStopManagedPort(port)}
                   <Button size="sm" variant="outline" disabled={stopping} onclick={() => { confirmPort = port; }}>Остановить…</Button>
+                {:else if onAttach && !isSystemPort(port)}
+                  <Button size="sm" variant="outline" disabled={attaching !== null} onclick={() => attach(port)}>Присоединить</Button>
                 {:else}
                   <span class="text-xs text-muted-foreground" title="Только просмотр">—</span>
                 {/if}
