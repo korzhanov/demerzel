@@ -17,6 +17,8 @@
     PortRow,
     StartAgentFromAlertResult,
     StartAgentRunResult,
+    CreateProjectTaskResult,
+    NewTaskInput,
     Task,
   } from "$lib/types";
   import {
@@ -140,6 +142,9 @@
   /** Предложение «исправить» из алерта (#96). */
   let autofixOffer = $state<AutofixOffer | null>(null);
   let autofixBusy = $state(false);
+  let createTaskBusy = $state(false);
+  let reportBusy = $state(false);
+  let reportMessage = $state("");
   let mounted = false;
   let processBusy = false;
   let scanBusy = $state(false);
@@ -270,6 +275,55 @@
       taskErrors = [...taskErrors, String(e)];
     } finally {
       startBusyTaskId = null;
+    }
+  }
+
+  /// Новая задача проекта: issue в бэклоге и, если отмечено, агент по нему.
+  async function createProjectTask(input: NewTaskInput) {
+    createTaskBusy = true;
+    taskErrors = [];
+    try {
+      const result = await invoke<CreateProjectTaskResult>("create_project_task", {
+        path: input.path,
+        title: input.title,
+        body: input.body,
+        startAgent: input.startAgent,
+        runner: agentRunner,
+      });
+      if (result.agent_error) taskErrors = [`Задача создана, агент не запущен: ${result.agent_error}`];
+      if (result.run) selectedAgentRunId = result.run.run.id;
+      await refreshTasks();
+      await refreshAgentRuns();
+    } catch (e) {
+      taskErrors = [String(e)];
+    } finally {
+      createTaskBusy = false;
+    }
+  }
+
+  /// Fix-задача по ошибкам лога выбранного процесса.
+  async function reportProblems() {
+    if (selectedId === null || !selectedProjectPath) return;
+    reportBusy = true;
+    reportMessage = "";
+    try {
+      const result = await invoke<CreateProjectTaskResult>("report_process_problems", {
+        id: selectedId,
+        path: selectedProjectPath,
+        startAgent: true,
+        runner: agentRunner,
+      });
+      const agent = result.run
+        ? "Агент запущен."
+        : `Агент не запущен: ${result.agent_error ?? "не указано"}`;
+      reportMessage = `Fix-задача создана: ${result.issue.url}. ${agent}`;
+      if (result.run) selectedAgentRunId = result.run.run.id;
+      await refreshTasks();
+      await refreshAgentRuns();
+    } catch (e) {
+      reportMessage = String(e);
+    } finally {
+      reportBusy = false;
     }
   }
 
@@ -857,6 +911,9 @@
     onRefresh={refreshTasks}
     onOpen={openTask}
     onStartAgent={startAgentFromTask}
+    agentRuns={agentRuns}
+    onCreateTask={createProjectTask}
+    createBusy={createTaskBusy}
   />
 {/snippet}
 
@@ -1239,6 +1296,9 @@
       bind:width={logsWidth}
       {logs}
       projectName={selectedProject?.name ?? null}
+      onReportProblems={reportProblems}
+      {reportBusy}
+      {reportMessage}
     />
   </div>
 </main>

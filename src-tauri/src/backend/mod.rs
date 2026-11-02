@@ -15,6 +15,7 @@ pub mod speak;
 pub mod ports;
 pub mod process;
 pub mod session;
+pub mod issues;
 pub mod registry;
 pub mod scanner;
 pub mod settings;

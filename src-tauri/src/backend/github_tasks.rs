@@ -34,7 +34,7 @@ fn encode(value: &str) -> String {
         .collect()
 }
 
-fn validate_repository(repo: &str) -> Result<(), String> {
+pub fn validate_repository(repo: &str) -> Result<(), String> {
     let parts: Vec<_> = repo.split('/').collect();
     if parts.len() != 2
         || parts.iter().any(|s| {

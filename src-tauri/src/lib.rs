@@ -637,6 +637,102 @@ fn start_process(
     reg.start_configured(&project, &cmd, &cwd)
 }
 
+/// Результат создания задачи проекта: issue и, если запрошен, запуск агента по нему.
+#[derive(Debug, serde::Serialize)]
+struct CreateProjectTaskResult {
+    issue: backend::issues::IssueRef,
+    run: Option<backend::agents::StartAgentRunResult>,
+    /// Почему агент не запустился (не установлен, лимит, ошибка). Сама задача при этом создана.
+    agent_error: Option<String>,
+}
+
+/// Создаёт задачу в бэклоге проекта (GitHub issue) и по желанию сразу запускает по ней агента.
+#[tauri::command]
+fn create_project_task(
+    app: tauri::AppHandle,
+    path: String,
+    title: String,
+    body: String,
+    start_agent: bool,
+    runner: Option<String>,
+) -> Result<CreateProjectTaskResult, String> {
+    let root = PathBuf::from(&path);
+    let configured = backend::config::load_checked(&root)?
+        .and_then(|c| c.tasks)
+        .and_then(|t| t.repository);
+    let repository = backend::issues::repository_for(&root, configured.as_deref())?;
+    let issue = backend::issues::create_issue(&repository, &title, &body)?;
+    Ok(finish_issue(&app, &root, issue, title.trim(), body.trim(), start_agent, runner))
+}
+
+/// Для созданного issue: при необходимости запуск агента. Ошибка агента не отменяет создание issue.
+fn finish_issue(
+    app: &tauri::AppHandle,
+    root: &Path,
+    issue: backend::issues::IssueRef,
+    title: &str,
+    body: &str,
+    start_agent: bool,
+    runner: Option<String>,
+) -> CreateProjectTaskResult {
+    if !start_agent {
+        return CreateProjectTaskResult { issue, run: None, agent_error: None };
+    }
+    let task = backend::tasks::Task {
+        id: format!("github:{}#{}", issue.repository, issue.number),
+        project: root.display().to_string(),
+        title: title.to_string(),
+        status: backend::tasks::TaskStatus::Todo,
+        source: "github".into(),
+        url: Some(issue.url.clone()),
+    };
+    let prompt = backend::issues::autofix_prompt(title, body, &issue.url);
+    match start_agent_run(app, &task, runner, prompt) {
+        Ok(run) => CreateProjectTaskResult { issue, run: Some(run), agent_error: None },
+        Err(e) => CreateProjectTaskResult { issue, run: None, agent_error: Some(e) },
+    }
+}
+
+/// Ошибки и предупреждения из лога процесса → fix-задача в бэклоге и, если можно, автофикс агентом.
+#[tauri::command]
+fn report_process_problems(
+    app: tauri::AppHandle,
+    processes: tauri::State<'_, Processes>,
+    id: u64,
+    path: String,
+    start_agent: bool,
+    runner: Option<String>,
+) -> Result<CreateProjectTaskResult, String> {
+    let (command, lines) = {
+        let reg = processes.0.lock().map_err(|e| e.to_string())?;
+        let lines = reg.logs(id).ok_or("процесс не найден")?;
+        let command = reg
+            .runs()
+            .into_iter()
+            .find(|(run_id, ..)| *run_id == id)
+            .map(|(_, _, command, _)| command)
+            .unwrap_or_default();
+        (command, lines)
+    };
+    let problems = backend::issues::problem_lines(&lines);
+    if problems.is_empty() {
+        return Err("в логе процесса нет ошибок и предупреждений".into());
+    }
+    let root = PathBuf::from(&path);
+    let project_name = root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.clone());
+    let title = backend::issues::fix_title(&problems);
+    let body = backend::issues::fix_body(&project_name, &command, &problems);
+    let configured = backend::config::load_checked(&root)?
+        .and_then(|c| c.tasks)
+        .and_then(|t| t.repository);
+    let repository = backend::issues::repository_for(&root, configured.as_deref())?;
+    let issue = backend::issues::create_issue(&repository, &title, &body)?;
+    Ok(finish_issue(&app, &root, issue, &title, &body, start_agent, runner))
+}
+
 #[tauri::command]
 fn stop_process(processes: tauri::State<'_, Processes>, id: u64) -> Result<Option<backend::process::Status>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
@@ -923,18 +1019,29 @@ fn resolve_project_agent_runner(
 #[tauri::command]
 fn start_agent_from_task(
     app: tauri::AppHandle,
-    runs: tauri::State<'_, AgentRuns>,
-    limit: tauri::State<'_, AgentLimit>,
     task: backend::tasks::Task,
     runner: Option<String>,
 ) -> Result<backend::agents::StartAgentRunResult, String> {
+    let prompt = backend::agents::task_prompt_text(&task);
+    start_agent_run(&app, &task, runner, prompt)
+}
+
+/// Запуск агента по задаче с заданным промптом: общий путь для кнопки «Исправить» и для issue.
+fn start_agent_run(
+    app: &tauri::AppHandle,
+    task: &backend::tasks::Task,
+    runner: Option<String>,
+    prompt: String,
+) -> Result<backend::agents::StartAgentRunResult, String> {
     use backend::agents::{
-        complete_agent_run, prepare_agent_from_task, resolve_runner_for_project, task_prompt_text,
-        AgentRunner, DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT,
+        complete_agent_run, prepare_agent_from_task, resolve_runner_for_project, AgentRunner,
+        DEFAULT_CLAUDE_TIMEOUT, DEFAULT_OLLAMA_TIMEOUT,
     };
     use std::thread;
 
-    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    let runs = app.state::<AgentRuns>();
+    let limit = app.state::<AgentLimit>();
+    let settings = backend::settings::load(&settings_path(app)?).map_err(|e| e.to_string())?;
     let project_path = PathBuf::from(&task.project);
     let runner = match runner.as_deref() {
         Some(raw) => AgentRunner::parse(raw)?,
@@ -948,7 +1055,6 @@ fn start_agent_from_task(
         AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
         _ => DEFAULT_CLAUDE_TIMEOUT,
     };
-    let prompt = task_prompt_text(&task);
     let prepared = {
         let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
         let mut lim = limit.0.lock().map_err(|e| e.to_string())?;
@@ -1388,6 +1494,8 @@ pub fn run() {
             save_automation_schedule,
             resolve_project_agent_runner,
             start_agent_from_task,
+            create_project_task,
+            report_process_problems,
             start_agent_from_alert,
             ingest_alert_event,
             test_notification

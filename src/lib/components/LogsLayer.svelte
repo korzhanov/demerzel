@@ -13,11 +13,18 @@
     width = $bindable(DEFAULT_W),
     logs = [],
     projectName = null as string | null,
+    onReportProblems,
+    reportBusy = false,
+    reportMessage = "",
   }: {
     open?: boolean;
     width?: number;
     logs?: LogLine[];
     projectName?: string | null;
+    /** Создать fix-задачу по ошибкам и предупреждениям лога (#issues). */
+    onReportProblems?: () => void | Promise<void>;
+    reportBusy?: boolean;
+    reportMessage?: string;
   } = $props();
 
   let dragging = $state(false);
@@ -91,6 +98,18 @@
           Логи{#if projectName}
             · {projectName}{/if}
         </h2>
+        {#if onReportProblems}
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 shrink-0 px-2 text-xs"
+            disabled={reportBusy || logs.length === 0}
+            title="Создать fix-задачу по ошибкам и предупреждениям лога и запустить агента, если он доступен"
+            onclick={() => onReportProblems?.()}
+          >
+            {reportBusy ? "Создание…" : "Fix-задача"}
+          </Button>
+        {/if}
         <Button
           size="sm"
           variant="ghost"
@@ -102,6 +121,9 @@
           <XIcon class="size-3.5" />
         </Button>
       </div>
+      {#if reportMessage}
+        <p class="border-b border-border px-3 py-2 text-xs text-muted-foreground" role="status">{reportMessage}</p>
+      {/if}
       <ScrollArea class="min-h-0 flex-1 px-1">
         {#if logs.length === 0}
           <p class="px-3 py-4 text-sm text-muted-foreground">Нет строк лога. Запустите процесс.</p>
