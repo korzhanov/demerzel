@@ -14,6 +14,7 @@ pub mod notify;
 pub mod speak;
 pub mod ports;
 pub mod process;
+pub mod session;
 pub mod registry;
 pub mod scanner;
 pub mod settings;

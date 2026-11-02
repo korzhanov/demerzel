@@ -147,20 +147,27 @@ fn format_migrate_watch_line(name: &str, log: &str) -> String {
 }
 
 fn run_command(command: &str, path: &Path, env: &BTreeMap<String, String>) -> Result<String, String> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("demerzel-run-{}-{nanos}", std::process::id()));
+    let logs = super::process::LogFiles { out: dir.join("out.log"), err: dir.join("err.log") };
     let mut process =
-        super::process::Managed::spawn(command, path, env, None).map_err(|e| e.to_string())?;
+        super::process::Managed::spawn(command, path, env, None, &logs).map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         let status = process.poll().map_err(|e| e.to_string())?;
         if status != Status::Running {
-            // Reader threads can still be draining the final pipe data.
-            std::thread::sleep(Duration::from_millis(30));
+            // Читатели файлов делают последний проход после завершения процесса.
+            std::thread::sleep(super::logs::TAIL_INTERVAL + Duration::from_millis(50));
             let logs = process
                 .logs()
                 .iter()
                 .map(|l| l.text.clone())
                 .collect::<Vec<_>>()
                 .join("\n");
+            let _ = std::fs::remove_dir_all(&dir);
             return if status == Status::Exited(0) {
                 Ok(logs)
             } else {

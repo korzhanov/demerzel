@@ -6,17 +6,28 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::logs::LogLine;
-use super::process::{Managed, Status};
+use super::process::{LogFiles, Managed, Status};
+use super::session::{self, Record, State};
+
+/// Откуда процесс в реестре: запущен здесь, восстановлен после перезапуска или присоединён по PID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Origin {
+    Started,
+    Restored,
+    Attached,
+}
 
 pub struct Entry {
     pub project: String,
     pub command: String,
-    pub path: std::path::PathBuf,
+    pub path: PathBuf,
     pub port: Option<u16>,
+    pub origin: Origin,
     pub managed: Managed,
 }
 
@@ -28,16 +39,56 @@ pub struct Row {
     pub status: Status,
     pub pid: Option<u32>,
     pub port: Option<u16>,
+    pub origin: Origin,
+    pub owned: bool,
 }
 
-#[derive(Default)]
 pub struct Registry {
     next_id: u64,
     entries: BTreeMap<u64, Entry>,
     pub ports: super::ports::Allocator,
+    /// Файл состояния. Без него реестр живёт только в памяти (тесты).
+    state_path: Option<PathBuf>,
+    /// Папка для логов процессов: по два файла на процесс.
+    logs_dir: PathBuf,
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self {
+            next_id: 0,
+            entries: BTreeMap::new(),
+            ports: super::ports::Allocator::default(),
+            state_path: None,
+            logs_dir: std::env::temp_dir().join("demerzel-process-logs"),
+        }
+    }
+}
+
+fn is_live(status: Status) -> bool {
+    matches!(status, Status::Running | Status::Starting)
 }
 
 impl Registry {
+    /// Задаёт файл состояния и папку логов. Вызывается один раз при старте приложения.
+    pub fn configure(&mut self, state_path: PathBuf, logs_dir: PathBuf) {
+        self.state_path = Some(state_path);
+        self.logs_dir = logs_dir;
+    }
+
+    fn log_files(&self, id: u64) -> LogFiles {
+        LogFiles {
+            out: self.logs_dir.join(format!("{id}.out.log")),
+            err: self.logs_dir.join(format!("{id}.err.log")),
+        }
+    }
+
+    fn has_live_at(&self, cwd: &Path) -> bool {
+        self.entries
+            .values()
+            .any(|e| e.path == cwd && is_live(e.managed.status()))
+    }
+
     #[cfg(unix)]
     pub fn start(
         &mut self,
@@ -48,19 +99,16 @@ impl Registry {
         port: Option<u16>,
     ) -> io::Result<u64> {
         self.list()?;
-        if self
-            .entries
-            .values()
-            .any(|e| e.path == cwd && e.managed.status() == Status::Running)
-        {
+        if self.has_live_at(cwd) {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "project already running",
             ));
         }
-        let managed = Managed::spawn(command, cwd, env, port)?;
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self.next_id + 1;
+        let logs = self.log_files(id);
+        let managed = Managed::spawn(command, cwd, env, port, &logs)?;
+        self.next_id = id;
         self.entries.insert(
             id,
             Entry {
@@ -68,13 +116,119 @@ impl Registry {
                 command: command.to_string(),
                 path: cwd.into(),
                 port,
+                origin: Origin::Started,
                 managed,
             },
         );
         if let Some(port) = port {
             self.ports.leases.insert(port, id);
         }
+        self.persist();
         Ok(id)
+    }
+
+    /// Восстанавливает процессы, которые остались работать после прошлого запуска приложения.
+    /// Запись берётся, только если PID жив и командная строка совпадает.
+    pub fn restore(&mut self) {
+        let Some(path) = self.state_path.clone() else {
+            return;
+        };
+        let state = session::load(&path);
+        self.next_id = self.next_id.max(state.next_id);
+        for rec in state.records {
+            let alive = session::is_alive(rec.pid);
+            let same = session::command_line(rec.pid)
+                .is_some_and(|c| session::same_process(&rec.command, &c));
+            if !(alive && same) {
+                continue;
+            }
+            let logs = match (rec.out_log, rec.err_log) {
+                (Some(out), Some(err)) => Some(LogFiles { out: out.into(), err: err.into() }),
+                _ => None,
+            };
+            let origin = if rec.attached { Origin::Attached } else { Origin::Restored };
+            let managed = Managed::adopt(rec.pid, rec.pgid, rec.owned, logs);
+            self.entries.insert(
+                rec.id,
+                Entry {
+                    project: rec.project,
+                    command: rec.command,
+                    path: rec.path.into(),
+                    port: rec.port,
+                    origin,
+                    managed,
+                },
+            );
+            if let Some(port) = rec.port {
+                self.ports.leases.insert(port, rec.id);
+            }
+        }
+        self.persist();
+    }
+
+    /// Присоединяет процесс, запущенный не Demerzel, по PID (например, найденный в списке портов).
+    #[cfg(unix)]
+    pub fn attach(&mut self, project: &str, pid: u32, cwd: &Path, port: Option<u16>) -> Result<u64, String> {
+        self.list().map_err(|e| e.to_string())?;
+        if !session::is_alive(pid) {
+            return Err(format!("процесс {pid} уже не работает"));
+        }
+        let already = self
+            .entries
+            .values()
+            .any(|e| e.managed.pid() == Some(pid));
+        if already {
+            return Err(format!("процесс {pid} уже под управлением Demerzel"));
+        }
+        let command = session::command_line(pid).unwrap_or_else(|| pid.to_string());
+        let managed = Managed::attach(pid);
+        self.next_id += 1;
+        let id = self.next_id;
+        self.entries.insert(
+            id,
+            Entry {
+                project: project.to_string(),
+                command,
+                path: cwd.into(),
+                port,
+                origin: Origin::Attached,
+                managed,
+            },
+        );
+        self.persist();
+        Ok(id)
+    }
+
+    /// Записывает действующие процессы в файл состояния.
+    fn persist(&self) {
+        let Some(path) = &self.state_path else {
+            return;
+        };
+        let records = self
+            .entries
+            .iter()
+            .filter(|(_, e)| is_live(e.managed.status()))
+            .filter_map(|(id, e)| {
+                let pid = e.managed.pid()?;
+                Some(Record {
+                    id: *id,
+                    project: e.project.clone(),
+                    command: e.command.clone(),
+                    path: e.path.to_string_lossy().into_owned(),
+                    port: e.port,
+                    pid,
+                    pgid: e.managed.pgid(),
+                    owned: e.managed.owned(),
+                    attached: e.origin == Origin::Attached,
+                    out_log: e.managed.log_files().map(|f| f.out.to_string_lossy().into_owned()),
+                    err_log: e.managed.log_files().map(|f| f.err.to_string_lossy().into_owned()),
+                })
+            })
+            .collect();
+        let state = State { next_id: self.next_id, records };
+        if let Err(err) = session::save(path, &state) {
+            eprintln!("demerzel: не удалось сохранить список процессов: {err}");
+        }
     }
 
     #[cfg(unix)]
@@ -83,6 +237,7 @@ impl Registry {
             Some(e) => {
                 let status = e.managed.stop(grace)?;
                 self.ports.release(id);
+                self.persist();
                 Ok(Some(status))
             }
             None => Ok(None),
@@ -91,10 +246,11 @@ impl Registry {
 
     /// Обновляет статусы и возвращает строки для таблицы.
     pub fn list(&mut self) -> io::Result<Vec<Row>> {
+        let live_before = self.entries.values().filter(|e| is_live(e.managed.status())).count();
         let mut rows = Vec::with_capacity(self.entries.len());
         for (id, e) in self.entries.iter_mut() {
             let status = e.managed.poll()?;
-            if status != Status::Running && status != Status::Starting {
+            if !is_live(status) {
                 self.ports.release(*id);
             }
             rows.push(Row {
@@ -104,7 +260,13 @@ impl Registry {
                 status,
                 pid: e.managed.pid(),
                 port: e.port,
+                origin: e.origin,
+                owned: e.managed.owned(),
             });
+        }
+        let live_after = self.entries.values().filter(|e| is_live(e.managed.status())).count();
+        if live_after != live_before {
+            self.persist();
         }
         Ok(rows)
     }
@@ -276,6 +438,71 @@ mod tests {
         assert_eq!(rows[0].project, "api");
         let status = reg.stop(id, Duration::from_secs(2)).unwrap();
         assert_eq!(status, Some(Status::Stopped));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn restart_restores_running_process_and_stops_it() {
+        let dir = tmp("restore");
+        let state = dir.join("processes.json");
+        let logs = dir.join("logs");
+        let cwd = std::env::current_dir().unwrap();
+        // Первый экземпляр приложения запускает процесс и «закрывается».
+        let id = {
+            let mut first = Registry::default();
+            first.configure(state.clone(), logs.clone());
+            first.start("api", "sleep 30", &cwd, &BTreeMap::new(), None).unwrap()
+        };
+        // Новый экземпляр должен взять процесс под управление, а не считать его чужим.
+        let mut second = Registry::default();
+        second.configure(state.clone(), logs.clone());
+        second.restore();
+        let rows = second.list().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, id);
+        assert_eq!(rows[0].origin, Origin::Restored);
+        assert_eq!(rows[0].status, Status::Running);
+        assert!(rows[0].owned);
+        assert_eq!(second.stop(id, Duration::from_secs(2)).unwrap(), Some(Status::Stopped));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn restore_drops_records_whose_process_is_gone() {
+        let dir = tmp("gone");
+        let state = dir.join("processes.json");
+        let record = session::Record {
+            id: 7,
+            project: "api".into(),
+            command: "bun run dev".into(),
+            path: dir.to_string_lossy().into_owned(),
+            port: Some(5173),
+            pid: 4_000_000,
+            pgid: 4_000_000,
+            owned: true,
+            attached: false,
+            out_log: None,
+            err_log: None,
+        };
+        session::save(&state, &session::State { next_id: 7, records: vec![record] }).unwrap();
+        let mut reg = Registry::default();
+        reg.configure(state, dir.join("logs"));
+        reg.restore();
+        assert!(reg.list().unwrap().is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn attach_external_process_by_pid_and_stop_it() {
+        let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let mut reg = Registry::default();
+        let id = reg.attach("ext", child.id(), Path::new("/tmp"), Some(5555)).unwrap();
+        let rows = reg.list().unwrap();
+        assert_eq!(rows[0].origin, Origin::Attached);
+        assert!(!rows[0].owned);
+        assert_eq!(reg.stop(id, Duration::from_secs(2)).unwrap(), Some(Status::Stopped));
+        let _ = child.wait();
+        assert!(reg.attach("ext", 4_000_000, Path::new("/tmp"), None).is_err());
     }
 
     #[test]

@@ -317,6 +317,23 @@
     await refreshPorts();
   }
 
+  /** Присоединяет процесс из списка портов: после перезапуска или запущенный вне Demerzel. */
+  async function attachFromPorts(row: PortRow) {
+    portsError = "";
+    const folder = row.project ? row.project.split("/").filter(Boolean).pop() : undefined;
+    try {
+      await invoke("attach_process", {
+        pid: row.pid,
+        port: row.port,
+        project: folder ?? row.command,
+        path: row.project ?? null,
+      });
+    } catch (e) {
+      portsError = String(e);
+    }
+    await refreshPorts();
+  }
+
   function rootList(): string[] {
     return enabledRootPaths(scanEntries);
   }
@@ -823,6 +840,7 @@
     bind:portInterval
     onRefresh={refreshPorts}
     onStopManaged={stopManagedFromPorts}
+    onAttach={attachFromPorts}
   />
 {/snippet}
 
