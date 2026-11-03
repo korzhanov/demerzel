@@ -6,6 +6,7 @@ import {
   canOpenTask,
   canStartAgentFromTask,
   countByStatus,
+  boardRootPath,
   filterTasksByProject,
   formatTaskBoardSummary,
   splitColumnPreview,
@@ -59,6 +60,29 @@ describe("filterTasksByProject", () => {
     ];
     expect(filterTasksByProject(rows, "").map((t) => t.id)).toEqual(["a", "b"]);
     expect(filterTasksByProject(rows, "/b").map((t) => t.id)).toEqual(["b"]);
+  });
+});
+
+describe("project board scope", () => {
+  const sub = { name: "www", path: "/a/app/www", children: [] };
+  const root = { name: "app", path: "/a/app", children: [sub] };
+  const other = { name: "api", path: "/a/api", children: [] };
+
+  test("subproject resolves to its top-level project", () => {
+    expect(boardRootPath([root, other], "/a/app/www")).toBe("/a/app");
+    expect(boardRootPath([root, other], "/a/api")).toBe("/a/api");
+    expect(boardRootPath([root, other], "/nope")).toBe("/nope");
+    expect(boardRootPath([root], "")).toBe("");
+  });
+
+  test("project filter includes subprojects but not look-alike paths", () => {
+    const rows = [
+      task({ id: "root", project: "/a/app", status: "todo" }),
+      task({ id: "sub", project: "/a/app/www", status: "todo" }),
+      task({ id: "twin", project: "/a/app2", status: "todo" }),
+    ];
+    expect(filterTasksByProject(rows, "/a/app").map((t) => t.id)).toEqual(["root", "sub"]);
+    expect(filterTasksByProject(rows, "/a/app/www").map((t) => t.id)).toEqual(["sub"]);
   });
 });
 

@@ -2,7 +2,6 @@
   import { invoke } from "@tauri-apps/api/core";
   import AutomationsPanel from "$lib/components/AutomationsPanel.svelte";
   import AutomationScheduler from "$lib/components/AutomationScheduler.svelte";
-  import UpdateControl from "$lib/components/UpdateControl.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
@@ -45,6 +44,7 @@
     canOpenTask,
     canStartAgentFromTask,
     countByStatus,
+    boardRootPath,
     filterTasksByProject,
     formatTaskBoardSummary,
   } from "$lib/tasks";
@@ -63,14 +63,8 @@
   import StatusSummary from "$lib/components/StatusSummary.svelte";
   import { buildLabel } from "$lib/build-info";
   import ScanSettingsDialog from "$lib/components/ScanSettingsDialog.svelte";
-  import AgentsSettingsDialog from "$lib/components/AgentsSettingsDialog.svelte";
   import AppSettingsDialog from "$lib/components/AppSettingsDialog.svelte";
   import LogsLayer from "$lib/components/LogsLayer.svelte";
-  import {
-    mergeCatalogPrefs,
-    type AgentCatalogPref,
-  } from "$lib/agent-install";
-  import { AGENT_RUNNERS } from "$lib/types";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
@@ -83,13 +77,10 @@
   import ScrollTextIcon from "@lucide/svelte/icons/scroll-text";
   import Columns2Icon from "@lucide/svelte/icons/columns-2";
   import LayoutListIcon from "@lucide/svelte/icons/layout-list";
-  import AppWindowIcon from "@lucide/svelte/icons/app-window";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
-  import BotIcon from "@lucide/svelte/icons/bot";
   import SettingsIcon from "@lucide/svelte/icons/settings";
-  import BellRingIcon from "@lucide/svelte/icons/bell-ring";
   import {
     applyTheme,
     nextTheme,
@@ -101,13 +92,7 @@
 
   let scanEntries = $state<ScanRootEntry[]>([]);
   let theme = $state<ThemeMode>("dark");
-  let widgetBusy = $state(false);
-  let widgetMsg = $state("");
-  let notificationBusy = $state(false);
-  let notificationMsg = $state("");
-  let agentsSettingsOpen = $state(false);
   let appSettingsOpen = $state(false);
-  let agentCatalogPrefs = $state<AgentCatalogPref[]>([]);
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
   let selectedId = $state<number | null>(null);
@@ -172,7 +157,9 @@
   );
   const selectedTasksLine = $derived(
     formatTaskBoardSummary(
-      countByStatus(filterTasksByProject(tasks, selectedProject?.path ?? "")),
+      countByStatus(
+        filterTasksByProject(tasks, boardRootPath(projects, selectedProject?.path ?? "")),
+      ),
     ),
   );
 
@@ -461,61 +448,6 @@
     autofixOffer = null;
   }
 
-  async function saveAgentCatalogPrefs(next: AgentCatalogPref[]) {
-    agentCatalogPrefs = next;
-    try {
-      const current = await invoke<Settings>("get_settings");
-      await invoke("save_settings", {
-        settings: {
-          ...current,
-          agents: {
-            ...(current.agents ?? {}),
-            runner: settingsAgentRunner,
-            autofix: settingsAutofix,
-            catalog: next,
-          },
-        } as Settings,
-      });
-      const preferred = await invoke<string>("resolve_preferred_agent");
-      agentRunner = parseAgentRunner(preferred);
-      settingsAgentRunner = agentRunner;
-    } catch (e) {
-      error = String(e);
-    }
-  }
-
-  async function installWidgets() {
-    widgetBusy = true;
-    widgetMsg = "";
-    error = "";
-    try {
-      widgetMsg = await invoke<string>("install_widgets");
-    } catch (e) {
-      error = String(e);
-    } finally {
-      widgetBusy = false;
-    }
-  }
-
-  async function testNotifications() {
-    notificationBusy = true;
-    notificationMsg = "";
-    try {
-      const result = await invoke<{
-        notified: boolean;
-        spoken: boolean;
-        speak_error: string | null;
-      }>("test_notification");
-      notificationMsg = result.spoken
-        ? "Уведомление и голос запущены"
-        : `Уведомление запущено · голос: ${result.speak_error ?? "не запущен"}`;
-    } catch (e) {
-      notificationMsg = `Ошибка уведомления: ${String(e)}`;
-    } finally {
-      notificationBusy = false;
-    }
-  }
-
   function onToggleTheme() {
     theme = toggleTheme(theme);
   }
@@ -606,9 +538,18 @@
 
   function selectProject(p: Project) {
     selectedProjectPath = p.path;
-    projectFilter = p.path;
+    // Доска общая для всего проекта: у подпроекта может не быть своей.
+    projectFilter = boardRootPath(projects, p.path);
+    // Ошибка прошлого проекта не должна висеть на новом.
+    error = "";
     const id = processIdForProject(processes, p.path);
-    if (id !== null) select(id);
+    if (id !== null) {
+      select(id);
+    } else {
+      // У проекта нет процесса: логи прошлого процесса не показываем.
+      selectedId = null;
+      logs = [];
+    }
   }
 
   async function openInEditor(p: Project) {
@@ -674,13 +615,6 @@
         settingsAgentRunner = parseAgentRunner(s.agents?.runner);
         agentRunner = settingsAgentRunner;
         settingsAutofix = parseAutofixMode(s.agents?.autofix);
-        agentCatalogPrefs = mergeCatalogPrefs(
-          (s.agents?.catalog ?? []).map((p) => ({
-            runner: parseAgentRunner(p.runner),
-            enabled: p.enabled !== false,
-          })),
-          AGENT_RUNNERS,
-        );
         if (rootList().length) await scan();
       } catch (e) {
         if (mounted) error = String(e);
@@ -1034,12 +968,6 @@
   />
   <AppSettingsDialog bind:open={appSettingsOpen} />
 
-  <AgentsSettingsDialog
-    bind:open={agentsSettingsOpen}
-    bind:catalog={agentCatalog}
-    bind:prefs={agentCatalogPrefs}
-    onPersist={saveAgentCatalogPrefs}
-  />
 
   <header class="shrink-0 border-b border-border">
     <h1 class="sr-only">DEMERZEL</h1>
@@ -1053,12 +981,6 @@
     </p>
   </header>
 
-  {#if widgetMsg}
-    <p class="px-4 pt-2 text-sm text-[var(--status-ok)]" role="status">{widgetMsg}</p>
-  {/if}
-  {#if notificationMsg}
-    <p class="px-4 pt-2 text-sm text-muted-foreground" role="status">{notificationMsg}</p>
-  {/if}
 
   <Tooltip.Provider delayDuration={300}>
     <StatusSummary {summary} {updatedAt}>
@@ -1076,44 +998,6 @@
                   size="sm"
                   variant="outline"
                   class="size-8 p-0"
-                  disabled={notificationBusy}
-                  aria-label="Проверить уведомления"
-                  onclick={() => void testNotifications()}
-                >
-                  <BellRingIcon class="size-4" />
-                </Button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content side="bottom" align="end">Проверить уведомление и голос</Tooltip.Content>
-          </Tooltip.Root>
-
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  size="sm"
-                  variant="outline"
-                  class="size-8 p-0"
-                  aria-label="Агенты"
-                  onclick={() => (agentsSettingsOpen = true)}
-                >
-                  <BotIcon class="size-4" />
-                </Button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content side="bottom" align="end"
-              >Агенты: приоритет и установка</Tooltip.Content
-            >
-          </Tooltip.Root>
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  size="sm"
-                  variant="outline"
-                  class="size-8 p-0"
                   aria-label="Настройки приложения"
                   onclick={() => void invoke("open_settings_window").catch(() => (appSettingsOpen = true))}
                 >
@@ -1122,27 +1006,6 @@
               {/snippet}
             </Tooltip.Trigger>
             <Tooltip.Content side="bottom" align="end">Настройки приложения</Tooltip.Content>
-          </Tooltip.Root>
-
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  size="sm"
-                  variant="outline"
-                  class="size-8 p-0"
-                  disabled={widgetBusy}
-                  aria-label="Установить виджеты"
-                  onclick={() => void installWidgets()}
-                >
-                  <AppWindowIcon class="size-4" />
-                </Button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content side="bottom" align="end"
-              >Установить виджеты в /Applications (нужен tauri build --debug)</Tooltip.Content
-            >
           </Tooltip.Root>
 
           <Tooltip.Root>
@@ -1219,8 +1082,6 @@
       {/snippet}
     </StatusSummary>
   </Tooltip.Provider>
-
-  <UpdateControl />
 
   {#if error}
     <p class="break-words px-4 pt-2 text-sm text-destructive">{error}</p>
