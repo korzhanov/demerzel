@@ -7,6 +7,7 @@
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import type { SystemJob } from "$lib/types";
   import XIcon from "@lucide/svelte/icons/x";
+  import AppTools from "$lib/components/AppTools.svelte";
 
   // windowed: окно самой программы (нативное окно настроек), без затемнения и с рамкой окна.
   let { open = $bindable(false), windowed = false }: { open: boolean; windowed?: boolean } = $props();
@@ -199,6 +200,7 @@
 
       <div class="space-y-4 overflow-y-auto p-4 text-sm">
         {#if tab === "general"}
+          <AppTools />
           <section class="space-y-2">
             <p class="font-medium">Файл настроек</p>
             <p class="text-muted-foreground">

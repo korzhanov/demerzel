@@ -1,4 +1,4 @@
-import type { Task, TaskStatus } from "./types";
+import type { Project, Task, TaskStatus } from "./types";
 
 /** Колонки доски по wire-статусам модели Task (#16 / #19). */
 export const TASK_BOARD_COLUMNS: readonly { status: TaskStatus; label: string }[] = [
@@ -26,13 +26,37 @@ export function taskStatusLabel(status: TaskStatus): string {
   }
 }
 
-/** Фильтр доски: пустой projectFilter = все проекты (путь проекта). */
+/** Путь с завершающим разделителем: `/a/web` → `/a/web/`, чтобы `/a/web2` не попадал в `/a/web`. */
+function withSeparator(path: string): string {
+  return path.endsWith("/") ? path : `${path}/`;
+}
+
+/**
+ * Фильтр доски: пустой projectFilter = все проекты. Фильтр — проект вместе с подпроектами,
+ * потому что у подпроекта может не быть своей доски.
+ */
 export function filterTasksByProject(
   tasks: readonly Task[],
   projectFilter: string,
 ): Task[] {
   if (!projectFilter) return [...tasks];
-  return tasks.filter((task) => task.project === projectFilter);
+  const prefix = withSeparator(projectFilter);
+  return tasks.filter(
+    (task) => task.project === projectFilter || task.project.startsWith(prefix),
+  );
+}
+
+function containsPath(project: Project, path: string): boolean {
+  return project.path === path || project.children.some((c) => containsPath(c, path));
+}
+
+/**
+ * Путь корневого проекта (верхнего уровня), в дереве которого лежит `path`.
+ * Если проект не найден, возвращает сам `path`.
+ */
+export function boardRootPath(projects: readonly Project[], path: string): string {
+  if (!path) return "";
+  return projects.find((root) => containsPath(root, path))?.path ?? path;
 }
 
 /** Карточки одной колонки доски. */
