@@ -531,7 +531,7 @@
                 <h3 class="text-lg font-semibold">О проекте</h3>
               </header>
               <div class="flex items-start gap-4">
-                <img src="/mockups/icon.jpg" alt="Demerzel" class="size-20 rounded-xl object-cover ring-1 ring-border" />
+                <img src="/mockups/demerzel_icon.png" alt="Demerzel" class="size-20 rounded-xl object-cover ring-1 ring-border" />
                 <div class="space-y-2">
                   <p class="font-medium">Demerzel — тайный оркестратор локальных проектов</p>
                   <a class="inline-block text-primary underline underline-offset-4" href="https://github.com/korzhanov/demerzel" onclick={(event) => { event.preventDefault(); void openRepository(); }}>github.com/korzhanov/demerzel</a>

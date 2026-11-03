@@ -8,7 +8,7 @@
   aria-live="polite"
 >
   <img
-    src="/mockups/icon.jpg"
+    src="/mockups/demerzel_icon.png"
     alt=""
     class="size-24 rounded-2xl object-cover shadow-[0_12px_48px_rgba(224,168,58,0.22)] ring-1 ring-primary/40"
   />
