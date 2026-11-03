@@ -319,12 +319,12 @@ mod tests {
     #[test]
     fn cwd_matches_known_project_as_ok_without_managed() {
         let known = vec![
-            PathBuf::from("/Users/oleg/code/korzhanov/100words"),
-            PathBuf::from("/Users/oleg/code/other"),
+            PathBuf::from("/Users/you/code/acme/web"),
+            PathBuf::from("/Users/you/code/other"),
         ];
         let cwds = BTreeMap::from([(
             9u32,
-            PathBuf::from("/Users/oleg/code/korzhanov/100words/parser"),
+            PathBuf::from("/Users/you/code/acme/web/parser"),
         )]);
         let rows = inventory(
             parse_lsof("p9\ncbun\nn127.0.0.1:3847\np2\ncssh\nn*:22"),
@@ -338,7 +338,7 @@ mod tests {
         assert_eq!(bun.status, "ok");
         assert_eq!(
             bun.project.as_deref(),
-            Some("/Users/oleg/code/korzhanov/100words")
+            Some("/Users/you/code/acme/web")
         );
         assert_eq!(bun.managed_id, None);
         assert_eq!(ssh.status, "foreign");
@@ -359,10 +359,10 @@ mod tests {
 
     #[test]
     fn parses_lsof_cwd_records() {
-        let map = parse_lsof_cwd("p79200\nfcwd\nn/Users/oleg/code/korzhanov/100words/parser\n");
+        let map = parse_lsof_cwd("p79200\nfcwd\nn/Users/you/code/acme/web/parser\n");
         assert_eq!(
             map.get(&79200).map(|p| p.to_string_lossy().into_owned()),
-            Some("/Users/oleg/code/korzhanov/100words/parser".into())
+            Some("/Users/you/code/acme/web/parser".into())
         );
     }
 }

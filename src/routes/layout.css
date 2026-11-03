@@ -7,7 +7,7 @@
 
 :root,
 .dark {
-	/* Палитра как в references/mockups/src/s2.css */
+	/* Палитра из макетов интерфейса */
 	--radius: 0.5rem;
 	--background: #14110d;
 	--foreground: #efe3c8;

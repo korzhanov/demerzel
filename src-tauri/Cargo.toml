@@ -1,8 +1,9 @@
 [package]
 name = "demerzel"
-version = "0.55.21"
+version = "0.55.37"
 description = "The Shadow Orchestrator of Your Local Stack Empire"
-authors = ["you"]
+authors = ["Demerzel contributors"]
+license = "Apache-2.0"
 edition = "2024"
 # Tauri picks this when [[bin]] dem (CLI) coexists with src/main.rs
 default-run = "demerzel"

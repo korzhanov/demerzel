@@ -192,6 +192,30 @@ Tauri: `start_agent_from_task(task)` → `StartAgentRunResult { run, task, queue
 Модуль `backend/autofix`: `decide_autofix`, `build_alert_autofix_prompt`, `start_agent_from_alert`.  
 Tauri: `start_agent_from_alert(project_path, prompt, runner?)` → `StartAgentFromAlertResult`.
 
+## ACP — Agent Client Protocol (#177)
+
+Любой агент, который говорит по [Agent Client Protocol](https://zed.dev/acp), запускается как раннер `acp`. Demerzel выступает клиентом: поднимает агента как подпроцесс в worktree задачи, отправляет промпт и собирает текст ответа.
+
+Настройка в `settings.json` приложения:
+
+```json
+{
+  "agents": {
+    "runner": "acp",
+    "acp_command": "gemini --acp"
+  }
+}
+```
+
+- `acp_command` выполняется через `sh -c` в каталоге worktree. Любой агент с ACP-режимом подходит: команда задаётся целиком.
+- Протокол построчный (JSON-RPC 2.0 на stdio): `initialize` → `session/new` → `session/prompt`. Ответ собирается из `session/update` (`agent_message_chunk`).
+- Разрешения: Demerzel принимает только `allow_once`. Остальные варианты отклоняются, ход отменяется.
+- Запросы агента к файловой системе и терминалу клиент не поддерживает и отклоняет. Агент работает в worktree своими средствами.
+- Таймаут и отмена останавливают процесс агента целиком (process group).
+- Раннер `acp` не требует установки из реестра; если `acp_command` пуст, запуск завершается ошибкой с подсказкой.
+
+Ограничения: текст ответа показывается по завершении хода, а не потоком; `session/load` и MCP-серверы для агента пока не используются (`mcpServers` передаётся пустым).
+
 ## Связь со схемой
 
 В SQLite `agent_runs.worktree` хранит путь к каталогу run (см. миграцию `0001_init.sql`); `status` — snake_case из `RunStatus`.

@@ -2,12 +2,14 @@
 
 Указатель по `docs/`: решения (ADR), форматы файлов, схемы и операционные гайды. Корневой обзор и быстрый старт — в [README.md](../README.md).
 
+Справочные документы пока на русском. Обзор и быстрый старт есть на [английском](../README.md), [русском](../README.ru.md) и [немецком](../README.de.md).
+
 ## Старт и конвенции
 
 | Документ | О чём |
 |---|---|
 | [../README.md](../README.md) | Что это, запуск, `orchestrator.json` |
-| [CONVENTIONS.md](CONVENTIONS.md) | Ветки, Conventional Commits, SemVer, журналы, Project board |
+| [CONVENTIONS.md](CONVENTIONS.md) | Ветки, Conventional Commits, SemVer, журналы |
 | [permissions.md](permissions.md) | Доступ к папкам на macOS |
 
 ## Конфиги и схемы
@@ -49,14 +51,13 @@
 
 | Путь | О чём |
 |---|---|
-| [../references/](../references/README.md) | Мокапы, вайрфреймы, маркетинговые ассеты |
 | [../CHANGELOG.md](../CHANGELOG.md) | Технический журнал по версиям |
 | [../MARKETING.md](../MARKETING.md) | Короткие формулировки для соцсетей |
 | [`VERSION`](../VERSION) | Текущая SemVer |
 
 ## План фаз
 
-Работа идёт через [GitHub Issues](https://github.com/korzhanov/demerzel/issues) и доску [Demerzel project](https://github.com/users/korzhanov/projects/13).
+Работа идёт через [GitHub Issues](https://github.com/korzhanov/demerzel/issues).
 
 Метки фаз: `phase-0` … `phase-7`.
 

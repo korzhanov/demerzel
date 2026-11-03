@@ -150,16 +150,16 @@ describe("speak delivery (#23)", () => {
         project: "api",
         code: 1,
       }),
-    ).toBe("Олег, внимание. api упал, код 1.");
+    ).toBe("Внимание. api упал, код 1.");
     expect(
       renderVoicePhrase(DEFAULT_VOICE_PHRASES.port_conflict, { port: 5173 }),
-    ).toBe("Олег, внимание. Порт 5173 занят.");
+    ).toBe("Внимание. Порт 5173 занят.");
     expect(
       renderVoicePhrase(DEFAULT_VOICE_PHRASES.agent_failed, { run_id: "r1" }),
-    ).toBe("Олег, внимание. Агент r1 не справился.");
+    ).toBe("Внимание. Агент r1 не справился.");
     expect(
       renderVoicePhrase(DEFAULT_VOICE_PHRASES.tests_failed, { run_id: "t1" }),
-    ).toBe("Олег, внимание. Тесты t1 упали.");
+    ).toBe("Внимание. Тесты t1 упали.");
   });
 });
 
