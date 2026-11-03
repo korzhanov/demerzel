@@ -255,6 +255,7 @@ fn close_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 /// Ревью агентом: другой установленный CLI читает diff и пишет замечания; код не меняется (#review).
 #[tauri::command]
 async fn request_agent_review(
+    app: tauri::AppHandle,
     runs: tauri::State<'_, AgentRuns>,
     run_id: String,
     reviewer: Option<String>,
@@ -285,8 +286,20 @@ async fn request_agent_review(
 
     let (clipped, truncated) = clip_diff(&diff, 60_000);
     let prompt = review_prompt(&clipped, truncated);
+    let acp_command = backend::settings::load(&settings_path(&app)?)
+        .map_err(|e| e.to_string())?
+        .agents
+        .acp_command;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        run_agent_cli(runner, std::path::Path::new(&worktree), &prompt, "", DEFAULT_CLAUDE_TIMEOUT, None)
+        run_agent_cli(
+            runner,
+            std::path::Path::new(&worktree),
+            &prompt,
+            "",
+            DEFAULT_CLAUDE_TIMEOUT,
+            None,
+            acp_command.as_deref(),
+        )
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -1057,6 +1070,7 @@ fn start_agent_run(
         return Err(err);
     }
     let ollama_model = settings.agents.ollama_model.clone();
+    let acp_command = settings.agents.acp_command.clone();
     let timeout = match runner {
         AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
         _ => DEFAULT_CLAUDE_TIMEOUT,
@@ -1098,6 +1112,7 @@ fn start_agent_run(
             timeout,
             None,
             Some(ollama_model.as_str()),
+            acp_command.as_deref(),
         ) {
             eprintln!("[agents] complete_agent_run failed: {e}");
         }
@@ -1235,6 +1250,7 @@ fn ingest_alert_event(
                 } else {
                     let prompt = build_alert_autofix_prompt(&ctx);
                     let ollama_model = settings.agents.ollama_model.clone();
+                    let acp_command = settings.agents.acp_command.clone();
                     let timeout = match runner {
                         backend::agents::AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
                         _ => DEFAULT_CLAUDE_TIMEOUT,
@@ -1272,6 +1288,7 @@ fn ingest_alert_event(
                                 timeout,
                                 None,
                                 Some(ollama_model.as_str()),
+                                acp_command.as_deref(),
                             ) {
                                 eprintln!("[autofix] complete_agent_run failed: {e}");
                             }
@@ -1364,6 +1381,7 @@ fn start_agent_from_alert(
         return Err("autofix prompt must not be empty".into());
     }
     let ollama_model = settings.agents.ollama_model.clone();
+    let acp_command = settings.agents.acp_command.clone();
     let timeout = match runner {
         AgentRunner::Ollama => DEFAULT_OLLAMA_TIMEOUT,
         _ => DEFAULT_CLAUDE_TIMEOUT,
@@ -1403,6 +1421,7 @@ fn start_agent_from_alert(
             timeout,
             None,
             Some(ollama_model.as_str()),
+            acp_command.as_deref(),
         ) {
             eprintln!("[autofix] complete_agent_run failed: {e}");
         }

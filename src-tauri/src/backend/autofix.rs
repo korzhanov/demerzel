@@ -189,6 +189,8 @@ pub struct StartAlertAgentParams<'a, M: MemoryProbe, O: OllamaProbe> {
     pub run_id: Option<String>,
     pub runner: AgentRunner,
     pub ollama_model: Option<&'a str>,
+    /// Команда ACP-агента, если `runner == Acp`.
+    pub acp_command: Option<&'a str>,
     pub mode: AutofixMode,
 }
 
@@ -286,6 +288,7 @@ pub fn start_agent_from_alert<M: MemoryProbe, O: OllamaProbe>(
         run_id,
         runner,
         ollama_model,
+        acp_command,
         mode,
     } = params;
     if prompt.trim().is_empty() {
@@ -311,6 +314,7 @@ pub fn start_agent_from_alert<M: MemoryProbe, O: OllamaProbe>(
         timeout,
         cancel,
         ollama_model,
+        acp_command,
     )?;
     Ok(StartAgentFromAlertResult {
         run,

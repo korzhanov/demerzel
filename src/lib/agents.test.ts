@@ -57,6 +57,7 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       ollama_reserve_mb: 4096,
       runner: "claude",
       ollama_model: "qwen2.5-coder:7b",
+      acp_command: "",
       autofix: "off",
       catalog: [],
     });
@@ -69,6 +70,7 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
       ollama_reserve_mb: 4096,
       runner: "claude",
       ollama_model: "qwen2.5-coder:7b",
+      acp_command: "",
       autofix: "off",
       catalog: [],
     });

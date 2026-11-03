@@ -42,6 +42,7 @@
 
   const vendorByRunner: Record<AgentRunner, string> = {
     claude: "Anthropic",
+    acp: "Свой агент (ACP)",
     cursor_agent: "Cursor",
     codex: "OpenAI",
     hermes: "Nous Research",
