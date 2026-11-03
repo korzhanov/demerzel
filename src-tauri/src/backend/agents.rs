@@ -1606,7 +1606,8 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
     })
 }
 
-/// Раннер (Claude / Ollama) + `collect_review` для уже `running` run; освобождает limiter.
+/// Раннер (Claude / Ollama / ACP) + `collect_review` для уже `running` run; освобождает limiter.
+#[allow(clippy::too_many_arguments)] // раннер и его параметры передаются по отдельности, см. run_agent_cli
 pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
     run_id: &str,
     task_title_prompt: &str,

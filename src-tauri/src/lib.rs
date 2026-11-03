@@ -1079,7 +1079,7 @@ fn start_agent_run(
         let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
         let mut lim = limit.0.lock().map_err(|e| e.to_string())?;
         prepare_agent_from_task(
-            &task,
+            task,
             &project_path,
             &mut reg,
             &mut lim,
