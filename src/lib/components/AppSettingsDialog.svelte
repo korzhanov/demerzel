@@ -529,23 +529,28 @@
             {:else}
               <header class="mb-6 border-b border-border pb-4">
                 <h3 class="text-lg font-semibold">О проекте</h3>
-                <p class="mt-1 text-sm text-muted-foreground">Demerzel · {buildLabel()}</p>
               </header>
               <div class="flex items-start gap-4">
                 <img src="/mockups/icon.jpg" alt="Demerzel" class="size-20 rounded-xl object-cover ring-1 ring-border" />
                 <div class="space-y-2">
-                  <p class="font-medium">Локальный центр управления проектами</p>
-                  <p class="text-muted-foreground">Demerzel помогает держать разработку под контролем, сохраняя проекты и данные на вашем Mac.</p>
+                  <p class="font-medium">Demerzel — тайный оркестратор локальных проектов</p>
                   <a class="inline-block text-primary underline underline-offset-4" href="https://github.com/korzhanov/demerzel" onclick={(event) => { event.preventDefault(); void openRepository(); }}>github.com/korzhanov/demerzel</a>
+                  <p class="text-xs text-muted-foreground">{buildLabel()}</p>
                 </div>
               </div>
+              <p class="mt-5 text-muted-foreground">
+                Управляйте рутиной из одного приложения. Demerzel собирает проекты, процессы, задачи и состояние портов в общей панели, чтобы вы быстрее замечали проблемы и понимали, что происходит в разработке.
+              </p>
+              <p class="mt-3 text-muted-foreground">
+                Отслеживайте задачи GitHub и поручайте AI-агентам разбирать ошибки и готовить исправления.
+              </p>
               <section class="mt-6 space-y-2 border-t border-border pt-4">
                 <p class="font-medium">Возможности</p>
                 <ul class="list-disc space-y-1 pl-5 text-muted-foreground">
-                  <li>Поиск проектов по выбранным директориям и контроль процессов и портов.</li>
-                  <li>Задачи проекта, запуск AI агентов в отдельных рабочих копиях.</li>
-                  <li>Уведомления, автоматизации и виджеты macOS.</li>
-                  <li>Автоматическая проверка обновлений из GitHub Releases.</li>
+                  <li>Запуск процессов разработки, мониторинг портов и обнаружение конфликтов.</li>
+                  <li>Управление GitHub-проектами и задачами, работа с различными AI-агентами.</li>
+                  <li>Живые уведомления и удобные автоматизации.</li>
+                  <li>Виджеты macOS для быстрого мониторинга проектов.</li>
                 </ul>
               </section>
               <section class="mt-6 space-y-2 border-t border-border pt-4">
