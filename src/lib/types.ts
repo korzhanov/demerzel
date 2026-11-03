@@ -87,7 +87,8 @@ export type AgentRunner =
   | "cursor_agent"
   | "hermes"
   | "grok"
-  | "ollama";
+  | "ollama"
+  | "acp";
 
 export const AGENT_RUNNERS: readonly AgentRunner[] = [
   "claude",
@@ -135,6 +136,8 @@ export interface AgentsConfig {
   runner?: AgentRunner;
   /** Модель `ollama run`; по умолчанию qwen2.5-coder:7b. */
   ollama_model?: string;
+  /** Команда ACP-агента (раннер `acp`), например `gemini --acp`. */
+  acp_command?: string;
   /** Автофикс по алерту; по умолчанию `off`. */
   autofix?: AutofixMode;
   /** Порядок и включение агентов (#140). */
@@ -156,6 +159,7 @@ export function agentsConfigOrDefault(
     ollama_reserve_mb: agents?.ollama_reserve_mb ?? DEFAULT_OLLAMA_RESERVE_MB,
     runner: agents?.runner ?? DEFAULT_AGENT_RUNNER,
     ollama_model: agents?.ollama_model ?? DEFAULT_OLLAMA_MODEL,
+    acp_command: agents?.acp_command ?? "",
     autofix: agents?.autofix ?? DEFAULT_AUTOFIX_MODE,
     catalog: agents?.catalog ?? [],
   };

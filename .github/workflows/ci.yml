@@ -41,6 +41,7 @@ jobs:
         run: bun run tauri signer generate --ci -w "$RUNNER_TEMP/tauri-ci.key"
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: brew install xcodegen
       - run: bun run tauri build --debug
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ runner.temp }}/tauri-ci.key

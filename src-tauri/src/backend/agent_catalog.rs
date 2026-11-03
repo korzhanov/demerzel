@@ -191,6 +191,13 @@ const AGENT_META: &[AgentCliMeta] = &[
         install_hint: "Установите Ollama: https://ollama.com",
         headless_supported: true,
     },
+    AgentCliMeta {
+        runner: AgentRunner::Acp,
+        binary: "",
+        env_override: "DEMERZEL_ACP_COMMAND",
+        install_hint: "Задайте команду ACP-агента в settings.json → agents.acp_command (например, `gemini --acp`)",
+        headless_supported: true,
+    },
 ];
 
 /// Имена бинарников для поиска в PATH (#140: `agent` + алиас `cursor-agent`).
@@ -205,6 +212,7 @@ pub fn binary_aliases(runner: AgentRunner) -> &'static [&'static str] {
         AgentRunner::Hermes => &["hermes"],
         AgentRunner::Grok => &["grok"],
         AgentRunner::Ollama => &["ollama"],
+        AgentRunner::Acp => &[],
     }
 }
 
@@ -407,6 +415,10 @@ pub fn list_available_agents(path_env: Option<&OsStr>) -> Vec<AgentCatalogEntry>
 
 /// Сообщение, если агент не установлен или headless ещё не поддержан.
 pub fn runner_readiness_error(runner: AgentRunner, path_env: Option<&OsStr>) -> Option<String> {
+    // У ACP нет бинарника в PATH: команда из settings.agents.acp_command проверяется при запуске.
+    if runner == AgentRunner::Acp {
+        return None;
+    }
     let entry = detect_agent(runner, path_env);
     if !entry.available {
         return Some(format!(

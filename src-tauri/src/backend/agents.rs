@@ -142,6 +142,9 @@ pub enum AgentRunner {
     /// Unverified install URL (#140) — сверить docs.x.ai перед продакшеном.
     Grok,
     Ollama,
+    /// ACP-агент (https://zed.dev/acp): команда из `settings.agents.acp_command`.
+    /// Не входит в `ALL`: это не установка из реестра, а произвольная команда пользователя.
+    Acp,
 }
 
 impl AgentRunner {
@@ -168,6 +171,7 @@ impl AgentRunner {
             Self::Hermes => "hermes",
             Self::Grok => "grok",
             Self::Ollama => "ollama",
+            Self::Acp => "acp",
         }
     }
 
@@ -182,6 +186,7 @@ impl AgentRunner {
             "hermes" => Ok(Self::Hermes),
             "grok" => Ok(Self::Grok),
             "ollama" => Ok(Self::Ollama),
+            "acp" => Ok(Self::Acp),
             other => Err(format!("unknown agent runner '{other}'")),
         }
     }
@@ -254,6 +259,9 @@ pub struct AgentsConfig {
     /// Модель для `ollama run` (#30).
     #[serde(default = "default_ollama_model")]
     pub ollama_model: String,
+    /// Команда ACP-агента, например `gemini --acp`. Запускается через `sh -c` в worktree (раннер `acp`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp_command: Option<String>,
     /// Автофикс по алерту (#96): `off` / `suggest` / `auto`. По умолчанию выкл.
     #[serde(default)]
     pub autofix: AutofixMode,
@@ -282,6 +290,7 @@ impl Default for AgentsConfig {
             ollama_reserve_mb: DEFAULT_OLLAMA_RESERVE_MB,
             runner: AgentRunner::Claude,
             ollama_model: DEFAULT_OLLAMA_MODEL.to_string(),
+            acp_command: None,
             autofix: AutofixMode::Off,
             catalog: Vec::new(),
         }
@@ -1111,6 +1120,7 @@ pub fn run_agent_cli(
     ollama_model: &str,
     timeout: Duration,
     cancel: Option<&AtomicBool>,
+    acp_command: Option<&str>,
 ) -> Result<ClaudeRunResult, String> {
     if let Some(err) = super::agent_catalog::runner_readiness_error(runner, None) {
         return Err(err);
@@ -1118,6 +1128,12 @@ pub fn run_agent_cli(
     match runner {
         AgentRunner::Claude => run_claude(worktree, task, timeout, cancel),
         AgentRunner::Ollama => run_ollama(worktree, task, ollama_model, timeout, cancel),
+        AgentRunner::Acp => {
+            let command = acp_command
+                .ok_or("агент acp: не задана команда (settings.json → agents.acp_command)")?;
+            let prompt = build_prompt(task, worktree)?;
+            super::acp::run_acp(command, worktree, &prompt, timeout, cancel)
+        }
         other => Err(format!(
             "агент '{}' обнаружен, но headless-прогон пока не поддержан ({})",
             other.as_str(),
@@ -1502,6 +1518,8 @@ pub struct StartAgentParams<'a, M: MemoryProbe, O: OllamaProbe> {
     pub runner: AgentRunner,
     /// Модель Ollama, если `runner == Ollama`.
     pub ollama_model: Option<&'a str>,
+    /// Команда ACP-агента, если `runner == Acp`.
+    pub acp_command: Option<&'a str>,
 }
 
 /// Готовит run из задачи: `in_progress`, limiter, worktree при слоте.
@@ -1588,7 +1606,8 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
     })
 }
 
-/// Раннер (Claude / Ollama) + `collect_review` для уже `running` run; освобождает limiter.
+/// Раннер (Claude / Ollama / ACP) + `collect_review` для уже `running` run; освобождает limiter.
+#[allow(clippy::too_many_arguments)] // раннер и его параметры передаются по отдельности, см. run_agent_cli
 pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
     run_id: &str,
     task_title_prompt: &str,
@@ -1597,6 +1616,7 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
     timeout: Duration,
     cancel: Option<&AtomicBool>,
     ollama_model: Option<&str>,
+    acp_command: Option<&str>,
 ) -> Result<AgentRunRecord, String> {
     let snapshot = registry
         .get(run_id)
@@ -1627,6 +1647,7 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
             &model,
             timeout,
             cancel,
+            acp_command,
         )?;
         let cmd_label = runner.as_str();
         if cli.timed_out || cli.cancelled {
@@ -1703,6 +1724,7 @@ pub fn start_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         run_id,
         runner,
         ollama_model,
+        acp_command,
     } = params;
     let prompt = task_prompt_text(task);
     let prepared = prepare_agent_from_task(
@@ -1725,6 +1747,7 @@ pub fn start_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         timeout,
         cancel,
         ollama_model,
+        acp_command,
     )?;
     Ok(StartAgentRunResult {
         run,
@@ -2427,6 +2450,7 @@ Pages wired down:                         9000.
         unsafe { std::env::remove_var("DEMERZEL_OLLAMA_MODEL") };
         assert_eq!(AgentRunner::default(), AgentRunner::Claude);
         assert_eq!(AgentRunner::parse("ollama").unwrap(), AgentRunner::Ollama);
+        assert_eq!(AgentRunner::parse("acp").unwrap(), AgentRunner::Acp);
         assert_eq!(AgentRunner::parse("Claude").unwrap(), AgentRunner::Claude);
         assert_eq!(
             AgentRunner::parse("cursor-agent").unwrap(),
@@ -2582,6 +2606,7 @@ Pages wired down:                         9000.
             run_id: Some("start-1".into()),
             runner: AgentRunner::Claude,
             ollama_model: None,
+            acp_command: None,
         })
         .unwrap();
 
@@ -2650,6 +2675,7 @@ Pages wired down:                         9000.
             run_id: Some("ollama-1".into()),
             runner: AgentRunner::Ollama,
             ollama_model: Some(DEFAULT_OLLAMA_MODEL),
+            acp_command: None,
         })
         .unwrap();
 
@@ -2711,6 +2737,7 @@ Pages wired down:                         9000.
             run_id: Some("queued-1".into()),
             runner: AgentRunner::Claude,
             ollama_model: None,
+            acp_command: None,
         })
         .unwrap();
 
@@ -2808,6 +2835,7 @@ Pages wired down:                         9000.
             run_id: Some("alert-1".into()),
             runner: AgentRunner::Claude,
             ollama_model: None,
+            acp_command: None,
             mode: AutofixMode::Auto,
         })
         .unwrap();

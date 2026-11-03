@@ -357,6 +357,7 @@ mod tests {
                 ollama_reserve_mb: 2048,
                 runner: crate::backend::agents::AgentRunner::Ollama,
                 ollama_model: "qwen2.5-coder:7b".into(),
+                acp_command: Some("gemini --acp".into()),
                 autofix: crate::backend::agents::AutofixMode::Suggest,
                 catalog: vec![],
             },

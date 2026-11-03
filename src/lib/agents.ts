@@ -28,6 +28,8 @@ export function agentRunnerLabel(runner: AgentRunner | undefined | null): string
   switch (runner ?? "claude") {
     case "ollama":
       return "Ollama (локально)";
+    case "acp":
+      return "ACP-агент (agents.acp_command)";
     case "claude":
       return "Claude CLI";
     case "codex":
