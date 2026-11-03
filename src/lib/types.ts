@@ -327,6 +327,7 @@ export interface Settings {
   scan_entries?: ScanRootEntry[];
   alerts?: AlertsConfig;
   agents?: AgentsConfig;
+  widgetkit?: { enabled: boolean };
   system_schedules?: { enabled: boolean };
 }
 

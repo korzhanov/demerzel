@@ -80,18 +80,8 @@
   import ScrollTextIcon from "@lucide/svelte/icons/scroll-text";
   import Columns2Icon from "@lucide/svelte/icons/columns-2";
   import LayoutListIcon from "@lucide/svelte/icons/layout-list";
-  import SunIcon from "@lucide/svelte/icons/sun";
-  import MoonIcon from "@lucide/svelte/icons/moon";
-  import MonitorIcon from "@lucide/svelte/icons/monitor";
   import SettingsIcon from "@lucide/svelte/icons/settings";
-  import {
-    applyTheme,
-    nextTheme,
-    readStoredTheme,
-    themeLabel,
-    toggleTheme,
-    type ThemeMode,
-  } from "$lib/theme";
+  import { applyTheme, readStoredTheme, type ThemeMode } from "$lib/theme";
 
   let scanEntries = $state<ScanRootEntry[]>([]);
   let theme = $state<ThemeMode>("dark");
@@ -487,10 +477,6 @@
     autofixOffer = null;
   }
 
-  function onToggleTheme() {
-    theme = toggleTheme(theme);
-  }
-
   function onCycleView() {
     setView(view === "columns" ? "tabs" : "columns");
   }
@@ -623,9 +609,17 @@
         theme = "system";
       }
     };
+    const onStoredThemeChange = (event: StorageEvent) => {
+      if (event.key !== "demerzel-theme") return;
+      theme = readStoredTheme();
+      applyTheme(theme);
+    };
     mq?.addEventListener("change", onScheme);
+    window.addEventListener("storage", onStoredThemeChange);
     let unlistenOpen: (() => void) | undefined;
     let unlistenAutofix: (() => void) | undefined;
+    let unlistenTheme: (() => void) | undefined;
+    let unlistenProjectsScanned: (() => void) | undefined;
     void (async () => {
       try {
         unlistenOpen = await listen<{ project: string }>(OPEN_PROJECT_EVENT, (ev) => {
@@ -640,6 +634,29 @@
           if (!mounted) return;
           autofixOffer = ev.payload;
           openProjectFromNotify(ev.payload.project);
+        });
+      } catch (e) {
+        if (mounted) error = String(e);
+      }
+      try {
+        unlistenTheme = await listen<{ theme: ThemeMode }>("demerzel-theme-changed", (ev) => {
+          if (ev.payload.theme !== "dark" && ev.payload.theme !== "light" && ev.payload.theme !== "system") return;
+          theme = ev.payload.theme;
+          applyTheme(theme);
+        });
+      } catch (e) {
+        if (mounted) error = String(e);
+      }
+      try {
+        unlistenProjectsScanned = await listen<{ projects: Project[] }>("demerzel-projects-scanned", async (ev) => {
+          if (!mounted) return;
+          projects = ev.payload.projects;
+          const flat = flattenProjects(projects);
+          if (!flat.some((p) => p.path === projectFilter)) projectFilter = "";
+          if (!flat.some((p) => p.path === selectedProjectPath)) {
+            selectedProjectPath = flat[0]?.path ?? null;
+          }
+          await refreshTasks();
         });
       } catch (e) {
         if (mounted) error = String(e);
@@ -701,8 +718,11 @@
       clearInterval(poll);
       clearInterval(portPoll);
       mq?.removeEventListener("change", onScheme);
+      window.removeEventListener("storage", onStoredThemeChange);
       unlistenOpen?.();
       unlistenAutofix?.();
+      unlistenTheme?.();
+      unlistenProjectsScanned?.();
     };
   });
 
@@ -1100,31 +1120,6 @@
             >
           </Tooltip.Root>
 
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  size="sm"
-                  variant="outline"
-                  class="size-8 p-0"
-                  aria-label={themeLabel(theme)}
-                  onclick={onToggleTheme}
-                >
-                  {#if theme === "dark"}
-                    <MoonIcon class="size-4" />
-                  {:else if theme === "light"}
-                    <SunIcon class="size-4" />
-                  {:else}
-                    <MonitorIcon class="size-4" />
-                  {/if}
-                </Button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content
-              >{themeLabel(theme)} · далее {themeLabel(nextTheme(theme))}</Tooltip.Content
-            >
-          </Tooltip.Root>
         </div>
       {/snippet}
     </StatusSummary>

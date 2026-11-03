@@ -44,6 +44,7 @@
     open = $bindable(false),
     entries = $bindable<ScanRootEntry[]>([]),
     autofix = $bindable<AutofixMode>("off"),
+    inline = false,
     scanBusy = false,
     onScan,
     onAutofixChange,
@@ -52,6 +53,7 @@
     open?: boolean;
     entries?: ScanRootEntry[];
     autofix?: AutofixMode;
+    inline?: boolean;
     scanBusy?: boolean;
     onScan: () => void | Promise<void>;
     onAutofixChange: (mode: AutofixMode) => void | Promise<void>;
@@ -75,7 +77,7 @@
 
   $effect(() => {
     const el = dialogEl;
-    if (!el) return;
+    if (!el || inline) return;
     if (open) {
       if (!el.open) el.showModal();
     } else if (el.open) {
@@ -90,7 +92,7 @@
   });
 
   function onDialogClose() {
-    open = false;
+    if (!inline) open = false;
     rulesPath = null;
   }
 
@@ -218,7 +220,7 @@
 
   async function scanAndClose() {
     await onScan();
-    open = false;
+    if (!inline) open = false;
   }
 
   function entryFor(path: string): ScanRootEntry | undefined {
@@ -396,15 +398,18 @@
 
 <dialog
   bind:this={dialogEl}
-  class="fixed inset-0 z-50 m-auto h-fit max-h-[min(90vh,40rem)] w-[min(36rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-border bg-card p-0 text-card-foreground shadow-lg backdrop:bg-black/55"
+  open={inline}
+  class={inline
+    ? "relative m-0 flex min-h-[28rem] w-full max-w-none flex-col overflow-hidden rounded-lg border border-border bg-card p-0 text-card-foreground"
+    : "fixed inset-0 z-50 m-auto h-fit max-h-[min(90vh,40rem)] w-[min(36rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-border bg-card p-0 text-card-foreground shadow-lg backdrop:bg-black/55"}
   aria-labelledby="scan-settings-title"
   onclose={onDialogClose}
   onclick={(e) => {
-    if (e.target === dialogEl) open = false;
+    if (!inline && e.target === dialogEl) open = false;
   }}
 >
   <Tooltip.Provider>
-    <div class="flex max-h-[min(90vh,40rem)] flex-col">
+    <div class={inline ? "flex min-h-[28rem] flex-col" : "flex max-h-[min(90vh,40rem)] flex-col"}>
       <header class="flex items-start gap-2 border-b border-border px-4 py-3">
         <div class="min-w-0 flex-1 space-y-1">
           <h2
@@ -418,24 +423,26 @@
             Dirpicker · дерево · чекбоксы. Вложенные правила важнее предков.
           </p>
         </div>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                type="button"
-                size="sm"
-                variant="ghost"
-                class="size-8 p-0"
-                aria-label="Закрыть"
-                onclick={() => (open = false)}
-              >
-                <XIcon class="size-4" />
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content portalDisabled>Закрыть</Tooltip.Content>
-        </Tooltip.Root>
+        {#if !inline}
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  class="size-8 p-0"
+                  aria-label="Закрыть"
+                  onclick={() => (open = false)}
+                >
+                  <XIcon class="size-4" />
+                </Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content portalDisabled>Закрыть</Tooltip.Content>
+          </Tooltip.Root>
+        {/if}
       </header>
 
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
@@ -576,7 +583,7 @@
           onclick={() => void scanAndClose()}
         >
           <ScanSearchIcon class="size-4" />
-          Скан и закрыть
+          {inline ? "Сканировать проекты" : "Скан и закрыть"}
         </Button>
       </footer>
     </div>

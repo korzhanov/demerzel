@@ -234,8 +234,8 @@ fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     }
     tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App("settings".into()))
         .title("Настройки Demerzel")
-        .inner_size(560.0, 640.0)
-        .min_inner_size(480.0, 480.0)
+        .inner_size(760.0, 680.0)
+        .min_inner_size(640.0, 560.0)
         .resizable(true)
         .build()
         .map_err(|e| e.to_string())?;
