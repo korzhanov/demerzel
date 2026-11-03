@@ -12,8 +12,9 @@ APP_SRC="$ROOT/src-tauri/target/debug/bundle/macos/Demerzel.app"
 APP_DST="/Applications/Demerzel.app"
 
 if [[ "${1:-}" != "--install-only" ]]; then
-  # Локальная сборка без подписи обновлений: приватного ключа updater'а на Mac нет.
-  bun run tauri build --debug --config '{"bundle":{"createUpdaterArtifacts":false}}'
+  # Только .app: DMG для установки не нужен, а hdiutil часто не может отмонтировать образ.
+  # Без подписи обновлений: приватного ключа updater'а на Mac нет.
+  bun run tauri build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
 fi
 
 if [[ "${NO_INSTALL:-}" == "1" ]]; then
