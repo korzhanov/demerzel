@@ -8,6 +8,7 @@ import {
   countByStatus,
   boardRootPath,
   filterTasksByProject,
+  isInProjectScope,
   formatTaskBoardSummary,
   splitColumnPreview,
   taskStatusLabel,
@@ -67,6 +68,14 @@ describe("project board scope", () => {
   const sub = { name: "www", path: "/a/app/www", children: [] };
   const root = { name: "app", path: "/a/app", children: [sub] };
   const other = { name: "api", path: "/a/api", children: [] };
+
+  test("errors are shown only for projects inside the board scope", () => {
+    expect(isInProjectScope("/a/app/www", "")).toBe(true);
+    expect(isInProjectScope("/a/app/www", "/a/app")).toBe(true);
+    expect(isInProjectScope("/a/app", "/a/app")).toBe(true);
+    expect(isInProjectScope("/a/api", "/a/app")).toBe(false);
+    expect(isInProjectScope("/a/app2", "/a/app")).toBe(false);
+  });
 
   test("subproject resolves to its top-level project", () => {
     expect(boardRootPath([root, other], "/a/app/www")).toBe("/a/app");

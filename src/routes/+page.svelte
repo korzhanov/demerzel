@@ -47,6 +47,7 @@
     boardRootPath,
     filterTasksByProject,
     formatTaskBoardSummary,
+    isInProjectScope,
   } from "$lib/tasks";
   import {
     buildDashboardSummary,
@@ -109,6 +110,14 @@
   let portInterval = $state(5);
   let tasks = $state<Task[]>([]);
   let taskErrors = $state<string[]>([]);
+  /** Ошибки загрузки доски по проектам: показываются, только если проект в выбранной области. */
+  let projectTaskErrors = $state<{ path: string; message: string }[]>([]);
+  const visibleTaskErrors = $derived([
+    ...projectTaskErrors
+      .filter((e) => isInProjectScope(e.path, projectFilter))
+      .map((e) => e.message),
+    ...taskErrors,
+  ]);
   let tasksBusy = $state(false);
   let projectFilter = $state("");
   let agentRuns = $state<AgentRunRecord[]>([]);
@@ -212,15 +221,17 @@
     const results = await Promise.all(
       flatProjects.map(async (p) => {
         try {
-          return { tasks: await invoke<Task[]>("project_tasks", { path: p.path }), error: "" };
+          return { path: p.path, tasks: await invoke<Task[]>("project_tasks", { path: p.path }), error: "" };
         } catch (e) {
-          return { tasks: [] as Task[], error: `${p.name} (${p.path}): ${String(e)}` };
+          return { path: p.path, tasks: [] as Task[], error: `${p.name} (${p.path}): ${String(e)}` };
         }
       }),
     );
     if (!mounted || generation !== taskGeneration) return;
     tasks = results.flatMap((result) => result.tasks);
-    taskErrors = results.map((result) => result.error).filter(Boolean);
+    projectTaskErrors = results
+      .filter((result) => result.error)
+      .map((result) => ({ path: result.path, message: result.error }));
     tasksBusy = false;
     updatedAt = formatUpdatedAt(new Date());
   }
@@ -832,7 +843,7 @@
 {#snippet tasksView()}
   <TasksPanel
     {tasks}
-    {taskErrors}
+    taskErrors={visibleTaskErrors}
     {tasksBusy}
     bind:projectFilter
     bind:agentRunner

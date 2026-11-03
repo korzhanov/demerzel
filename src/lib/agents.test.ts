@@ -137,7 +137,8 @@ describe("agents config defaults (#29 / #30 / #95)", () => {
     expect(agentRunnerOptionLabel("gemini", catalog)).toContain("не установлен");
     expect(agentRunnerOptionLabel("aider", catalog)).toContain("только детект");
     expect(agentInstallHint("gemini", catalog)).toContain("Gemini");
-    expect(agentInstallHint("aider", catalog)).toContain("Claude/Ollama");
+    expect(agentInstallHint("aider", catalog)).toContain("Claude и Ollama");
+    expect(agentInstallHint("aider", catalog)).not.toContain("pipx");
     expect(agentInstallHint("claude", catalog)).toBeNull();
   });
 });
