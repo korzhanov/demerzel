@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.55.37 — 2026-11-03
+
+- Подготовка к публикации: лицензия Apache-2.0 (`LICENSE`), поля `license` в `package.json` и `Cargo.toml`.
+- README на английском (основной), русском и немецком; картинка для GitHub (`docs/assets/social-preview.png`).
+- Версии в `package.json`, `tauri.conf.json` и `Cargo.toml` выровнены с `VERSION`.
+- Из репозитория убраны внутренние материалы: журналы проверок на Mac (`reports/`), вайрфреймы и личные фото (`references/`), спайки (`spikes/`), личный skill (`.claude/`), `scripts/mac-check.sh`, workflow и скрипт синхронизации доски GitHub, служебные файлы `src-tauri/agent-out.txt` и `src-tauri/fix.txt`.
+- Голос по умолчанию без имени: фразы алертов больше не обращаются по имени владельца. Имя задаётся в настройках через `{user}`.
+- Пути в тестовых фикстурах обезличены.
+- CI: на macOS устанавливается `xcodegen` перед сборкой App Intents; исправлены два замечания clippy.
+- Документация ACP в `docs/agents.md`.
+
 ## 0.55.36 — 2026-11-03
 
 - Новый раннер `acp`: любой агент, который говорит по Agent Client Protocol (https://zed.dev/acp), можно запускать из Demerzel. Команда задаётся в `settings.json` → `agents.acp_command`, например `gemini --acp`. Demerzel запускает её в worktree задачи, отправляет промпт, принимает текст ответа и разрешает действия агента только одноразово (`allow_once`). Запросы агента к файлам и терминалу клиент не поддерживает и отклоняет.

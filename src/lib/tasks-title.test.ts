@@ -3,7 +3,7 @@ import { cleanTaskTitle } from "./tasks";
 
 describe("cleanTaskTitle", () => {
   test("keeps the number and text from a markdown link", () => {
-    expect(cleanTaskTitle("[#35](https://github.com/korzhanov/100words/issues/35) Квоты A1–C2")).toBe(
+    expect(cleanTaskTitle("[#35](https://github.com/acme/web/issues/35) Квоты A1–C2")).toBe(
       "#35 Квоты A1–C2",
     );
   });

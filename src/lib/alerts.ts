@@ -140,10 +140,10 @@ export type VoicePhraseKind =
 export const DEFAULT_VOICE_NAME = "Milena";
 
 export const DEFAULT_VOICE_PHRASES: Record<VoicePhraseKind, string> = {
-  process_exited: "Олег, внимание. {project} упал, код {code}.",
-  port_conflict: "Олег, внимание. Порт {port} занят.",
-  agent_failed: "Олег, внимание. Агент {run_id} не справился.",
-  tests_failed: "Олег, внимание. Тесты {run_id} упали.",
+  process_exited: "Внимание. {project} упал, код {code}.",
+  port_conflict: "Внимание. Порт {port} занят.",
+  agent_failed: "Внимание. Агент {run_id} не справился.",
+  tests_failed: "Внимание. Тесты {run_id} упали.",
 };
 
 export type SpeakEventVars = {

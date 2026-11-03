@@ -1,6 +1,6 @@
 {
   "name": "demerzel",
-  "version": "0.55.21",
+  "version": "0.55.37",
   "description": "The Shadow Orchestrator of Your Local Stack Empire",
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
     "screenshots": "bun scripts/screenshots.mjs",
     "mac-check": "bash scripts/mac-check.sh --push"
   },
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "dependencies": {
     "@lucide/svelte": "^1.65.0",
     "@tauri-apps/api": "^2",

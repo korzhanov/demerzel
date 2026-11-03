@@ -118,7 +118,7 @@ Phase-4, issues #20–#23. Правила и политика живут в **к
     },
     "voice": {
       "name": "Milena",
-      "user_name": "Олег",
+      "user_name": "Анна",
       "user_pronunciation": "",
       "phrases": {
         "process_exited": "{user}, внимание. {project} упал, код {code}.",
@@ -147,4 +147,3 @@ Phase-4, issues #20–#23. Правила и политика живут в **к
 - Настройки: `backend/settings.rs` → `Settings.alerts`
 - Зеркало UI-хелперов: `src/lib/alerts.ts`
 - ADR Focus Mode: `docs/decisions/002-focus-mode.md`
-- Wireframe: `references/alerts-notify-wireframe.md`, `references/alerts-speak-wireframe.md`

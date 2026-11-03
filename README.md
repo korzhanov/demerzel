@@ -1,52 +1,60 @@
 # Demerzel
 
-The Shadow Orchestrator of Your Local Stack Empire.
+**The Shadow Orchestrator of Your Local Stack.**
 
-Локальный оркестратор для разработки на macOS: дашборд проектов и подпроектов, статусы задач, распределение портов, запуск агентов для исправления багов, виджет на рабочем столе и голосовые алерты.
+![Demerzel](docs/assets/social-preview.png)
 
-## Стек
+Demerzel is a local orchestrator for macOS developers. It watches the projects and sub-projects on your machine, starts and stops their dev servers, keeps ports from colliding, turns project tasks into work for AI coding agents, and tells you when something breaks: by menu bar widget, desktop notification, or voice.
 
-- Tauri 2 (оболочка и бэкенд на Rust)
-- SvelteKit в режиме SPA (интерфейс)
-- `tauri-plugin-widgets` (виджет macOS, запасной вариант: Swift WidgetKit)
-- SQLite (состояние)
-- Bun (пакеты, скрипты, запуск)
+🌐 **Languages:** English · [Русский](README.ru.md) · [Deutsch](README.de.md)
 
-Решения зафиксированы в [docs/decisions](docs/decisions). Указатель по всей документации: [docs/README.md](docs/README.md).
+![Demerzel dashboard](docs/screenshots/columns-dark.png)
 
-## Требования
+## What it does
 
-- macOS (виджет и `say` заточены под него)
-- [Bun](https://bun.sh/) 1.4+
-- Rust stable + Xcode CLI tools
-- Опционально: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code), [Ollama](https://ollama.com/), Docker Desktop (для `type: docker-compose` в `demerzel.yaml`)
+- **Projects and sub-projects.** Scans the folders you choose, detects each project by its `orchestrator.json`, and shows what is running, what has exited, and why.
+- **Processes.** Start, stop, and restart dev commands. Demerzel keeps running processes alive across app restarts and re-attaches to them by PID. Logs are kept for each process.
+- **Ports.** Lists listening ports, maps them to projects, and flags conflicts.
+- **Tasks.** Reads tasks from `TODO.md`, `tasks.json`, GitHub Issues, or Notion. New tasks are created as GitHub issues in the project's repository. Errors and warnings from a process log can become a fix task in one click.
+- **AI agents.** Runs an agent on a task in its own git worktree, so changes never touch your main branch. Supported runners: Claude Code CLI, Ollama (local models), and any agent that speaks the [Agent Client Protocol](https://zed.dev/acp). A second agent can review the diff. Tests run after each change.
+- **Alerts.** Rules for crashes, port conflicts, failed agents, and failed tests. Delivery through macOS notifications and spoken phrases, with throttling and quiet hours.
+- **Widget and CLI.** A desktop widget (macOS) and a `dem` command for `status`, `up`, `down`, `sync`, `watch`, `pulse`, and `restart`.
+- **iPhone summary.** Writes a `summary.json` to iCloud Drive, so you can read the state of your stack on your phone.
+- **Updates.** Signed releases from GitHub, checked after launch and every six hours. You decide when to install.
 
-## Запуск
+Demerzel runs the AI agents you install and configure. What they send, and where, is up to those agents.
+
+## Requirements
+
+- macOS (the widget, notifications, and `say` are built for it)
+- [Bun](https://bun.sh/) 1.4 or newer
+- Rust (stable) and Xcode Command Line Tools
+- Optional: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code), [Ollama](https://ollama.com/), an ACP-compatible agent, Docker Desktop (for `type: docker-compose` in `demerzel.yaml`), [GitHub CLI](https://cli.github.com/) (`gh`) for GitHub tasks
+
+## Quick start
 
 ```sh
+git clone https://github.com/korzhanov/demerzel.git
+cd demerzel
 bun install
 bun run tauri dev
 ```
 
-Сборка приложения: `bun run tauri build`.
+To build the app: `bun run tauri build`.
 
-Юнит-тесты фронта: `bun test src/lib`.  
-Юнит-тесты бэкенда: `cd src-tauri && cargo test --lib`.  
-Проверка типов: `bun run check`.
+Run the tests:
 
-CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|up|down|sync|watch`, `dem pulse [--json]`, `dem restart <проект>` — см. [docs/cli.md](docs/cli.md).
+```sh
+bun test src/lib            # frontend
+cd src-tauri && cargo test  # backend
+bun run check               # types
+```
 
-Состояние рантайма и worktree агентов живут в `~/.orchestrator/` (override: `DEMERZEL_RUNTIME_DIR`, `DEMERZEL_WORKTREES_DIR`).
+macOS needs access to folders in `Documents`, Desktop, and iCloud. See [docs/permissions.md](docs/permissions.md).
 
-### Доступ к папкам (macOS)
+## Configure a project
 
-Если проекты лежат в `Documents` / Desktop / iCloud — выдайте доступ Demerzel: [docs/permissions.md](docs/permissions.md).
-
-## Настройка `orchestrator.json`
-
-В корне **каждого** проекта и подпроекта лежит [`orchestrator.json`](docs/orchestrator.schema.json). Схема валидируется при загрузке.
-
-Минимальный пример:
+Each project and sub-project has an [`orchestrator.json`](docs/orchestrator.schema.json) in its root. It is validated on load.
 
 ```json
 {
@@ -70,48 +78,46 @@ CLI `dem` (после сборки бинаря из `src-tauri`): `dem status|u
 }
 ```
 
-| Поле | Назначение |
+| Field | Purpose |
 |---|---|
-| `name` | Имя проекта (обязательно) |
+| `name` | Project name (required) |
 | `type` | `app` \| `parser` \| `dashboard` \| `service` |
-| `commands.dev` | Команда разработки (GUI / `dem up`) |
-| `commands.test` | Тесты после прогона агента |
-| `commands.migrate` | Миграции при `dem sync` (пусто → пропуск) |
-| `ports.range` | Диапазон портов `[start, end]` |
-| `ports.default` | Порт по умолчанию внутри диапазона |
+| `commands.dev` | Dev command (GUI / `dem up`) |
+| `commands.test` | Tests after an agent run |
+| `commands.migrate` | Migrations on `dem sync` (empty means skip) |
+| `ports.range` | Port range `[start, end]` |
+| `ports.default` | Default port inside the range |
 | `tasks.source` | `todo` (`TODO.md`) \| `tasks-json` \| `github` \| `notion` |
-| `tasks.repository` | `owner/name` для `source=github` |
-| `tasks.database_id` | UUID Notion DB для `source=notion` (`NOTION_TOKEN`) |
-| `pulse` | Опрос прогресса: `command` **или** `file` ([docs/pulse.md](docs/pulse.md), #97) |
-| `env` | Переменные окружения процесса |
+| `tasks.repository` | `owner/name` for `source: github` |
+| `tasks.database_id` | Notion database UUID for `source: notion` (needs `NOTION_TOKEN`) |
+| `pulse` | Progress polling: `command` **or** `file` ([docs/pulse.md](docs/pulse.md)) |
+| `env` | Environment variables for the process |
 
-Монорепо / несколько сервисов: корневой [`demerzel.yaml`](docs/demerzel-yaml.md) перечисляет сервисы; детали каждого проекта остаются в его `orchestrator.json`.
+For a monorepo or several services, a root [`demerzel.yaml`](docs/demerzel-yaml.md) lists them.
 
-Настройки приложения (алерты, лимиты агентов, Ollama, iCloud summary, WidgetKit fallback) — в `settings.json` приложения, не в `orchestrator.json`. Подробности: [docs/alerts.md](docs/alerts.md), [docs/agents.md](docs/agents.md), [docs/icloud-summary.md](docs/icloud-summary.md), [docs/widget-macos.md](docs/widget-macos.md), [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md).
+App-wide settings (alerts, agent limits, runners, iCloud summary, widget) live in the app's `settings.json`, not in `orchestrator.json`.
 
-## Статус
+## Documentation
 
-Версия: см. [`VERSION`](VERSION). План работ — [GitHub Issues](https://github.com/korzhanov/demerzel/issues); фазы через метки `phase-0` … `phase-7`. Phase-7 later (#36–#38) закрыты в 0.36–0.38.
+The full index is in [docs/README.md](docs/README.md). The reference documents are written in Russian for now; this README is available in three languages.
 
-## Документация
+- [docs/agents.md](docs/agents.md): worktrees, Claude Code, Ollama, ACP, review, auto-fix
+- [docs/alerts.md](docs/alerts.md): alert rules and delivery
+- [docs/cli.md](docs/cli.md): the `dem` command
+- [docs/tasks-format.md](docs/tasks-format.md): task sources
+- [docs/icloud-summary.md](docs/icloud-summary.md): the iPhone summary
+- [docs/widget-macos.md](docs/widget-macos.md): the desktop widget
+- [docs/CONVENTIONS.md](docs/CONVENTIONS.md): branches, commits, versions
+- [CHANGELOG.md](CHANGELOG.md): technical changelog
 
-Полный указатель: **[docs/README.md](docs/README.md)**.
+## Status
 
-- [docs/CONVENTIONS.md](docs/CONVENTIONS.md) — ветки, коммиты, SemVer, журналы
-- [docs/orchestrator.schema.json](docs/orchestrator.schema.json) — схема `orchestrator.json`
-- [docs/demerzel-yaml.md](docs/demerzel-yaml.md) — манифест экосистемы
-- [docs/tasks-format.md](docs/tasks-format.md) — `TODO.md` / `tasks.json`
-- [docs/cli.md](docs/cli.md) — CLI `dem`
-- [docs/agents.md](docs/agents.md) — worktree, Claude / Ollama, ревью
-- [docs/alerts.md](docs/alerts.md) — правила и доставка алертов
-- [docs/icloud-summary.md](docs/icloud-summary.md) — `summary.json` → iCloud для iPhone
-- [docs/widget-macos.md](docs/widget-macos.md) — сборка `.appex`, установка, Widget Gallery
-- [docs/widgetkit-fallback.md](docs/widgetkit-fallback.md) — native WidgetKit fallback (#38)
-- [docs/permissions.md](docs/permissions.md) — доступ к папкам macOS
-- [docs/decisions/](docs/decisions/) — ADR
-- [references/](references/README.md) — мокапы и ассеты
-- [CHANGELOG.md](CHANGELOG.md) / [MARKETING.md](MARKETING.md)
+Demerzel is an early open-source project for macOS. The current version is in [`VERSION`](VERSION). Bugs and ideas are welcome as [GitHub Issues](https://github.com/korzhanov/demerzel/issues). Pull requests are welcome too: one issue, one branch, one PR.
 
-## Лицензия
+## Contributing
 
-Не выбрана.
+Read [docs/CONVENTIONS.md](docs/CONVENTIONS.md) first: it covers branch names, Conventional Commits, and how versions and journals are updated. Keep the docs in the same PR as the code they describe.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

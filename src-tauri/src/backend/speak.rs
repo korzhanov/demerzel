@@ -39,7 +39,8 @@ impl VoiceConfig {
 }
 
 fn default_user_name() -> String {
-    "Олег".into()
+    // По умолчанию без имени: фразы обращаются без него. Имя задаётся в настройках.
+    String::new()
 }
 
 impl Default for VoiceConfig {
@@ -82,19 +83,19 @@ impl Default for VoicePhrases {
 }
 
 fn default_phrase_process_exited() -> String {
-    "{user}, внимание. {project} упал, код {code}.".into()
+    "Внимание. {project} упал, код {code}.".into()
 }
 
 fn default_phrase_port_conflict() -> String {
-    "{user}, внимание. Порт {port} занят.".into()
+    "Внимание. Порт {port} занят.".into()
 }
 
 fn default_phrase_agent_failed() -> String {
-    "{user}, внимание. Агент {run_id} не справился.".into()
+    "Внимание. Агент {run_id} не справился.".into()
 }
 
 fn default_phrase_tests_failed() -> String {
-    "{user}, внимание. Тесты {run_id} упали.".into()
+    "Внимание. Тесты {run_id} упали.".into()
 }
 
 /// Готовый вызов для `say`.
@@ -209,7 +210,7 @@ mod tests {
         let c = evaluate(&default_rules(), &e).expect("candidate");
         let p = build_payload(&c, &VoiceConfig::default());
         assert_eq!(p.voice, "Milena");
-        assert_eq!(p.phrase, "Олег, внимание. api упал, код 1.");
+        assert_eq!(p.phrase, "Внимание. api упал, код 1.");
         assert!(!p.phrase.contains("{project}"));
         assert!(!p.phrase.contains("{code}"));
     }
@@ -219,31 +220,31 @@ mod tests {
         let e = AlertEvent::PortConflict { port: 5173 };
         let c = evaluate(&default_rules(), &e).expect("candidate");
         let p = build_payload(&c, &VoiceConfig::default());
-        assert_eq!(p.phrase, "Олег, внимание. Порт 5173 занят.");
+        assert_eq!(p.phrase, "Внимание. Порт 5173 занят.");
     }
 
     #[test]
     fn user_name_and_pronunciation_are_substituted() {
         let e = AlertEvent::PortConflict { port: 5173 };
         let c = evaluate(&default_rules(), &e).expect("candidate");
-        let v = VoiceConfig {
+        let with_user = |pronunciation: &str| VoiceConfig {
             user_name: "Anna".into(),
+            user_pronunciation: pronunciation.into(),
+            phrases: VoicePhrases {
+                port_conflict: "{user}, внимание. Порт {port} занят.".into(),
+                ..VoicePhrases::default()
+            },
             ..VoiceConfig::default()
         };
-        assert_eq!(build_payload(&c, &v).phrase, "Anna, внимание. Порт 5173 занят.");
-        let v = VoiceConfig {
-            user_name: "Anna".into(),
-            user_pronunciation: "Анна".into(),
-            ..VoiceConfig::default()
-        };
-        assert_eq!(build_payload(&c, &v).phrase, "Анна, внимание. Порт 5173 занят.");
+        assert_eq!(build_payload(&c, &with_user("")).phrase, "Anna, внимание. Порт 5173 занят.");
+        assert_eq!(build_payload(&c, &with_user("Анна")).phrase, "Анна, внимание. Порт 5173 занят.");
     }
 
     #[test]
     fn custom_template_and_voice() {
         let voice = VoiceConfig {
             name: "Yuri".into(),
-            user_name: "Олег".into(),
+            user_name: "Anna".into(),
             user_pronunciation: String::new(),
             phrases: VoicePhrases {
                 process_exited: "{project} код {code}".into(),
@@ -395,7 +396,7 @@ mod tests {
         let calls = speaker.calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "Milena");
-        assert_eq!(calls[0].1, "Олег, внимание. demo упал, код 2.");
+        assert_eq!(calls[0].1, "Внимание. demo упал, код 2.");
     }
 
     #[test]

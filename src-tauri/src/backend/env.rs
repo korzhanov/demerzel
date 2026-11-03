@@ -62,9 +62,9 @@ mod tests {
 
     #[test]
     fn adds_home_tool_dirs_and_homebrew() {
-        let home = PathBuf::from("/Users/oleg");
+        let home = PathBuf::from("/Users/you");
         let p = augmented_path(None, Some(&home));
-        assert!(p.contains("/Users/oleg/.bun/bin"));
+        assert!(p.contains("/Users/you/.bun/bin"));
         assert!(p.contains("/opt/homebrew/bin"));
     }
 
