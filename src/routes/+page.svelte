@@ -64,6 +64,7 @@
   import { buildLabel } from "$lib/build-info";
   import ScanSettingsDialog from "$lib/components/ScanSettingsDialog.svelte";
   import AppSettingsDialog from "$lib/components/AppSettingsDialog.svelte";
+  import LoadingSplash from "$lib/components/LoadingSplash.svelte";
   import LogsLayer from "$lib/components/LogsLayer.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
@@ -131,6 +132,12 @@
   let reportBusy = $state(false);
   let reportMessage = $state("");
   let mounted = false;
+  let startupReady = $state(false);
+  const startupParts = new Set<string>();
+  function markStartupReady(part: string) {
+    startupParts.add(part);
+    if (startupParts.has("settings") && startupParts.has("processes")) startupReady = true;
+  }
   let processBusy = false;
   let scanBusy = $state(false);
   /** Модалка корней сканирования + автофикс (редко нужна в узком сайдбаре). */
@@ -605,20 +612,25 @@
       } catch (e) {
         if (mounted) error = String(e);
       }
+    })();
+    void (async () => {
+      let currentSettings: Settings | null = null;
       try {
-        const s = await invoke<Settings>("get_settings");
+        currentSettings = await invoke<Settings>("get_settings");
         if (!mounted) return;
         scanEntries =
-          s.scan_entries && s.scan_entries.length > 0
-            ? s.scan_entries
-            : entriesFromLegacyRoots(s.scan_roots ?? []);
-        settingsAgentRunner = parseAgentRunner(s.agents?.runner);
+          currentSettings.scan_entries && currentSettings.scan_entries.length > 0
+            ? currentSettings.scan_entries
+            : entriesFromLegacyRoots(currentSettings.scan_roots ?? []);
+        settingsAgentRunner = parseAgentRunner(currentSettings.agents?.runner);
         agentRunner = settingsAgentRunner;
-        settingsAutofix = parseAutofixMode(s.agents?.autofix);
-        if (rootList().length) await scan();
+        settingsAutofix = parseAutofixMode(currentSettings.agents?.autofix);
       } catch (e) {
         if (mounted) error = String(e);
+      } finally {
+        if (mounted) markStartupReady("settings");
       }
+      if (mounted && currentSettings && rootList().length) void scan();
       try {
         const catalog = await invoke<AgentCatalogEntry[]>("list_available_agents");
         if (mounted) agentCatalog = catalog;
@@ -635,7 +647,9 @@
         if (mounted) taskErrors = [...taskErrors, String(e)];
       }
     })();
-    void refresh();
+    void refresh().finally(() => {
+      if (mounted) markStartupReady("processes");
+    });
     void refreshPorts();
     void refreshAgentRuns();
     const poll = setInterval(() => {
@@ -956,6 +970,7 @@
 {/snippet}
 
 <main class="relative mx-auto flex min-h-screen max-w-[1400px] flex-col">
+  {#if !startupReady}<LoadingSplash />{/if}
   <AutomationScheduler projects={flatProjects} />
   <ScanSettingsDialog
     bind:open={scanSettingsOpen}

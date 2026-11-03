@@ -7,13 +7,22 @@
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import type { SystemJob } from "$lib/types";
   import XIcon from "@lucide/svelte/icons/x";
+  import SearchIcon from "@lucide/svelte/icons/search";
+  import SlidersHorizontalIcon from "@lucide/svelte/icons/sliders-horizontal";
+  import WrenchIcon from "@lucide/svelte/icons/wrench";
+  import Settings2Icon from "@lucide/svelte/icons/settings-2";
   import AppTools from "$lib/components/AppTools.svelte";
+  import LoadingSplash from "$lib/components/LoadingSplash.svelte";
 
   // windowed: окно самой программы (нативное окно настроек), без затемнения и с рамкой окна.
   let { open = $bindable(false), windowed = false }: { open: boolean; windowed?: boolean } = $props();
 
-  type Tab = "general" | "advanced";
-  let tab = $state<Tab>("general");
+  type Section = "general" | "tools" | "advanced";
+  let section = $state<Section>("general");
+  let search = $state("");
+  let toolsVisited = $state(false);
+  let settingsReady = $state(false);
+  let settingsLoadStarted = false;
   let message = $state("");
   let error = $state("");
   let busy = $state(false);
@@ -72,10 +81,30 @@
   let quietEnd = $state("08:00");
   let timezone = $state("Europe/Berlin");
   let loaded = $state<Settings | null>(null);
+  let advancedLoaded = false;
+
+  const sections: { id: Section; label: string; description: string; Icon: typeof SlidersHorizontalIcon }[] = [
+    { id: "general", label: "Основные", description: "Импорт и экспорт настроек", Icon: SlidersHorizontalIcon },
+    { id: "tools", label: "Инструменты", description: "Агенты, виджеты и обновления", Icon: WrenchIcon },
+    { id: "advanced", label: "Дополнительно", description: "Алерты и расписания", Icon: Settings2Icon },
+  ];
+  const visibleSections = $derived(
+    sections.filter((item) => `${item.label} ${item.description}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())),
+  );
+
+  async function loadSettings() {
+    try {
+      loaded = await invoke<Settings>("get_settings");
+    } catch (e) {
+      error = String(e);
+    } finally {
+      settingsReady = true;
+    }
+  }
 
   async function loadAdvanced() {
     try {
-      const s = await invoke<Settings>("get_settings");
+      const s = loaded ?? await invoke<Settings>("get_settings");
       loaded = s;
       sysOn = s.system_schedules?.enabled ?? false;
       if (sysOn) await refreshSystem();
@@ -86,6 +115,7 @@
       quietStart = s.alerts?.quiet_hours?.start ?? "23:00";
       quietEnd = s.alerts?.quiet_hours?.end ?? "08:00";
       timezone = s.alerts?.timezone ?? "Europe/Berlin";
+      advancedLoaded = true;
     } catch (e) {
       error = String(e);
     }
@@ -156,7 +186,13 @@
   }
 
   $effect(() => {
-    if (open && tab === "advanced") loadAdvanced();
+    if (!open) return;
+    if (!settingsLoadStarted) {
+      settingsLoadStarted = true;
+      void loadSettings();
+    }
+    if (section === "tools") toolsVisited = true;
+    if (settingsReady && section === "advanced" && !advancedLoaded) void loadAdvanced();
   });
 </script>
 
@@ -170,37 +206,60 @@
   >
     <div
       class={windowed
-        ? "flex min-h-screen w-full flex-col bg-card text-card-foreground"
-        : "flex max-h-[min(90vh,42rem)] w-[min(34rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-lg"}
+        ? "relative flex min-h-screen w-full flex-col bg-card text-card-foreground"
+        : "relative flex max-h-[min(90vh,46rem)] w-[min(54rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-lg"}
       role="dialog"
       aria-modal="true"
       aria-labelledby="app-settings-title"
     >
-      <div class="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 id="app-settings-title" class="text-base font-medium">Настройки</h2>
-        <Button size="sm" variant="ghost" class="size-8 p-0" aria-label="Закрыть" onclick={close}>
-          <XIcon class="size-4" />
-        </Button>
-      </div>
+      <div class="flex min-h-0 flex-1">
+        <aside class="flex w-52 shrink-0 flex-col border-r border-border bg-background/60 p-3">
+          <div class="flex items-center justify-between px-2 pb-3 pt-1">
+            <h2 id="app-settings-title" class="text-base font-semibold">Настройки</h2>
+            {#if windowed}
+              <Button size="sm" variant="ghost" class="size-7 p-0" aria-label="Закрыть" onclick={close}>
+                <XIcon class="size-4" />
+              </Button>
+            {/if}
+          </div>
+          <label class="relative mb-3 block">
+            <SearchIcon class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input class="h-8 pl-8 text-xs" type="search" placeholder="Поиск" bind:value={search} aria-label="Поиск по настройкам" />
+          </label>
+          <nav class="space-y-1" aria-label="Разделы настроек">
+            {#each visibleSections as item (item.id)}
+              <button
+                type="button"
+                aria-current={section === item.id ? "page" : undefined}
+                class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors {section === item.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+                onclick={() => (section = item.id)}
+              >
+                <item.Icon class="size-4 shrink-0" />
+                <span class="truncate">{item.label}</span>
+              </button>
+            {/each}
+            {#if visibleSections.length === 0}
+              <p class="px-2.5 py-2 text-xs text-muted-foreground">Ничего не найдено</p>
+            {/if}
+          </nav>
+        </aside>
 
-      <div class="flex gap-1 border-b border-border px-4 pt-2" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === "general"}
-          class="border-b-2 px-2 pb-2 text-sm {tab === 'general' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}"
-          onclick={() => (tab = "general")}>Основные</button
-        >
-        <button
-          role="tab"
-          aria-selected={tab === "advanced"}
-          class="border-b-2 px-2 pb-2 text-sm {tab === 'advanced' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}"
-          onclick={() => (tab = "advanced")}>Дополнительно</button
-        >
-      </div>
-
-      <div class="space-y-4 overflow-y-auto p-4 text-sm">
-        {#if tab === "general"}
-          <AppTools />
+        <section class="min-w-0 flex-1 overflow-y-auto">
+          <div class="flex min-h-full flex-col p-6 text-sm">
+            {#if !settingsReady}
+              <div class="flex flex-1 items-center justify-center py-16 text-muted-foreground" role="status">
+                <span class="mr-3 size-4 animate-spin rounded-full border-2 border-primary border-r-transparent"></span>
+                Загружаем настройки…
+              </div>
+            {:else}
+              <div class:hidden={section !== "tools"}>
+                {#if toolsVisited}<AppTools />{/if}
+              </div>
+              {#if section === "general"}
+              <div class="mb-6 border-b border-border pb-4">
+                <h3 class="text-lg font-semibold">Основные</h3>
+                <p class="mt-1 text-sm text-muted-foreground">Управление файлом настроек Demerzel.</p>
+              </div>
           <section class="space-y-2">
             <p class="font-medium">Файл настроек</p>
             <p class="text-muted-foreground">
@@ -215,7 +274,11 @@
               >
             </div>
           </section>
-        {:else}
+              {:else if section === "advanced"}
+              <div class="mb-6 border-b border-border pb-4">
+                <h3 class="text-lg font-semibold">Дополнительно</h3>
+                <p class="mt-1 text-sm text-muted-foreground">Тихие часы, интервалы уведомлений и системные расписания.</p>
+              </div>
           <section class="space-y-3">
             <p class="font-medium">Алерты: редко меняемое</p>
             <label class="flex items-center justify-between gap-3">
@@ -277,11 +340,20 @@
               <pre class="mt-2 max-h-64 overflow-auto rounded-md border border-border bg-background p-2">{preview}</pre>
             </details>
           </section>
-        {/if}
+              {/if}
+            {/if}
 
-        {#if message}<p class="text-xs text-muted-foreground">{message}</p>{/if}
-        {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
+            {#if message}<p class="mt-4 text-xs text-muted-foreground">{message}</p>{/if}
+            {#if error}<p class="mt-4 text-xs text-destructive">{error}</p>{/if}
+          </div>
+        </section>
+        {#if !windowed}
+          <Button size="sm" variant="ghost" class="absolute right-3 top-3 size-8 p-0" aria-label="Закрыть" onclick={close}>
+            <XIcon class="size-4" />
+          </Button>
+        {/if}
       </div>
     </div>
   </div>
+  {#if !settingsReady}<LoadingSplash label="Загружаем настройки…" />{/if}
 {/if}
