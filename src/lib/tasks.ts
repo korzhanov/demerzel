@@ -46,6 +46,15 @@ export function filterTasksByProject(
   );
 }
 
+/**
+ * Ошибка проекта относится к доске, если проект лежит внутри выбранного корня.
+ * Пустой фильтр — все проекты.
+ */
+export function isInProjectScope(path: string, projectFilter: string): boolean {
+  if (!projectFilter) return true;
+  return path === projectFilter || path.startsWith(withSeparator(projectFilter));
+}
+
 function containsPath(project: Project, path: string): boolean {
   return project.path === path || project.children.some((c) => containsPath(c, path));
 }

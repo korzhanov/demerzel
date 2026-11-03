@@ -76,7 +76,7 @@ export function agentInstallHint(
   if (!entry) return null;
   if (!entry.available) return entry.install_hint;
   if (!entry.headless_supported) {
-    return `${entry.install_hint} Headless-прогон пока у Claude/Ollama.`;
+    return "Агент установлен, но headless-прогон пока не поддержан. Запуск задач — у Claude и Ollama.";
   }
   return null;
 }
