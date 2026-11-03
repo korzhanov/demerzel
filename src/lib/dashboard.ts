@@ -36,7 +36,7 @@ export function processForProject(
   return processes.find((row) => row.path === project.path);
 }
 
-function isCrashedStatus(status: ProcessStatus): boolean {
+export function isCrashedStatus(status: ProcessStatus): boolean {
   if (status === "Crashed") return true;
   if (typeof status === "object" && "Exited" in status) return status.Exited !== 0;
   return false;

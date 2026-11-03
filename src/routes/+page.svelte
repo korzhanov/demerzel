@@ -40,6 +40,7 @@
   } from "$lib/scan-roots";
   import { AUTOFIX_OFFER_EVENT, OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
   import { clampPortPollInterval, portStatusLabel } from "$lib/ports";
+  import { buildWidgetSummary } from "$lib/widget-summary";
   import {
     canOpenTask,
     canStartAgentFromTask,
@@ -162,6 +163,26 @@
       ),
     ),
   );
+
+  /**
+   * Сводка для виджета. Без неё в App Group нет конфига, и виджет показывает «No configuration».
+   * Бэкенд сам троттлит и пропускает одинаковое содержимое.
+   * Сводка строится до проверки mounted, чтобы эффект подписался на данные.
+   */
+  $effect(() => {
+    const summary = buildWidgetSummary({
+      projects,
+      processes,
+      ports,
+      tasks,
+      agentRuns,
+      now: new Date(),
+    });
+    if (!mounted) return;
+    void invoke("refresh_widget_from_summary", { summary }).catch((e) =>
+      console.warn("widget summary", e),
+    );
+  });
 
   /** Раннер проекта из orchestrator.json, иначе settings (#95). */
   $effect(() => {

@@ -1,6 +1,6 @@
 [package]
 name = "demerzel"
-version = "0.55.38"
+version = "0.55.41"
 description = "The Shadow Orchestrator of Your Local Stack Empire"
 authors = ["Demerzel contributors"]
 license = "Apache-2.0"

@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "demerzel"
-version = "0.55.38"
+version = "0.55.41"
 dependencies = [
  "chrono",
  "chrono-tz",
