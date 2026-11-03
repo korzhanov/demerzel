@@ -17,8 +17,10 @@
 
 ```sh
 bun install                          # postinstall патчит Swift Package (нет Tests/)
-bun run tauri build --debug          # beforeBundleCommand → build-widget.sh → embed PlugIns
-bun run widget:install               # ad-hoc sign → /Applications → open
+bun run build:install               # сборка + ad-hoc sign + /Applications + open (виджет внутри бандла)
+# только сборка без установки: NO_INSTALL=1 bun run build:install
+# только установка уже собранного: bash scripts/build-and-install.sh --install-only
+# или по шагам: bun run tauri build --debug && bun run widget:install
 # или кнопка «установить виджеты» в UI (install_widgets)
 ```
 

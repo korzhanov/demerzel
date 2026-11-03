@@ -1,11 +1,12 @@
 {
   "name": "demerzel",
-  "version": "0.55.38",
+  "version": "0.55.39",
   "description": "The Shadow Orchestrator of Your Local Stack Empire",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:install": "bash scripts/build-and-install.sh",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "postinstall": "bun scripts/patch-swift-package.mjs",
