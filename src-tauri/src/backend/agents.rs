@@ -720,6 +720,23 @@ pub struct ClaudeRunResult {
     pub duration_ms: u64,
     pub timed_out: bool,
     pub cancelled: bool,
+    pub token_usage: Option<TokenUsage>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+}
+
+impl TokenUsage {
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens
+    }
 }
 
 /// Живой процесс `claude -p`; отмена — SIGTERM всей process group.
@@ -747,6 +764,7 @@ impl ClaudeHandle {
         let mut cmd = Command::new(&bin);
         cmd.arg("-p")
             .arg(prompt)
+            .args(["--output-format", "json"])
             .current_dir(worktree)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -858,6 +876,7 @@ impl ClaudeHandle {
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
+        let (stdout, token_usage) = parse_claude_output(&stdout);
         ClaudeRunResult {
             stdout,
             stderr,
@@ -865,6 +884,7 @@ impl ClaudeHandle {
             duration_ms: self.started.elapsed().as_millis() as u64,
             timed_out,
             cancelled,
+            token_usage,
         }
     }
 }
@@ -975,6 +995,7 @@ impl OllamaHandle {
         let bin = ollama_bin();
         let mut cmd = Command::new(&bin);
         cmd.arg("run")
+            .arg("--verbose")
             .arg(model)
             .arg(prompt)
             .current_dir(worktree)
@@ -1084,6 +1105,7 @@ impl OllamaHandle {
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
+        let token_usage = parse_ollama_usage(&format!("{stdout}\n{stderr}"));
         OllamaRunResult {
             stdout,
             stderr,
@@ -1091,8 +1113,50 @@ impl OllamaHandle {
             duration_ms: self.started.elapsed().as_millis() as u64,
             timed_out,
             cancelled,
+            token_usage,
         }
     }
+}
+
+fn parse_claude_output(stdout: &str) -> (String, Option<TokenUsage>) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else {
+        return (stdout.to_string(), None);
+    };
+    let usage = value.get("usage").or_else(|| value.get("modelUsage"));
+    let token_usage = usage.and_then(|usage| {
+        let object = usage.as_object()?;
+        if let Some(input) = object.get("input_tokens").or_else(|| object.get("inputTokens")) {
+            let tokens = TokenUsage {
+                input_tokens: input.as_u64().unwrap_or(0),
+                output_tokens: object.get("output_tokens").or_else(|| object.get("outputTokens")).and_then(serde_json::Value::as_u64).unwrap_or(0),
+                cache_read_input_tokens: object.get("cache_read_input_tokens").or_else(|| object.get("cacheReadInputTokens")).and_then(serde_json::Value::as_u64).unwrap_or(0),
+                cache_creation_input_tokens: object.get("cache_creation_input_tokens").or_else(|| object.get("cacheCreationInputTokens")).and_then(serde_json::Value::as_u64).unwrap_or(0),
+            };
+            return (tokens.total_tokens() > 0).then_some(tokens);
+        }
+        let mut total = TokenUsage::default();
+        for model in object.values() {
+            total.input_tokens += model.get("inputTokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            total.output_tokens += model.get("outputTokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            total.cache_read_input_tokens += model.get("cacheReadInputTokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+            total.cache_creation_input_tokens += model.get("cacheCreationInputTokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+        }
+        (total.total_tokens() > 0).then_some(total)
+    });
+    let result = value.get("result").and_then(serde_json::Value::as_str).unwrap_or(stdout).to_string();
+    (result, token_usage)
+}
+
+fn parse_ollama_usage(stderr: &str) -> Option<TokenUsage> {
+    let count = |label: &str| -> u64 {
+        stderr.lines().find(|line| line.trim_start().starts_with(label))
+            .and_then(|line| line.split(':').nth(1))
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0)
+    };
+    let usage = TokenUsage { input_tokens: count("prompt eval count"), output_tokens: count("eval count"), ..TokenUsage::default() };
+    (usage.total_tokens() > 0).then_some(usage)
 }
 
 /// Собирает промпт и запускает Ollama headless с таймаутом и опциональной отменой.
@@ -1199,6 +1263,9 @@ pub struct AgentRunRecord {
     pub diff: Option<String>,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
+    /// Использование токенов, если раннер сообщает метрики.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<TokenUsage>,
     /// Замечания ревьюера (другой агент), если запрошено (#review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<AgentReview>,
@@ -1209,6 +1276,8 @@ pub struct AgentRunRecord {
 pub struct AgentReview {
     pub runner: AgentRunner,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<TokenUsage>,
 }
 
 /// Результат «принять»: только команда для ручного merge.
@@ -1477,12 +1546,7 @@ pub fn new_run_id() -> String {
 }
 
 pub(crate) fn now_rfc3339() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // Достаточно для сортировки списка; полный chrono не обязателен в agents.
-    format!("{secs}")
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 /// Текст промпта из задачи (title + optional source url).
@@ -1568,6 +1632,7 @@ pub fn prepare_agent_from_task<M: MemoryProbe, O: OllamaProbe>(
         diff: None,
         started_at: Some(now_rfc3339()),
         finished_at: None,
+        token_usage: None,
         review: None,
     };
     registry.upsert(record.clone())?;
@@ -1649,6 +1714,7 @@ pub fn complete_agent_run<M: MemoryProbe, O: OllamaProbe>(
             cancel,
             acp_command,
         )?;
+        record.token_usage = cli.token_usage.clone();
         let cmd_label = runner.as_str();
         if cli.timed_out || cli.cancelled {
             record.status = RunStatus::Failed;
@@ -2333,6 +2399,7 @@ Pages wired down:                         9000.
             diff: Some("diff --git a/x b/x\n".into()),
             started_at: Some("2026-10-30T10:00:00Z".into()),
             finished_at: Some("2026-10-30T10:05:00Z".into()),
+            token_usage: None,
             review: None,
         }
     }

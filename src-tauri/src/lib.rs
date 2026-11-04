@@ -40,6 +40,9 @@ pub struct AgentRuns(pub Mutex<backend::agents::AgentRunRegistry>);
 /// Лимитер параллельных агентов (#29 / #33).
 pub struct AgentLimit(pub Mutex<backend::agents::AgentLimiter>);
 
+/// Журнал запусков, из которого формируется файл календаря.
+pub struct ActivityLog(pub Mutex<backend::calendar::ActivityJournal>);
+
 /// Результат приёма события алерта (для UI / тестов).
 #[derive(Debug, Clone, Serialize)]
 pub struct IngestAlertResult {
@@ -304,15 +307,21 @@ async fn request_agent_review(
     .await
     .map_err(|e| e.to_string())??;
     let text = result.stdout.trim().to_string();
+    let token_usage = result.token_usage.clone();
     if text.is_empty() {
         return Err(format!("ревьюер не вернул текст: {}", result.stderr.trim()));
     }
 
-    let review = AgentReview { runner, text };
+    let review = AgentReview { runner, text, token_usage };
     let mut reg = runs.0.lock().map_err(|e| e.to_string())?;
     if let Some(mut stored) = reg.get(&run_id).cloned() {
         stored.review = Some(review.clone());
         reg.upsert(stored)?;
+    }
+    let updated = reg.get(&run_id).cloned();
+    drop(reg);
+    if let Some(run) = updated {
+        record_agent_activity(&app, &run)?;
     }
     Ok(review)
 }
@@ -353,6 +362,7 @@ fn save_settings(
     // Новая политика доставки; история дедупа сбрасывается вместе с конфигом.
     let mut g = gate.0.lock().map_err(|e| e.to_string())?;
     *g = DeliveryGate::from_config(&settings.alerts);
+    drop(g);
     // App Intents (#101): первый scan_root → App Group siri-config.json.
     if let Some(home) = backend::widgetkit_fallback::user_home() {
         let root = backend::siri_config::root_from_scan_roots(&settings.scan_roots);
@@ -360,7 +370,89 @@ fn save_settings(
             eprintln!("[demerzel] siri-config sync failed: {e}");
         }
     }
+    if settings.calendar.export_path.is_some() {
+        export_calendar_file(&app, &settings.calendar)?;
+    }
     Ok(())
+}
+
+#[tauri::command]
+fn export_calendar(app: tauri::AppHandle) -> Result<(), String> {
+    let settings = backend::settings::load(&settings_path(&app)?).map_err(|e| e.to_string())?;
+    export_calendar_file(&app, &settings.calendar)
+}
+
+fn export_calendar_file(app: &tauri::AppHandle, config: &backend::settings::CalendarConfig) -> Result<(), String> {
+    let path = config.export_path.as_deref().filter(|path| !path.trim().is_empty())
+        .ok_or("Сначала выберите путь для файла календаря .ics")?;
+    let journal = app.state::<ActivityLog>();
+    let log = journal.0.lock().map_err(|e| e.to_string())?;
+    log.export(Path::new(path), config.include_processes, config.include_agents)
+}
+
+fn record_calendar_activity(app: &tauri::AppHandle, record: backend::calendar::ActivityRecord) -> Result<(), String> {
+    let settings = backend::settings::load(&settings_path(app)?).map_err(|e| e.to_string())?;
+    let journal = app.state::<ActivityLog>();
+    let mut log = journal.0.lock().map_err(|e| e.to_string())?;
+    let inserted = log.record(record)?;
+    if inserted && let Some(path) = settings.calendar.export_path.as_deref().filter(|path| !path.trim().is_empty()) {
+        log.export(Path::new(path), settings.calendar.include_processes, settings.calendar.include_agents)?;
+    }
+    Ok(())
+}
+
+fn record_process_activities(app: &tauri::AppHandle, rows: &[Row]) -> Result<(), String> {
+    for row in rows {
+        let Some(finished_at) = row.finished_at.as_deref() else { continue; };
+        let elapsed = elapsed_seconds(&row.started_at, finished_at).unwrap_or(0);
+        record_calendar_activity(app, backend::calendar::ActivityRecord {
+            uid: format!("process-{}", row.id),
+            category: "process".into(),
+            summary: format!("Demerzel · {} · {}", row.project, row.command),
+            description: format!("Проект: {}\nКоманда: {}\nПуть: {}\nВремя работы: {}", row.project, row.command, row.path, format_elapsed(elapsed)),
+            started_at: row.started_at.clone(),
+            finished_at: finished_at.to_string(),
+        })?;
+    }
+    Ok(())
+}
+
+fn record_agent_activity(app: &tauri::AppHandle, run: &backend::agents::AgentRunRecord) -> Result<(), String> {
+    let (Some(started_at), Some(finished_at)) = (run.started_at.as_deref(), run.finished_at.as_deref()) else { return Ok(()); };
+    let elapsed = elapsed_seconds(started_at, finished_at).unwrap_or(0);
+    let usage = match (&run.token_usage, run.review.as_ref().and_then(|review| review.token_usage.as_ref())) {
+        (Some(fix), Some(review)) => format!(
+            "\nТокены: {} всего (исправление: {}, ревью: {})",
+            fix.total_tokens() + review.total_tokens(), fix.total_tokens(), review.total_tokens(),
+        ),
+        (Some(fix), None) => format!("\nТокены: {} (вход: {}, выход: {}, кэш: {})", fix.total_tokens(), fix.input_tokens, fix.output_tokens, fix.cache_read_input_tokens + fix.cache_creation_input_tokens),
+        (None, Some(review)) => format!("\nТокены ревью: {}", review.total_tokens()),
+        (None, None) => "\nТокены: раннер не предоставил данные".into(),
+    };
+    record_calendar_activity(app, backend::calendar::ActivityRecord {
+        uid: format!("agent-{}", run.id),
+        category: "agent".into(),
+        summary: format!("Demerzel · Исправление · {}", run.project),
+        description: format!("Проект: {}\nАгент: {}\nСтатус: {}\nДлительность: {}{}", run.project, run.runner.as_str(), run.status.as_str(), format_elapsed(elapsed), usage),
+        started_at: started_at.into(),
+        finished_at: finished_at.into(),
+    })
+}
+
+fn elapsed_seconds(start: &str, end: &str) -> Option<i64> {
+    let parse = |value: &str| chrono::DateTime::parse_from_rfc3339(value).ok().map(|time| time.timestamp())
+        .or_else(|| value.parse::<i64>().ok());
+    Some(parse(end)? - parse(start)?)
+}
+
+fn format_elapsed(seconds: i64) -> String {
+    let seconds = seconds.max(0) as u64;
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+    if hours > 0 { format!("{hours} ч {minutes} мин") }
+    else if minutes > 0 { format!("{minutes} мин {secs} сек") }
+    else { format!("{secs} сек") }
 }
 
 #[tauri::command]
@@ -753,9 +845,13 @@ fn report_process_problems(
 }
 
 #[tauri::command]
-fn stop_process(processes: tauri::State<'_, Processes>, id: u64) -> Result<Option<backend::process::Status>, String> {
+fn stop_process(app: tauri::AppHandle, processes: tauri::State<'_, Processes>, id: u64) -> Result<Option<backend::process::Status>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
-    reg.stop(id, std::time::Duration::from_secs(5)).map_err(|e| e.to_string())
+    let result = reg.stop(id, std::time::Duration::from_secs(5)).map_err(|e| e.to_string())?;
+    let rows = reg.list().map_err(|e| e.to_string())?;
+    drop(reg);
+    record_process_activities(&app, &rows)?;
+    Ok(result)
 }
 
 /// Статусы выбранных автозадач проекта по реестру процессов (#153, этап B).
@@ -820,9 +916,12 @@ fn attach_process(
 }
 
 #[tauri::command]
-fn list_processes(processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, String> {
+fn list_processes(app: tauri::AppHandle, processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
-    reg.list().map_err(|e| e.to_string())
+    let rows = reg.list().map_err(|e| e.to_string())?;
+    drop(reg);
+    record_process_activities(&app, &rows)?;
+    Ok(rows)
 }
 
 #[tauri::command]
@@ -1116,6 +1215,14 @@ fn start_agent_run(
         ) {
             eprintln!("[agents] complete_agent_run failed: {e}");
         }
+        let completed = reg.get(&run_id).cloned();
+        drop(reg);
+        drop(lim);
+        if let Some(run) = completed
+            && let Err(e) = record_agent_activity(&app_handle, &run)
+        {
+            eprintln!("[calendar] could not export agent activity: {e}");
+        }
     });
 
     Ok(prepared)
@@ -1292,6 +1399,14 @@ fn ingest_alert_event(
                             ) {
                                 eprintln!("[autofix] complete_agent_run failed: {e}");
                             }
+                            let completed = reg.get(&run_id).cloned();
+                            drop(reg);
+                            drop(lim);
+                            if let Some(run) = completed
+                                && let Err(e) = record_agent_activity(&app_handle, &run)
+                            {
+                                eprintln!("[calendar] could not export autofix activity: {e}");
+                            }
                         });
                     }
                     autofix_started = Some(prepared);
@@ -1425,6 +1540,14 @@ fn start_agent_from_alert(
         ) {
             eprintln!("[autofix] complete_agent_run failed: {e}");
         }
+        let completed = reg.get(&run_id).cloned();
+        drop(reg);
+        drop(lim);
+        if let Some(run) = completed
+            && let Err(e) = record_agent_activity(&app_handle, &run)
+        {
+            eprintln!("[calendar] could not export suggested autofix activity: {e}");
+        }
     });
     Ok(prepared)
 }
@@ -1443,6 +1566,7 @@ pub fn run() {
         .manage(AlertGate(Mutex::new(DeliveryGate::new_default())))
         .manage(AgentRuns(Mutex::new(backend::agents::AgentRunRegistry::new())))
         .manage(AgentLimit(Mutex::new(backend::agents::AgentLimiter::from_defaults())))
+        .manage(ActivityLog(Mutex::new(backend::calendar::ActivityJournal::default())))
         .setup(|app| {
             let handle = app.handle().clone();
             app.notification().on_action(move |performed| {
@@ -1457,6 +1581,11 @@ pub fn run() {
             {
                 reg.configure(data.join(backend::session::SESSION_FILE), data.join("process-logs"));
                 reg.restore();
+            }
+            if let Ok(data) = app.path().app_data_dir()
+                && let Ok(mut journal) = app.state::<ActivityLog>().0.lock()
+            {
+                journal.configure(data.join("calendar-activity.json"));
             }
             // Подтянуть quiet/dedupe и agents limiter из settings при старте.
             if let Ok(path) = settings_path(app.handle())
@@ -1488,6 +1617,7 @@ pub fn run() {
             init_orchestrator,
             get_settings,
             export_settings,
+            export_calendar,
             read_settings_file,
             system_schedules,
             save_settings,

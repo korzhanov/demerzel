@@ -27,6 +27,8 @@ pub struct Record {
     /// Присоединён вручную, а не запущен Demerzel.
     #[serde(default)]
     pub attached: bool,
+    #[serde(default)]
+    pub started_at: Option<String>,
     pub out_log: Option<String>,
     pub err_log: Option<String>,
 }
@@ -124,6 +126,7 @@ mod tests {
             pgid: 4242,
             owned: true,
             attached: false,
+            started_at: None,
             out_log: Some("/logs/1.out.log".into()),
             err_log: Some("/logs/1.err.log".into()),
         }

@@ -29,6 +29,7 @@ pub mod siri_config;
 pub mod tasks;
 pub mod widget;
 pub mod widget_refresh;
+pub mod calendar;
 
 pub mod github_tasks;
 pub mod notion_tasks;

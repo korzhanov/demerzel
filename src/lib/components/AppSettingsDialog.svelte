@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { emit } from "@tauri-apps/api/event";
   import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { openPath, openUrl } from "@tauri-apps/plugin-opener";
   import type { Component } from "svelte";
   import type { AgentCatalogEntry, AutofixMode, Project, Settings, SystemJob } from "$lib/types";
   import { AGENT_RUNNERS, parseAgentRunner, parseAutofixMode } from "$lib/types";
@@ -29,7 +29,7 @@
 
   let { open = $bindable(false), windowed = false }: { open: boolean; windowed?: boolean } = $props();
 
-  type Section = "general" | "projects" | "agents" | "notifications" | "widget" | "planning" | "about";
+  type Section = "general" | "projects" | "agents" | "notifications" | "widget" | "planning" | "calendar" | "about";
   const sections: { id: Section; label: string; description: string; Icon: Component }[] = [
     { id: "general", label: "Основные", description: "Тема оформления импорт экспорт файла", Icon: SlidersHorizontalIcon },
     { id: "projects", label: "Проекты", description: "Директории папки корни сканирование", Icon: FolderTreeIcon },
@@ -37,6 +37,7 @@
     { id: "notifications", label: "Уведомления", description: "Алерты тихие часы звук", Icon: BellIcon },
     { id: "widget", label: "Виджет", description: "WidgetKit установить синхронизация", Icon: AppWindowIcon },
     { id: "planning", label: "Планирование", description: "Расписания crontab launchd", Icon: CalendarDaysIcon },
+    { id: "calendar", label: "Календарь", description: "Экспорт активности процессов исправлений токены ics", Icon: CalendarDaysIcon },
     { id: "about", label: "О проекте", description: "Demerzel версия обновление GitHub", Icon: InfoIcon },
   ];
 
@@ -70,6 +71,8 @@
   let sysJobs = $state<SystemJob[]>([]);
   let sysError = $state("");
   let planningLoaded = $state(false);
+  let calendarBusy = $state(false);
+  let calendarMessage = $state("");
   let alertsLoaded = $state(false);
 
   const visibleSections = $derived(
@@ -170,6 +173,50 @@
     } catch (e) {
       error = String(e);
     }
+  }
+
+  async function chooseCalendarFile() {
+    if (!loaded) return;
+    calendarMessage = "";
+    try {
+      const path = await saveDialog({
+        defaultPath: loaded.calendar?.export_path ?? "demerzel-activity.ics",
+        filters: [{ name: "Календарь iCalendar", extensions: ["ics"] }],
+      });
+      if (!path) return;
+      await saveSettings({
+        ...loaded,
+        calendar: {
+          export_path: path,
+          include_processes: loaded.calendar?.include_processes ?? true,
+          include_agents: loaded.calendar?.include_agents ?? true,
+        },
+      });
+      await invoke("export_calendar");
+      calendarMessage = "Файл .ics создан и будет обновляться после завершения процессов и исправлений. Чтобы увидеть новые события в календаре, импортируйте обновлённый файл.";
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function exportCalendarNow() {
+    calendarBusy = true;
+    calendarMessage = "";
+    try {
+      await invoke("export_calendar");
+      calendarMessage = "Файл календаря обновлён.";
+    } catch (e) {
+      error = String(e);
+    } finally {
+      calendarBusy = false;
+    }
+  }
+
+  async function openCalendarFile() {
+    const path = loaded?.calendar?.export_path;
+    if (!path) return;
+    try { await openPath(path); }
+    catch (e) { error = String(e); }
   }
 
   async function persistProjectEntries(entries: ScanRootEntry[]) {
@@ -526,6 +573,32 @@
                   </ul>
                 {/if}
               {/if}
+            {:else if section === "calendar"}
+              <header class="mb-6 border-b border-border pb-4">
+                <h3 class="text-lg font-semibold">Календарь</h3>
+                <p class="mt-1 text-sm text-muted-foreground">Demerzel записывает длительность процессов и AI-исправлений, а также доступные данные о токенах в файл .ics. Импортируйте его в календарь; файл обновляется после завершения работы.</p>
+              </header>
+              <Button size="sm" variant="outline" disabled={calendarBusy} onclick={() => void chooseCalendarFile()}>
+                {loaded?.calendar?.export_path ? "Изменить файл .ics" : "Выбрать файл .ics"}
+              </Button>
+              {#if loaded?.calendar?.export_path}
+                <p class="mt-2 break-all text-xs text-muted-foreground">{loaded.calendar.export_path}</p>
+                <div class="mt-5 space-y-3 border-t border-border pt-4">
+                  <div class="flex items-center gap-2">
+                    <Checkbox id="calendar-processes" checked={loaded.calendar.include_processes} onCheckedChange={async (v) => { if (!loaded) return; try { await saveSettings({ ...loaded, calendar: { ...loaded.calendar!, include_processes: v === true } }); await invoke("export_calendar"); } catch (e) { error = String(e); } }} />
+                    <label for="calendar-processes" class="cursor-pointer">Время работы процессов</label>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Checkbox id="calendar-agents" checked={loaded.calendar.include_agents} onCheckedChange={async (v) => { if (!loaded) return; try { await saveSettings({ ...loaded, calendar: { ...loaded.calendar!, include_agents: v === true } }); await invoke("export_calendar"); } catch (e) { error = String(e); } }} />
+                    <label for="calendar-agents" class="cursor-pointer">Длительность исправлений и токены AI-агентов</label>
+                  </div>
+                  <Button size="sm" disabled={calendarBusy} onclick={() => void exportCalendarNow()}>
+                    {calendarBusy ? "Обновляем…" : "Обновить файл сейчас"}
+                  </Button>
+                  <Button size="sm" variant="outline" onclick={() => void openCalendarFile()}>Открыть файл календаря</Button>
+                </div>
+              {/if}
+              {#if calendarMessage}<p class="mt-3 text-xs text-muted-foreground" role="status">{calendarMessage}</p>{/if}
             {:else}
               <header class="mb-6 border-b border-border pb-4">
                 <h3 class="text-lg font-semibold">О проекте</h3>

@@ -235,6 +235,7 @@ pub fn prepare_agent_from_alert<M: MemoryProbe, O: OllamaProbe>(
         diff: None,
         started_at: Some(now_rfc3339()),
         finished_at: None,
+        token_usage: None,
         review: None,
     };
     registry.upsert(record.clone())?;

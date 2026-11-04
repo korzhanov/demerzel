@@ -336,6 +336,7 @@ pub fn run_acp(
         duration_ms,
         timed_out,
         cancelled,
+        token_usage: None,
     };
 
     if timed_out || cancelled {

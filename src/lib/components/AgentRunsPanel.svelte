@@ -45,6 +45,26 @@
     onSelect(id);
   }
 
+  function runDuration(run: AgentRunRecord) {
+    if (!run.started_at) return null;
+    const started = Date.parse(run.started_at);
+    const ended = run.finished_at ? Date.parse(run.finished_at) : Date.now();
+    if (!Number.isFinite(started) || !Number.isFinite(ended)) return null;
+    const totalSeconds = Math.max(0, Math.floor((ended - started) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours ? `${hours} ч ${minutes} мин` : minutes ? `${minutes} мин ${seconds} сек` : `${seconds} сек`;
+  }
+
+  function tokenTotal(run: AgentRunRecord) {
+    const total = (usage: AgentRunRecord["token_usage"]) => usage
+      ? usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+      : 0;
+    const tokens = total(run.token_usage) + total(run.review?.token_usage);
+    return tokens > 0 ? tokens : null;
+  }
+
   // Ревью другим агентом (#review): backend сохраняет его в запуске; здесь — запрос и последний ответ.
   let reviewBusy = $state(false);
   let reviewError = $state("");
@@ -154,6 +174,11 @@
           <h3 class="font-medium">{selected.id}</h3>
           <p class="text-xs text-muted-foreground">
             {agentRunStatusLabel(selected.status)} · {agentRunnerLabel(selected.runner)} · {selected.project_path}
+          </p>
+          <p class="text-xs text-muted-foreground">
+            {#if runDuration(selected)}Время: {runDuration(selected)}{/if}
+            {#if tokenTotal(selected) !== null}{runDuration(selected) ? " · " : ""}Токены: {tokenTotal(selected)!.toLocaleString("ru-RU")}{/if}
+            {#if selected.finished_at && tokenTotal(selected) === null}{runDuration(selected) ? " · " : ""}Токены: метрика недоступна{/if}
           </p>
           <div class="flex gap-2">
             {#if canAcceptAgentRun(selected.status)}

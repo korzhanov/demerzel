@@ -64,6 +64,25 @@ pub struct Settings {
     /// Показ системных расписаний crontab и launchd, только чтение (#153, этап E). Выключено по умолчанию.
     #[serde(default)]
     pub system_schedules: SystemSchedulesConfig,
+    /// Автоматическое обновление экспортируемого календаря активности.
+    #[serde(default)]
+    pub calendar: CalendarConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CalendarConfig {
+    #[serde(default)]
+    pub export_path: Option<String>,
+    #[serde(default = "default_true")]
+    pub include_processes: bool,
+    #[serde(default = "default_true")]
+    pub include_agents: bool,
+}
+
+impl Default for CalendarConfig {
+    fn default() -> Self {
+        Self { export_path: None, include_processes: true, include_agents: true }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

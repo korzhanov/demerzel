@@ -265,8 +265,16 @@ export interface AgentRunRecord {
   diff: string | null;
   started_at: string | null;
   finished_at: string | null;
+  token_usage?: AgentTokenUsage | null;
   /** Замечания другого агента (#review). */
-  review?: { runner: AgentRunner; text: string } | null;
+  review?: { runner: AgentRunner; text: string; token_usage?: AgentTokenUsage | null } | null;
+}
+
+export interface AgentTokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
 }
 
 export interface AcceptAgentRunResult {
@@ -329,6 +337,7 @@ export interface Settings {
   agents?: AgentsConfig;
   widgetkit?: { enabled: boolean };
   system_schedules?: { enabled: boolean };
+  calendar?: { export_path: string | null; include_processes: boolean; include_agents: boolean };
 }
 
 export interface SystemJob {

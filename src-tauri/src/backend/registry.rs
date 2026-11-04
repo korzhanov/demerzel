@@ -28,6 +28,8 @@ pub struct Entry {
     pub path: PathBuf,
     pub port: Option<u16>,
     pub origin: Origin,
+    pub started_at: String,
+    pub finished_at: Option<String>,
     pub managed: Managed,
 }
 
@@ -44,6 +46,8 @@ pub struct Row {
     pub port: Option<u16>,
     pub origin: Origin,
     pub owned: bool,
+    pub started_at: String,
+    pub finished_at: Option<String>,
 }
 
 pub struct Registry {
@@ -120,6 +124,8 @@ impl Registry {
                 path: cwd.into(),
                 port,
                 origin: Origin::Started,
+                started_at: now_rfc3339(),
+                finished_at: None,
                 managed,
             },
         );
@@ -159,6 +165,8 @@ impl Registry {
                     path: rec.path.into(),
                     port: rec.port,
                     origin,
+                    started_at: rec.started_at.unwrap_or_else(now_rfc3339),
+                    finished_at: None,
                     managed,
                 },
             );
@@ -195,6 +203,8 @@ impl Registry {
                 path: cwd.into(),
                 port,
                 origin: Origin::Attached,
+                started_at: now_rfc3339(),
+                finished_at: None,
                 managed,
             },
         );
@@ -223,6 +233,7 @@ impl Registry {
                     pgid: e.managed.pgid(),
                     owned: e.managed.owned(),
                     attached: e.origin == Origin::Attached,
+                    started_at: Some(e.started_at.clone()),
                     out_log: e.managed.log_files().map(|f| f.out.to_string_lossy().into_owned()),
                     err_log: e.managed.log_files().map(|f| f.err.to_string_lossy().into_owned()),
                 })
@@ -238,7 +249,11 @@ impl Registry {
     pub fn stop(&mut self, id: u64, grace: Duration) -> io::Result<Option<Status>> {
         match self.entries.get_mut(&id) {
             Some(e) => {
+                let was_live = is_live(e.managed.status());
                 let status = e.managed.stop(grace)?;
+                if was_live && e.finished_at.is_none() {
+                    e.finished_at = Some(now_rfc3339());
+                }
                 self.ports.release(id);
                 self.persist();
                 Ok(Some(status))
@@ -252,7 +267,11 @@ impl Registry {
         let live_before = self.entries.values().filter(|e| is_live(e.managed.status())).count();
         let mut rows = Vec::with_capacity(self.entries.len());
         for (id, e) in self.entries.iter_mut() {
+            let was_live = is_live(e.managed.status());
             let status = e.managed.poll()?;
+            if was_live && !is_live(status) && e.finished_at.is_none() {
+                e.finished_at = Some(now_rfc3339());
+            }
             if !is_live(status) {
                 self.ports.release(*id);
             }
@@ -266,6 +285,8 @@ impl Registry {
                 port: e.port,
                 origin: e.origin,
                 owned: e.managed.owned(),
+                started_at: e.started_at.clone(),
+                finished_at: e.finished_at.clone(),
             });
         }
         let live_after = self.entries.values().filter(|e| is_live(e.managed.status())).count();
@@ -416,6 +437,10 @@ impl Registry {
     }
 }
 
+fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,6 +514,7 @@ mod tests {
             pgid: 4_000_000,
             owned: true,
             attached: false,
+            started_at: None,
             out_log: None,
             err_log: None,
         };
