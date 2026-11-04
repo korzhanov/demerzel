@@ -13,3 +13,4 @@ vite.config.ts.timestamp-*
 src-tauri/target
 src-tauri/gen
 src-tauri/updater.key
+.vscode/settings.json
