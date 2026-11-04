@@ -382,6 +382,31 @@ fn export_calendar(app: tauri::AppHandle) -> Result<(), String> {
     export_calendar_file(&app, &settings.calendar)
 }
 
+#[tauri::command]
+fn list_apple_calendars() -> Result<Vec<String>, String> {
+    backend::apple_calendar::list_calendars()
+}
+
+#[tauri::command]
+fn start_google_calendar_auth(client_id: String, verifier: String, challenge: String, state: String) -> Result<String, String> {
+    backend::google_calendar::start_auth(client_id, verifier, challenge, state)
+}
+
+#[tauri::command]
+fn google_calendar_status(client_id: String) -> bool {
+    backend::google_calendar::connected(&client_id)
+}
+
+#[tauri::command]
+fn list_google_calendars(client_id: String) -> Result<Vec<backend::google_calendar::CalendarItem>, String> {
+    backend::google_calendar::list_calendars(&client_id)
+}
+
+#[tauri::command]
+fn disconnect_google_calendar(client_id: String) -> Result<(), String> {
+    backend::google_calendar::disconnect(&client_id)
+}
+
 fn export_calendar_file(app: &tauri::AppHandle, config: &backend::settings::CalendarConfig) -> Result<(), String> {
     let path = config.export_path.as_deref().filter(|path| !path.trim().is_empty())
         .ok_or("Сначала выберите путь для файла календаря .ics")?;
@@ -394,9 +419,31 @@ fn record_calendar_activity(app: &tauri::AppHandle, record: backend::calendar::A
     let settings = backend::settings::load(&settings_path(app)?).map_err(|e| e.to_string())?;
     let journal = app.state::<ActivityLog>();
     let mut log = journal.0.lock().map_err(|e| e.to_string())?;
-    let inserted = log.record(record)?;
+    let inserted = log.record(record.clone())?;
     if inserted && let Some(path) = settings.calendar.export_path.as_deref().filter(|path| !path.trim().is_empty()) {
         log.export(Path::new(path), settings.calendar.include_processes, settings.calendar.include_agents)?;
+    }
+    drop(log);
+    if inserted && (settings.calendar.apple_enabled || settings.calendar.google_enabled) {
+        let event = record;
+        let included = (event.category == "process" && settings.calendar.include_processes)
+            || (event.category == "agent" && settings.calendar.include_agents);
+        if !included { return Ok(()); }
+        let apple = settings.calendar.apple_enabled.then(|| settings.calendar.apple_calendar_name.clone()).flatten();
+        let google = settings.calendar.google_enabled.then(|| settings.calendar.google_client_id.clone()).flatten();
+        let google_calendar = settings.calendar.google_calendar_id.clone();
+        std::thread::spawn(move || {
+            if let Some(name) = apple.filter(|name| !name.trim().is_empty()) {
+                if let Err(e) = backend::apple_calendar::upsert(&name, &event) {
+                    eprintln!("[calendar/apple] could not sync event: {e}");
+                }
+            }
+            if let Some(client_id) = google.filter(|id| !id.trim().is_empty()) {
+                if let Err(e) = backend::google_calendar::upsert(&client_id, &google_calendar, &event) {
+                    eprintln!("[calendar/google] could not sync event: {e}");
+                }
+            }
+        });
     }
     Ok(())
 }
@@ -1618,6 +1665,11 @@ pub fn run() {
             get_settings,
             export_settings,
             export_calendar,
+            list_apple_calendars,
+            start_google_calendar_auth,
+            google_calendar_status,
+            list_google_calendars,
+            disconnect_google_calendar,
             read_settings_file,
             system_schedules,
             save_settings,

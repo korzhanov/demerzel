@@ -4,7 +4,7 @@
   import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { openPath, openUrl } from "@tauri-apps/plugin-opener";
   import type { Component } from "svelte";
-  import type { AgentCatalogEntry, AutofixMode, Project, Settings, SystemJob } from "$lib/types";
+  import type { AgentCatalogEntry, AutofixMode, CalendarListItem, Project, Settings, SystemJob } from "$lib/types";
   import { AGENT_RUNNERS, parseAgentRunner, parseAutofixMode } from "$lib/types";
   import { enabledRootPaths, entriesFromLegacyRoots, type ScanRootEntry } from "$lib/scan-roots";
   import { mergeCatalogPrefs, type AgentCatalogPref } from "$lib/agent-install";
@@ -73,6 +73,12 @@
   let planningLoaded = $state(false);
   let calendarBusy = $state(false);
   let calendarMessage = $state("");
+  let appleCalendarNames = $state<string[]>([]);
+  let appleCalendarBusy = $state(false);
+  let googleCalendarList = $state<CalendarListItem[]>([]);
+  let googleCalendarBusy = $state(false);
+  let googleAuthBusy = $state(false);
+  let googleConnected = $state(false);
   let alertsLoaded = $state(false);
 
   const visibleSections = $derived(
@@ -80,6 +86,7 @@
   );
   const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
   const themeModes: ThemeMode[] = ["system", "light", "dark"];
+  const appleCalendarSupported = typeof navigator !== "undefined" && /Macintosh|Mac OS X/.test(navigator.userAgent);
 
   function close() {
     open = false;
@@ -187,9 +194,16 @@
       await saveSettings({
         ...loaded,
         calendar: {
+          ...(loaded.calendar ?? {
+            include_processes: true,
+            include_agents: true,
+            apple_enabled: false,
+            apple_calendar_name: null,
+            google_enabled: false,
+            google_client_id: null,
+            google_calendar_id: "primary",
+          }),
           export_path: path,
-          include_processes: loaded.calendar?.include_processes ?? true,
-          include_agents: loaded.calendar?.include_agents ?? true,
         },
       });
       await invoke("export_calendar");
@@ -218,6 +232,102 @@
     try { await openPath(path); }
     catch (e) { error = String(e); }
   }
+
+  async function loadAppleCalendars() {
+    appleCalendarBusy = true;
+    try {
+      appleCalendarNames = await invoke<string[]>("list_apple_calendars");
+      if (!loaded?.calendar?.apple_calendar_name && appleCalendarNames.length) {
+        await saveCalendarConfig({ ...calendarConfig(), apple_calendar_name: appleCalendarNames[0] });
+      }
+    } catch (e) { error = String(e); }
+    finally { appleCalendarBusy = false; }
+  }
+
+  function calendarConfig() {
+    return loaded?.calendar ?? {
+      export_path: null,
+      include_processes: true,
+      include_agents: true,
+      apple_enabled: false,
+      apple_calendar_name: null,
+      google_enabled: false,
+      google_client_id: null,
+      google_calendar_id: "primary",
+    };
+  }
+
+  async function saveCalendarConfig(calendar: NonNullable<Settings["calendar"]>) {
+    const current = loaded ?? await invoke<Settings>("get_settings");
+    await saveSettings({ ...current, calendar });
+  }
+
+  async function loadGoogleCalendarList() {
+    const clientId = loaded?.calendar?.google_client_id?.trim();
+    if (!clientId || !googleConnected) return;
+    googleCalendarBusy = true;
+    try { googleCalendarList = await invoke<CalendarListItem[]>("list_google_calendars", { clientId }); }
+    catch (e) { error = String(e); }
+    finally { googleCalendarBusy = false; }
+  }
+
+  async function connectGoogleCalendar() {
+    const clientId = loaded?.calendar?.google_client_id?.trim();
+    if (!clientId) { error = "Добавьте Google OAuth Client ID из своего Google Cloud проекта."; return; }
+    googleAuthBusy = true;
+    error = "";
+    calendarMessage = "";
+    try {
+      const verifier = base64Url(crypto.getRandomValues(new Uint8Array(48)));
+      const challenge = base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
+      const state = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+      const url = await invoke<string>("start_google_calendar_auth", { clientId, verifier, challenge, state });
+      await openUrl(url);
+      calendarMessage = "Завершите вход в открывшемся браузере. Demerzel дождётся подтверждения.";
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        googleConnected = await invoke<boolean>("google_calendar_status", { clientId });
+        if (googleConnected) {
+          googleCalendarList = await invoke<CalendarListItem[]>("list_google_calendars", { clientId });
+          const cfg = calendarConfig();
+          await saveCalendarConfig({ ...cfg, google_enabled: true, google_calendar_id: cfg.google_calendar_id || "primary" });
+          calendarMessage = "Google Calendar подключён. Новые события будут синхронизироваться автоматически.";
+          break;
+        }
+      }
+      if (!googleConnected) calendarMessage = "Подключение не завершено. Вернитесь в Demerzel и попробуйте ещё раз.";
+    } catch (e) { error = String(e); }
+    finally { googleAuthBusy = false; }
+  }
+
+  function base64Url(bytes: Uint8Array) {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  async function disconnectGoogleCalendar() {
+    const clientId = loaded?.calendar?.google_client_id?.trim();
+    if (!clientId) return;
+    try {
+      await invoke("disconnect_google_calendar", { clientId });
+      googleConnected = false;
+      googleCalendarList = [];
+      await saveCalendarConfig({ ...calendarConfig(), google_enabled: false });
+      calendarMessage = "Google Calendar отключён.";
+    } catch (e) { error = String(e); }
+  }
+
+  $effect(() => {
+    if (section === "calendar" && settingsReady) {
+      const clientId = loaded?.calendar?.google_client_id?.trim();
+      if (clientId) {
+        invoke<boolean>("google_calendar_status", { clientId })
+          .then((connected) => { googleConnected = connected; if (connected) void loadGoogleCalendarList(); })
+          .catch((e) => { error = String(e); });
+      }
+    }
+  });
 
   async function persistProjectEntries(entries: ScanRootEntry[]) {
     try {
@@ -576,8 +686,48 @@
             {:else if section === "calendar"}
               <header class="mb-6 border-b border-border pb-4">
                 <h3 class="text-lg font-semibold">Календарь</h3>
-                <p class="mt-1 text-sm text-muted-foreground">Demerzel записывает длительность процессов и AI-исправлений, а также доступные данные о токенах в файл .ics. Импортируйте его в календарь; файл обновляется после завершения работы.</p>
+                <p class="mt-1 text-sm text-muted-foreground">Подключайте Apple Calendar на macOS или Google Calendar для автоматической синхронизации. Файл .ics остаётся универсальным вариантом экспорта.</p>
               </header>
+              <section class="space-y-4 border-b border-border pb-5">
+                {#if appleCalendarSupported}
+                  <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                      <Checkbox id="apple-calendar-enabled" checked={loaded?.calendar?.apple_enabled ?? false} onCheckedChange={async (v) => { try { await saveCalendarConfig({ ...calendarConfig(), apple_enabled: v === true }); } catch (e) { error = String(e); } }} />
+                      <label for="apple-calendar-enabled" class="cursor-pointer">Синхронизировать с Apple Calendar</label>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 pl-6">
+                      <Button size="sm" variant="outline" disabled={appleCalendarBusy} onclick={() => void loadAppleCalendars()}>{appleCalendarBusy ? "Загружаем…" : "Загрузить календари Apple"}</Button>
+                      {#if appleCalendarNames.length}
+                        <select class="h-9 max-w-full rounded-md border border-input bg-background px-3 text-sm" value={loaded?.calendar?.apple_calendar_name ?? ""} onchange={async (e) => { try { await saveCalendarConfig({ ...calendarConfig(), apple_calendar_name: e.currentTarget.value }); } catch (err) { error = String(err); } }}>
+                          {#each appleCalendarNames as name}<option value={name}>{name}</option>{/each}
+                        </select>
+                      {:else if loaded?.calendar?.apple_calendar_name}
+                        <span class="text-xs text-muted-foreground">{loaded.calendar.apple_calendar_name}</span>
+                      {/if}
+                    </div>
+                    <p class="pl-6 text-xs text-muted-foreground">При первом подключении macOS запросит разрешение на управление Calendar.</p>
+                  </div>
+                {/if}
+                <div class="space-y-2 border-t border-border pt-4">
+                  <label for="google-client-id" class="text-sm font-medium">Google OAuth Client ID</label>
+                  <Input id="google-client-id" value={loaded?.calendar?.google_client_id ?? ""} placeholder="…apps.googleusercontent.com" onblur={async (e) => { try { await saveCalendarConfig({ ...calendarConfig(), google_client_id: e.currentTarget.value.trim() || null }); } catch (err) { error = String(err); } }} />
+                  <p class="text-xs text-muted-foreground">Укажите Client ID типа Desktop app из собственного Google Cloud проекта. Инструкция: docs/calendar-integrations.md</p>
+                  {#if googleConnected}
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="text-xs text-green-600">Google Calendar подключён</span>
+                      <Button size="sm" variant="outline" disabled={googleCalendarBusy} onclick={() => void loadGoogleCalendarList()}>{googleCalendarBusy ? "Загружаем…" : "Обновить список календарей"}</Button>
+                      <Button size="sm" variant="outline" onclick={() => void disconnectGoogleCalendar()}>Отключить</Button>
+                    </div>
+                    {#if googleCalendarList.length}
+                      <select class="h-9 max-w-full rounded-md border border-input bg-background px-3 text-sm" value={loaded?.calendar?.google_calendar_id ?? "primary"} onchange={async (e) => { try { await saveCalendarConfig({ ...calendarConfig(), google_calendar_id: e.currentTarget.value, google_enabled: true }); } catch (err) { error = String(err); } }}>
+                        {#each googleCalendarList as calendar (calendar.id)}<option value={calendar.id}>{calendar.summary}{calendar.primary ? " · основной" : ""}</option>{/each}
+                      </select>
+                    {/if}
+                  {:else}
+                    <Button size="sm" disabled={googleAuthBusy || !loaded?.calendar?.google_client_id?.trim()} onclick={() => void connectGoogleCalendar()}>{googleAuthBusy ? "Ожидаем вход…" : "Подключить Google Calendar"}</Button>
+                  {/if}
+                </div>
+              </section>
               <Button size="sm" variant="outline" disabled={calendarBusy} onclick={() => void chooseCalendarFile()}>
                 {loaded?.calendar?.export_path ? "Изменить файл .ics" : "Выбрать файл .ics"}
               </Button>

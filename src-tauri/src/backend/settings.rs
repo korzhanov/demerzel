@@ -77,11 +77,32 @@ pub struct CalendarConfig {
     pub include_processes: bool,
     #[serde(default = "default_true")]
     pub include_agents: bool,
+    #[serde(default)]
+    pub apple_enabled: bool,
+    #[serde(default)]
+    pub apple_calendar_name: Option<String>,
+    #[serde(default)]
+    pub google_enabled: bool,
+    #[serde(default)]
+    pub google_client_id: Option<String>,
+    #[serde(default = "default_google_calendar_id")]
+    pub google_calendar_id: String,
 }
+
+fn default_google_calendar_id() -> String { "primary".into() }
 
 impl Default for CalendarConfig {
     fn default() -> Self {
-        Self { export_path: None, include_processes: true, include_agents: true }
+        Self {
+            export_path: None,
+            include_processes: true,
+            include_agents: true,
+            apple_enabled: false,
+            apple_calendar_name: None,
+            google_enabled: false,
+            google_client_id: None,
+            google_calendar_id: default_google_calendar_id(),
+        }
     }
 }
 

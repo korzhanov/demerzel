@@ -337,7 +337,22 @@ export interface Settings {
   agents?: AgentsConfig;
   widgetkit?: { enabled: boolean };
   system_schedules?: { enabled: boolean };
-  calendar?: { export_path: string | null; include_processes: boolean; include_agents: boolean };
+  calendar?: {
+    export_path: string | null;
+    include_processes: boolean;
+    include_agents: boolean;
+    apple_enabled: boolean;
+    apple_calendar_name: string | null;
+    google_enabled: boolean;
+    google_client_id: string | null;
+    google_calendar_id: string;
+  };
+}
+
+export interface CalendarListItem {
+  id: string;
+  summary: string;
+  primary?: boolean;
 }
 
 export interface SystemJob {
