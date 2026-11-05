@@ -14,23 +14,24 @@ fn run_script(script: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+#[cfg(target_os = "macos")]
 pub fn list_calendars() -> Result<Vec<String>, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let result =
-            run_script("Application('Calendar').calendars().map(c => c.name()).join('\\n')")?;
-        return Ok(result
-            .lines()
-            .map(str::to_string)
-            .filter(|s| !s.is_empty())
-            .collect());
-    }
-    #[cfg(not(target_os = "macos"))]
+    let result =
+        run_script("Application('Calendar').calendars().map(c => c.name()).join('\\n')")?;
+    Ok(result
+        .lines()
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .collect())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn list_calendars() -> Result<Vec<String>, String> {
     Err("Apple Calendar доступен только на macOS".into())
 }
 
+#[cfg(target_os = "macos")]
 pub fn upsert(calendar_name: &str, record: &ActivityRecord) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
     {
         let marker = format!("Demerzel activity UID: {}", record.uid);
         let payload = serde_json::json!({
@@ -47,11 +48,12 @@ pub fn upsert(calendar_name: &str, record: &ActivityRecord) -> Result<(), String
             data
         );
         run_script(&script)?;
-        return Ok(());
+        Ok(())
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (calendar_name, record);
-        Err("Apple Calendar доступен только на macOS".into())
-    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn upsert(calendar_name: &str, record: &ActivityRecord) -> Result<(), String> {
+    let _ = (calendar_name, record);
+    Err("Apple Calendar доступен только на macOS".into())
 }

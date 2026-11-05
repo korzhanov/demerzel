@@ -433,15 +433,17 @@ fn record_calendar_activity(app: &tauri::AppHandle, record: backend::calendar::A
         let google = settings.calendar.google_enabled.then(|| settings.calendar.google_client_id.clone()).flatten();
         let google_calendar = settings.calendar.google_calendar_id.clone();
         std::thread::spawn(move || {
-            if let Some(name) = apple.filter(|name| !name.trim().is_empty()) {
-                if let Err(e) = backend::apple_calendar::upsert(&name, &event) {
-                    eprintln!("[calendar/apple] could not sync event: {e}");
-                }
+            let apple_result = apple
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| backend::apple_calendar::upsert(&name, &event));
+            if let Some(Err(e)) = apple_result {
+                eprintln!("[calendar/apple] could not sync event: {e}");
             }
-            if let Some(client_id) = google.filter(|id| !id.trim().is_empty()) {
-                if let Err(e) = backend::google_calendar::upsert(&client_id, &google_calendar, &event) {
-                    eprintln!("[calendar/google] could not sync event: {e}");
-                }
+            let google_result = google
+                .filter(|id| !id.trim().is_empty())
+                .map(|client_id| backend::google_calendar::upsert(&client_id, &google_calendar, &event));
+            if let Some(Err(e)) = google_result {
+                eprintln!("[calendar/google] could not sync event: {e}");
             }
         });
     }
@@ -1138,9 +1140,12 @@ fn discover_automations(path: String) -> Vec<backend::automation::DiscoveredAuto
 }
 
 /// Реестр CLI-агентов на машине: PATH + `--version`, подсказки установки (#95).
+/// Async + spawn_blocking: синхронная команда работает на главном потоке и вешала окна (`--version` на каждого агента).
 #[tauri::command]
-fn list_available_agents() -> Vec<backend::agent_catalog::AgentCatalogEntry> {
-    backend::agent_install::enrich_catalog(None)
+async fn list_available_agents() -> Result<Vec<backend::agent_catalog::AgentCatalogEntry>, String> {
+    tauri::async_runtime::spawn_blocking(|| backend::agent_install::enrich_catalog(None))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Открыть Terminal.app с командой установки агента (#140). UI подтверждает до вызова.
