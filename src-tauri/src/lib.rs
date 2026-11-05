@@ -1138,9 +1138,12 @@ fn discover_automations(path: String) -> Vec<backend::automation::DiscoveredAuto
 }
 
 /// Реестр CLI-агентов на машине: PATH + `--version`, подсказки установки (#95).
+/// Async + spawn_blocking: синхронная команда работает на главном потоке и вешала окна (`--version` на каждого агента).
 #[tauri::command]
-fn list_available_agents() -> Vec<backend::agent_catalog::AgentCatalogEntry> {
-    backend::agent_install::enrich_catalog(None)
+async fn list_available_agents() -> Result<Vec<backend::agent_catalog::AgentCatalogEntry>, String> {
+    tauri::async_runtime::spawn_blocking(|| backend::agent_install::enrich_catalog(None))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Открыть Terminal.app с командой установки агента (#140). UI подтверждает до вызова.
