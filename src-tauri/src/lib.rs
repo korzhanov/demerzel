@@ -433,15 +433,17 @@ fn record_calendar_activity(app: &tauri::AppHandle, record: backend::calendar::A
         let google = settings.calendar.google_enabled.then(|| settings.calendar.google_client_id.clone()).flatten();
         let google_calendar = settings.calendar.google_calendar_id.clone();
         std::thread::spawn(move || {
-            if let Some(name) = apple.filter(|name| !name.trim().is_empty()) {
-                if let Err(e) = backend::apple_calendar::upsert(&name, &event) {
-                    eprintln!("[calendar/apple] could not sync event: {e}");
-                }
+            let apple_result = apple
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| backend::apple_calendar::upsert(&name, &event));
+            if let Some(Err(e)) = apple_result {
+                eprintln!("[calendar/apple] could not sync event: {e}");
             }
-            if let Some(client_id) = google.filter(|id| !id.trim().is_empty()) {
-                if let Err(e) = backend::google_calendar::upsert(&client_id, &google_calendar, &event) {
-                    eprintln!("[calendar/google] could not sync event: {e}");
-                }
+            let google_result = google
+                .filter(|id| !id.trim().is_empty())
+                .map(|client_id| backend::google_calendar::upsert(&client_id, &google_calendar, &event));
+            if let Some(Err(e)) = google_result {
+                eprintln!("[calendar/google] could not sync event: {e}");
             }
         });
     }
