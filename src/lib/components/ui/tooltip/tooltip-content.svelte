@@ -35,8 +35,7 @@
 		{...restProps}
 	>
 		{@render children?.()}
-		<TooltipPrimitive.Arrow
-			class="bg-foreground fill-foreground z-[200] size-2.5 rotate-45 rounded-[2px]"
-		/>
+		<!-- bits-ui рисует SVG-треугольник с currentColor; поворот/размер на обёртке ломают его. Цвет — через text-*. -->
+		<TooltipPrimitive.Arrow class="text-foreground" width={10} height={5} />
 	</TooltipPrimitive.Content>
 </TooltipPrimitive.Portal>

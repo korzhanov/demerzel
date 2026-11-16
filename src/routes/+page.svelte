@@ -40,7 +40,7 @@
   } from "$lib/scan-roots";
   import { AUTOFIX_OFFER_EVENT, OPEN_PROJECT_EVENT, processIdForProject } from "$lib/alerts";
   import { clampPortPollInterval, portStatusLabel } from "$lib/ports";
-  import { buildWidgetSummary } from "$lib/widget-summary";
+  import { buildWidgetSummary, type WidgetPulse } from "$lib/widget-summary";
   import {
     canOpenTask,
     canStartAgentFromTask,
@@ -76,6 +76,9 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import * as Resizable from "$lib/components/ui/resizable/index.js";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import InfoHint from "$lib/components/InfoHint.svelte";
+  import ProcessList from "$lib/components/ProcessList.svelte";
+  import { localhostUrl, logsUnavailableHint } from "$lib/process-actions";
   import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
   import ScrollTextIcon from "@lucide/svelte/icons/scroll-text";
   import Columns2Icon from "@lucide/svelte/icons/columns-2";
@@ -89,6 +92,8 @@
   let projects = $state<Project[]>([]);
   let processes = $state<ProcessRow[]>([]);
   let selectedId = $state<number | null>(null);
+  /** Строка процесса, для которой сейчас выполняется действие (кнопки блокируются). */
+  let rowBusyId = $state<number | null>(null);
   /** Выбранный проект в сайдбаре (мокup columns). */
   let selectedProjectPath = $state<string | null>(null);
   let logs = $state<LogLine[]>([]);
@@ -182,6 +187,7 @@
       ports,
       tasks,
       agentRuns,
+      pulses,
       now: new Date(),
     });
     if (!mounted) return;
@@ -189,6 +195,21 @@
       console.warn("widget summary", e),
     );
   });
+
+  /** Пульсы проектов с `pulse` в orchestrator.json; ключ — путь проекта (#99). */
+  let pulses = $state<Record<string, WidgetPulse>>({});
+  async function refreshPulses() {
+    if (!mounted) return;
+    const targets = flattenProjects(projects).map((p) => ({ key: p.path, path: p.path }));
+    if (targets.length === 0) return;
+    try {
+      const next = (await invoke<Record<string, WidgetPulse> | null>("project_pulses", { targets })) ?? {};
+      // Одинаковый ответ не трогаем: иначе каждые 5 с перестраивалась бы сводка виджета.
+      if (JSON.stringify(next) !== JSON.stringify(pulses)) pulses = next;
+    } catch (e) {
+      console.warn("project pulses", e);
+    }
+  }
 
   /** Раннер проекта из orchestrator.json, иначе settings (#95). */
   $effect(() => {
@@ -509,8 +530,7 @@
     try {
       processes = await invoke<ProcessRow[]>("list_processes");
       if (selectedId !== null) {
-        const l = await invoke<LogLine[] | null>("process_logs", { id: selectedId });
-        logs = l ?? [];
+        await loadLogs();
       }
       updatedAt = formatUpdatedAt(new Date());
     } catch (e) {
@@ -520,10 +540,10 @@
     }
   }
 
-  async function start(p: Project) {
+  async function start(p: Project, explicitCommand?: string) {
     error = "";
     try {
-      let command = commandOverride.trim();
+      let command = explicitCommand ?? commandOverride.trim();
       // «bun run dev» — старый дефолт UI; для parser/корня без scripts.dev это ломает старт.
       if (!command || command === "bun run dev") {
         const resolved = await invoke<string | null>("resolve_dev_command", { path: p.path });
@@ -559,6 +579,98 @@
   function select(id: number) {
     selectedId = id;
     refresh();
+  }
+
+  /** Строка процесса: проект находим по папке, команду берём у процесса, а не из поля ввода. */
+  function projectForRow(row: ProcessRow): Project | undefined {
+    return flatProjects.find((p) => p.path === row.path);
+  }
+
+  async function startRow(row: ProcessRow) {
+    const project = projectForRow(row);
+    if (!project) {
+      error = `Не нашли проект «${row.project}» в списке. Проверьте корни сканирования.`;
+      return;
+    }
+    rowBusyId = row.id;
+    try {
+      await start(project, row.command);
+    } finally {
+      rowBusyId = null;
+    }
+  }
+
+  async function pauseRow(row: ProcessRow) {
+    await runRowAction(row.id, "pause_process");
+  }
+
+  async function resumeRow(row: ProcessRow) {
+    await runRowAction(row.id, "resume_process");
+  }
+
+  async function runRowAction(id: number, command: "pause_process" | "resume_process" | "stop_process") {
+    rowBusyId = id;
+    error = "";
+    try {
+      await invoke(command, { id });
+      await refresh();
+    } catch (e) {
+      error = String(e);
+    } finally {
+      rowBusyId = null;
+    }
+  }
+
+  /** Перезапуск = остановка и новый запуск той же командой. */
+  async function restartRow(row: ProcessRow) {
+    const project = projectForRow(row);
+    rowBusyId = row.id;
+    error = "";
+    try {
+      await invoke("stop_process", { id: row.id });
+      if (!project) {
+        error = `Процесс остановлен, но проект «${row.project}» не найден. Запустите его вручную.`;
+        return;
+      }
+      await start(project, row.command);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      rowBusyId = null;
+      await refresh();
+    }
+  }
+
+  function stopRow(row: ProcessRow) {
+    return runRowAction(row.id, "stop_process").catch(() => {});
+  }
+
+  /** Логи открываем для любого процесса Demerzel, и для остановленного тоже: файлы остаются. */
+  async function openLogsForRow(row: ProcessRow) {
+    selectedId = row.id;
+    logsOpen = true;
+    await loadLogs();
+  }
+
+  async function loadLogs() {
+    if (selectedId === null) {
+      logs = [];
+      return;
+    }
+    try {
+      logs = (await invoke<LogLine[] | null>("process_logs", { id: selectedId })) ?? [];
+    } catch (e) {
+      logs = [];
+      error = String(e);
+    }
+  }
+
+  async function openLocalhost(port: number) {
+    try {
+      await openUrl(localhostUrl(port));
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   function selectProject(p: Project) {
@@ -701,6 +813,10 @@
     });
     void refreshPorts();
     void refreshAgentRuns();
+    void refreshPulses();
+    const pulsePoll = setInterval(() => {
+      void refreshPulses();
+    }, 5000);
     const poll = setInterval(() => {
       void refresh();
     }, 1000);
@@ -716,6 +832,7 @@
       mounted = false;
       taskGeneration++;
       clearInterval(poll);
+      clearInterval(pulsePoll);
       clearInterval(portPoll);
       mq?.removeEventListener("change", onScheme);
       window.removeEventListener("storage", onStoredThemeChange);
@@ -794,12 +911,18 @@
 {#snippet projectsView()}
   <section class="flex min-w-0 flex-col" aria-labelledby="projects-title">
     <div class="flex items-center gap-2 px-3 pb-1.5 pt-3">
-      <h2
-        id="projects-title"
-        class="min-w-0 flex-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
-      >
-        Проекты
-      </h2>
+      <div class="flex min-w-0 flex-1 items-center gap-1.5">
+        <h2
+          id="projects-title"
+          class="min-w-0 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+        >
+          Проекты
+        </h2>
+        <InfoHint
+          label="Что такое проекты"
+          text="Папки из корней сканирования с orchestrator.json или найденные автоматически. Вложенные папки с собственным конфигом — подпроекты. Клик по проекту показывает его процессы, порты и задачи. Корни настраиваются кнопкой справа."
+        />
+      </div>
       <Button
         size="sm"
         variant="outline"
@@ -827,57 +950,32 @@
 {#snippet processesView()}
   <Card.Root class="gap-3 rounded-lg py-3 shadow-none">
     <Card.Header class="px-4 pb-0">
-      <Card.Title class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
-        >Процессы</Card.Title
-      >
+      <div class="flex items-center gap-1.5">
+        <Card.Title class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+          >Процессы</Card.Title
+        >
+        <InfoHint
+          label="Что такое процессы"
+          text="Процессы, которые Demerzel запустила или присоединила. Кнопки в строке: запустить, пауза, стоп, перезапуск, присоединить, открыть localhost:порт в браузере. После перезапуска приложения живые процессы снова берутся под управление."
+        />
+      </div>
     </Card.Header>
     <Card.Content class="px-4">
-      {#if processes.length === 0}
-        <p class="text-sm text-muted-foreground">Нет запущенных процессов.</p>
-      {:else}
-        <Table.Root>
-          <Table.Header>
-            <Table.Row>
-              <Table.Head>Проект</Table.Head>
-              <Table.Head>Команда</Table.Head>
-              <Table.Head>Статус</Table.Head>
-              <Table.Head></Table.Head>
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {#each processes as row (row.id)}
-              <Table.Row data-state={row.id === selectedId ? "selected" : undefined}>
-                <Table.Cell>
-                  <Button
-                    variant="link"
-                    class="h-auto p-0"
-                    onclick={() => select(row.id)}
-                    aria-pressed={row.id === selectedId}>{row.project}</Button
-                  >
-                </Table.Cell>
-                <Table.Cell class="font-mono text-xs">{row.command}</Table.Cell>
-                <Table.Cell>
-                  <Badge variant={isRunning(row.status) ? "default" : "secondary"}
-                    >{statusLabel(row.status)}</Badge
-                  >
-                </Table.Cell>
-                <Table.Cell class="text-right">
-                  {#if isRunning(row.status)}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        stop(row.id);
-                      }}>Стоп</Button
-                    >
-                  {/if}
-                </Table.Cell>
-              </Table.Row>
-            {/each}
-          </Table.Body>
-        </Table.Root>
-      {/if}
+      <ProcessList
+        rows={processes}
+        {ports}
+        selectedId={selectedId}
+        busyId={rowBusyId}
+        onSelect={select}
+        onStart={startRow}
+        onPause={pauseRow}
+        onResume={resumeRow}
+        onStop={stopRow}
+        onRestart={restartRow}
+        onLogs={openLogsForRow}
+        onOpen={openLocalhost}
+        onAttach={attachFromPorts}
+      />
     </Card.Content>
   </Card.Root>
 {/snippet}
@@ -1199,6 +1297,7 @@
       onReportProblems={reportProblems}
       {reportBusy}
       {reportMessage}
+      emptyHint={logsUnavailableHint(processes.find((p) => p.id === selectedId)?.origin)}
     />
   </div>
 </main>

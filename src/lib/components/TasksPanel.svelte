@@ -22,6 +22,7 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import { Textarea } from "$lib/components/ui/textarea/index.js";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import InfoHint from "$lib/components/InfoHint.svelte";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import WandSparklesIcon from "@lucide/svelte/icons/wand-sparkles";
   import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
@@ -189,11 +190,17 @@
     aria-labelledby="tasks-title"
   >
     <Card.Header class="px-4 pb-0">
-      <Card.Title
-        id="tasks-title"
-        class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
-        >Задачи</Card.Title
-      >
+      <div class="flex items-center gap-1.5">
+        <Card.Title
+          id="tasks-title"
+          class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
+          >Задачи</Card.Title
+        >
+        <InfoHint
+          label="Что такое задачи"
+          text="Задачи из issues и локальных файлов проекта. «Исправить» отправляет задачу агенту: он работает в отдельном worktree, а результат появится в ревью агентов. Новая задача создаётся как issue в бэклоге проекта."
+        />
+      </div>
     </Card.Header>
     <Card.Content class="min-w-0 space-y-3 px-4">
       <div class="flex min-w-0 flex-wrap items-center gap-3 text-sm text-muted-foreground">

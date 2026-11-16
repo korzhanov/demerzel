@@ -342,6 +342,16 @@ impl PulseStore {
     }
 }
 
+/// Пульс проекта для виджета: опрос по `orchestrator.json` с кэшем в `store`.
+/// Нет блока `pulse` или опрос не удался без кэша → `None` (виджет просто не покажет строку).
+pub fn snapshot_for_dir(store: &PulseStore, key: &str, dir: &Path) -> Option<ProjectPulse> {
+    let cfg = super::config::load_from_dir(dir)?;
+    let pulse = cfg.pulse.as_ref()?;
+    let payload = store.poll(key, dir, pulse, &BTreeMap::new()).ok()?;
+    let snap = payload.to_project_pulse();
+    (!snap.summary.is_empty()).then_some(snap)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

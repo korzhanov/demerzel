@@ -111,15 +111,22 @@
   import * as Table from "$lib/components/ui/table/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
+  import InfoHint from "$lib/components/InfoHint.svelte";
 </script>
 
 <Card.Root class="gap-3 rounded-lg py-3 shadow-none" aria-labelledby="agent-runs-title">
   <Card.Header class="px-4 pb-0">
-    <Card.Title id="agent-runs-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Ревью агентов</Card.Title>
+    <div class="flex items-center gap-1.5">
+      <Card.Title id="agent-runs-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Ревью агентов</Card.Title>
+      <InfoHint
+        label="Что такое ревью агентов"
+        text="Запуски агентов из задач. Каждый работает в своём worktree и отдельной ветке, основная ветка не меняется. Принять — подтвердить результат и получить команду слияния. Отклонить — удалить worktree и ветку. Кнопка «Обновить список» перечитывает запуски."
+      />
+    </div>
   </Card.Header>
   <Card.Content class="space-y-3">
     <Button variant="outline" disabled={runsBusy || actionBusy} onclick={onRefresh}>
-      {runsBusy ? "Загрузка…" : "Обновить runs"}
+      {runsBusy ? "Загрузка…" : "Обновить список"}
     </Button>
     {#if runsError}
       <p class="break-words text-sm text-destructive" role="alert">{runsError}</p>

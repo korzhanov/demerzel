@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PortRow } from "$lib/types";
-  import { canStopManagedPort, isSystemPort, portStatusLabel } from "$lib/ports";
+  import { canStopManagedPort, isSystemPort, portStatusLabel, shortProjectLabel } from "$lib/ports";
+  import InfoHint from "$lib/components/InfoHint.svelte";
 
   interface Props {
     class?: string;
@@ -60,7 +61,13 @@
 
 <Card.Root class={["gap-3 rounded-lg py-3 shadow-none", className]} aria-labelledby="ports-title">
   <Card.Header class="px-4 pb-0">
-    <Card.Title id="ports-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Порты</Card.Title>
+    <div class="flex items-center gap-1.5">
+      <Card.Title id="ports-title" class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Порты</Card.Title>
+      <InfoHint
+        label="Что такое порты"
+        text="Порты, которые слушают процессы на этой машине. Проект определяется по папке процесса или по запуску Demerzel. «Присоединить» берёт процесс под управление Demerzel. «Конфликт» — порт занят другим процессом или вне диапазона проекта."
+      />
+    </div>
   </Card.Header>
   <Card.Content class="space-y-3 px-4">
     <div class="flex flex-wrap items-center gap-3">
@@ -103,7 +110,7 @@
           {#each ports as port (`${port.pid}:${port.port}`)}
             <Table.Row>
               <Table.Cell class="font-mono">{port.port}</Table.Cell>
-              <Table.Cell>{port.project ?? "—"}</Table.Cell>
+              <Table.Cell class="max-w-[12rem] truncate" title={port.project ?? undefined}>{shortProjectLabel(port.project)}</Table.Cell>
               <Table.Cell class="font-mono text-xs">{port.command}</Table.Cell>
               <Table.Cell class="hidden xl:table-cell">{port.pid}</Table.Cell>
               <Table.Cell>

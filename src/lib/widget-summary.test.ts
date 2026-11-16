@@ -37,4 +37,26 @@ describe("buildWidgetSummary", () => {
     expect(summary.agents_running).toBe(1);
     expect(summary.updated_at).toBe("2026-11-03T16:00:00.000Z");
   });
+
+  test("attaches pulses by project path and leaves others null", () => {
+    const summary = buildWidgetSummary({
+      projects: [api],
+      processes: [],
+      ports: [],
+      tasks: [],
+      agentRuns: [],
+      pulses: { "/a/api": { summary: "сборка", eta_seconds: 90 } },
+      now: new Date("2026-11-03T16:00:00Z"),
+    });
+    expect(summary.projects[0].pulse).toEqual({ summary: "сборка", eta_seconds: 90 });
+    const empty = buildWidgetSummary({
+      projects: [api],
+      processes: [],
+      ports: [],
+      tasks: [],
+      agentRuns: [],
+      now: new Date("2026-11-03T16:00:00Z"),
+    });
+    expect(empty.projects[0].pulse).toBeNull();
+  });
 });

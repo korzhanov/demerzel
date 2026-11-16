@@ -67,6 +67,8 @@ pub struct Managed {
     log: SharedLog,
     logs: Option<LogFiles>,
     done: Arc<AtomicBool>,
+    /// Приостановлен сигналом STOP. Статус остаётся Running: процесс жив, просто не работает.
+    paused: bool,
 }
 
 impl Managed {
@@ -117,6 +119,7 @@ impl Managed {
             log,
             logs: Some(logs.clone()),
             done,
+            paused: false,
         })
     }
 
@@ -139,6 +142,7 @@ impl Managed {
             log,
             logs,
             done,
+            paused: false,
         }
     }
 
@@ -167,6 +171,47 @@ impl Managed {
         self.owned
     }
 
+    pub fn paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Восстанавливает флаг паузы после перезапуска приложения (процесс остаётся в STOP).
+    pub fn mark_paused(&mut self) {
+        self.paused = true;
+    }
+
+    /// Приостанавливает процесс (STOP) вместе с группой, если он запущен Demerzel.
+    #[cfg(unix)]
+    pub fn pause(&mut self) -> io::Result<()> {
+        if !self.is_alive() {
+            return Err(io::Error::other("процесс уже не работает"));
+        }
+        signal(&self.target(), "STOP")?;
+        self.paused = true;
+        Ok(())
+    }
+
+    /// Возобновляет приостановленный процесс (CONT).
+    #[cfg(unix)]
+    pub fn resume(&mut self) -> io::Result<()> {
+        if !self.is_alive() {
+            return Err(io::Error::other("процесс уже не работает"));
+        }
+        signal(&self.target(), "CONT")?;
+        self.paused = false;
+        Ok(())
+    }
+
+    /// Куда слать сигналы: группа для запущенного Demerzel, сам процесс для присоединённого.
+    #[cfg(unix)]
+    fn target(&self) -> String {
+        if self.owned {
+            format!("-{}", self.pgid)
+        } else {
+            self.pid.to_string()
+        }
+    }
+
     pub fn log_files(&self) -> Option<&LogFiles> {
         self.logs.as_ref()
     }
@@ -184,7 +229,7 @@ impl Managed {
                     }
                 }
                 None => {
-                    if !session::is_alive(self.pid) {
+                    if !self.is_alive() {
                         // Завершился, пока за ним не было наблюдения: код неизвестен.
                         self.status = next(self.status, Event::Stop);
                         self.done.store(true, Ordering::SeqCst);
@@ -198,7 +243,8 @@ impl Managed {
     fn is_alive(&mut self) -> bool {
         match self.child.as_mut() {
             Some(child) => matches!(child.try_wait(), Ok(None)),
-            None => session::is_alive(self.pid),
+            // После перезапуска жив либо лидер группы, либо кто-то из её процессов (sh уже мог выйти).
+            None => session::is_alive(self.pid) || (self.owned && session::group_alive(self.pgid)),
         }
     }
 
@@ -210,11 +256,12 @@ impl Managed {
             self.finish();
             return Ok(self.status);
         }
-        let target = if self.owned {
-            format!("-{}", self.pgid)
-        } else {
-            self.pid.to_string()
-        };
+        let target = self.target();
+        // Приостановленный процесс не обработает TERM, поэтому сначала будим его.
+        if self.paused {
+            signal(&target, "CONT")?;
+            self.paused = false;
+        }
         signal(&target, "TERM")?;
         let deadline = Instant::now() + grace;
         while Instant::now() < deadline && self.is_alive() {

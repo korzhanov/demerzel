@@ -3,84 +3,155 @@
 //! Чистая функция: строит JSON-IR для tauri-plugin-widgets. Записи в WidgetKit
 //! делает слой Tauri, здесь только форма данных.
 //! Пульс проектов (#98): строка summary + ETA; reload снаружи только при смене текста IR.
+//! Полоса прогресса (#99): если в `metrics` пульса есть пара `done` и `total`, виджет рисует
+//! полосу `done / total`. Без такой пары — только текст.
 
-use super::summary::{format_pulse_line, Summary};
+use super::summary::{format_pulse_line, ProjectPulse, ProjectStatus, Summary};
 use serde_json::{json, Map, Value};
 
 pub const WIDGET_ID: &str = "default";
 /// Сколько строк пульса в small / medium.
 pub const PULSE_LINES_SMALL: usize = 1;
 pub const PULSE_LINES_MEDIUM: usize = 3;
+/// Сколько проектов показывает medium.
+pub const MEDIUM_PROJECTS: usize = 5;
+
+const BG: &str = "#0d0d12";
+const COLOR_MUTED: &str = "#8888aa";
+const COLOR_TEXT: &str = "#e0e0e0";
+const COLOR_PULSE: &str = "#b0b0cc";
+const COLOR_OK: &str = "#4CAF50";
+const COLOR_FAIL: &str = "#E53935";
+const COLOR_IDLE: &str = "#5c5c7a";
 
 /// Цвет акцента: зелёный, если упавших нет, красный иначе.
 pub fn tint(failing: usize) -> &'static str {
-    if failing == 0 { "#4CAF50" } else { "#E53935" }
+    if failing == 0 { COLOR_OK } else { COLOR_FAIL }
 }
 
-fn pulse_text_nodes(summary: &Summary, limit: usize) -> Vec<Value> {
+fn text(content: impl Into<String>, size: u32, color: &str) -> Value {
+    json!({ "type": "text", "content": content.into(), "fontSize": size, "color": color })
+}
+
+fn bold(content: impl Into<String>, size: u32, color: &str) -> Value {
+    json!({
+        "type": "text",
+        "content": content.into(),
+        "fontSize": size,
+        "fontWeight": "bold",
+        "color": color
+    })
+}
+
+/// Доля выполнения из `metrics.done / metrics.total`, в диапазоне 0..=1.
+pub fn pulse_progress(pulse: &ProjectPulse) -> Option<f64> {
+    let metrics = pulse.metrics.as_ref()?;
+    let done = *metrics.get("done")?;
+    let total = *metrics.get("total")?;
+    (total > 0).then(|| (done as f64 / total as f64).clamp(0.0, 1.0))
+}
+
+fn running_total(summary: &Summary) -> usize {
+    summary.projects.iter().map(|p| p.running).sum()
+}
+
+/// Главная строка: сколько с ошибкой, иначе сколько запущено, иначе «всё спокойно».
+fn headline(summary: &Summary) -> String {
+    if summary.failing_total > 0 {
+        format!("{} с ошибкой", summary.failing_total)
+    } else if running_total(summary) > 0 {
+        format!("{} запущено", running_total(summary))
+    } else {
+        "Всё спокойно".into()
+    }
+}
+
+fn ports_label(summary: &Summary) -> String {
+    if summary.port_conflicts == 0 {
+        "порты в порядке".into()
+    } else {
+        format!("конфликт портов: {}", summary.port_conflicts)
+    }
+}
+
+fn project_state(p: &ProjectStatus) -> &'static str {
+    if p.failing > 0 {
+        "с ошибкой"
+    } else if p.running > 0 {
+        "запущен"
+    } else {
+        "остановлен"
+    }
+}
+
+fn project_color(p: &ProjectStatus) -> &'static str {
+    if p.failing > 0 {
+        COLOR_FAIL
+    } else if p.running > 0 {
+        COLOR_OK
+    } else {
+        COLOR_IDLE
+    }
+}
+
+/// Строки пульса (и полосы прогресса, где они есть) для первых `limit` проектов.
+fn pulse_nodes(summary: &Summary, limit: usize) -> Vec<Value> {
     summary
         .projects_with_pulse()
         .take(limit)
-        .map(|(name, pulse)| {
-            json!({
-                "type": "text",
-                "content": format_pulse_line(name, pulse),
-                "fontSize": 12,
-                "color": "#b0b0cc"
-            })
+        .flat_map(|(name, pulse)| {
+            let mut nodes = Vec::new();
+            if let Some(value) = pulse_progress(pulse) {
+                nodes.push(json!({
+                    "type": "progress",
+                    "value": value,
+                    "tint": COLOR_OK,
+                    "label": name
+                }));
+            }
+            nodes.push(text(format_pulse_line(name, pulse), 12, COLOR_PULSE));
+            nodes
         })
         .collect()
 }
 
-/// Маленький виджет: число упавших сервисов, полоса портов, строка пульса.
+/// Маленький виджет: главный статус, состояние портов и первый пульс.
 pub fn small(summary: &Summary) -> Value {
-    let failing = summary.failing_total;
-    let label = if summary.port_conflicts == 0 { "Ports ok" } else { "Port conflicts" };
-    let progress = (failing as f64 / 10.0).clamp(0.0, 1.0);
     let mut children = vec![
-        json!({ "type": "text", "content": "Demerzel", "fontSize": 12, "color": "#8888aa" }),
-        json!({ "type": "text", "content": format!("{failing} failing"), "fontSize": 28, "fontWeight": "bold", "color": "#ffffff" }),
-        json!({ "type": "progress", "value": progress, "tint": tint(failing), "label": label }),
+        text("DEMERZEL", 10, COLOR_MUTED),
+        bold(headline(summary), 24, tint(summary.failing_total)),
+        text(ports_label(summary), 12, COLOR_TEXT),
     ];
-    children.extend(pulse_text_nodes(summary, PULSE_LINES_SMALL));
+    children.extend(pulse_nodes(summary, PULSE_LINES_SMALL));
     json!({
-        "small": {
-            "type": "vstack",
-            "padding": 12,
-            "background": "#0d0d12",
-            "children": children
-        }
+        "small": { "type": "vstack", "padding": 14, "background": BG, "children": children }
     })
 }
 
-/// Средний виджет: список проектов со статусами, счётчики задач и пульс.
+/// Средний виджет: статус, список проектов с точками состояния, пульс и счётчики задач.
 pub fn medium(summary: &Summary) -> Value {
-    let rows: Vec<Value> = summary
-        .projects
-        .iter()
-        .take(5)
-        .map(|p| {
-            json!({
-                "type": "text",
-                "content": format!("{}  ·  {} running, {} failing", p.name, p.running, p.failing),
-                "fontSize": 13,
-                "color": if p.failing == 0 { "#e0e0e0" } else { "#E53935" }
-            })
-        })
-        .collect();
-    let mut children = vec![json!({
-        "type": "text", "content": "Demerzel", "fontSize": 12, "color": "#8888aa"
-    })];
-    children.extend(rows);
-    children.extend(pulse_text_nodes(summary, PULSE_LINES_MEDIUM));
-    children.push(json!({
-        "type": "text",
-        "content": format!("Tasks: {} todo · {} in progress", summary.tasks_todo, summary.tasks_in_progress),
-        "fontSize": 12,
-        "color": "#8888aa"
-    }));
+    let mut children = vec![
+        text("DEMERZEL", 10, COLOR_MUTED),
+        bold(headline(summary), 16, tint(summary.failing_total)),
+    ];
+    for p in summary.projects.iter().take(MEDIUM_PROJECTS) {
+        children.push(text(
+            format!("● {}  ·  {}", p.name, project_state(p)),
+            13,
+            project_color(p),
+        ));
+    }
+    children.extend(pulse_nodes(summary, PULSE_LINES_MEDIUM));
+    children.push(text(
+        format!(
+            "Задачи: {} к выполнению · {} в работе · агентов: {}",
+            summary.tasks_todo, summary.tasks_in_progress, summary.agents_running
+        ),
+        11,
+        COLOR_MUTED,
+    ));
     json!({
-        "medium": { "type": "vstack", "padding": 12, "background": "#0d0d12", "children": children }
+        "medium": { "type": "vstack", "padding": 14, "background": BG, "children": children }
     })
 }
 
@@ -101,10 +172,13 @@ pub fn config(summary: &Summary) -> Value {
 }
 
 /// Текст пульса, по которому решается «изменился ли виджет» (без updated_at).
+/// Прогресс входит в отпечаток, чтобы полоса обновлялась вместе с текстом.
 pub fn pulse_fingerprint(summary: &Summary) -> String {
     summary
         .projects_with_pulse()
-        .map(|(name, pulse)| format_pulse_line(name, pulse))
+        .map(|(name, pulse)| {
+            format!("{}|{:?}", format_pulse_line(name, pulse), pulse_progress(pulse))
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -113,6 +187,7 @@ pub fn pulse_fingerprint(summary: &Summary) -> String {
 mod tests {
     use super::*;
     use crate::backend::summary::{ProjectPulse, ProjectStatus, Summary};
+    use std::collections::BTreeMap;
 
     fn sample(failing: usize) -> Summary {
         let mut s = Summary::new("t");
@@ -149,26 +224,67 @@ mod tests {
     }
 
     #[test]
-    fn small_shows_failing_count_and_tint() {
+    fn small_shows_headline_and_tint() {
         let v = small(&sample(3));
-        let text = v["small"]["children"][1]["content"].as_str().unwrap();
-        assert_eq!(text, "3 failing");
-        assert_eq!(tint(3), "#E53935");
-        assert_eq!(tint(0), "#4CAF50");
+        let headline = &v["small"]["children"][1];
+        assert_eq!(headline["content"], "3 с ошибкой");
+        assert_eq!(headline["color"], tint(3));
+        assert_eq!(tint(0), COLOR_OK);
     }
 
     #[test]
-    fn medium_lists_projects_and_tasks() {
-        let v = medium(&sample(0));
+    fn headline_says_calm_when_nothing_runs() {
+        let mut s = sample(0);
+        s.projects[0].running = 0;
+        s.recompute();
+        assert_eq!(headline(&s), "Всё спокойно");
+    }
+
+    #[test]
+    fn medium_lists_projects_with_state_and_tasks_footer() {
+        let mut s = sample(0);
+        s.tasks_todo = 3;
+        s.tasks_in_progress = 1;
+        s.agents_running = 2;
+        let v = medium(&s);
         let children = v["medium"]["children"].as_array().unwrap();
-        assert!(children.iter().any(|c| c["content"].as_str().unwrap_or("").starts_with("api")));
-        assert!(children.last().unwrap()["content"].as_str().unwrap().starts_with("Tasks:"));
+        assert!(children
+            .iter()
+            .any(|c| c["content"].as_str().unwrap_or("").contains("api  ·  запущен")));
+        let footer = children.last().unwrap()["content"].as_str().unwrap();
+        assert_eq!(footer, "Задачи: 3 к выполнению · 1 в работе · агентов: 2");
     }
 
     #[test]
-    fn progress_is_clamped() {
-        let v = small(&sample(50));
-        assert_eq!(v["small"]["children"][2]["value"], 1.0);
+    fn project_dot_is_red_when_failing() {
+        let v = medium(&sample(2));
+        let children = v["medium"]["children"].as_array().unwrap();
+        let row = children
+            .iter()
+            .find(|c| c["content"].as_str().unwrap_or("").starts_with("● api"))
+            .unwrap();
+        assert_eq!(row["color"], COLOR_FAIL);
+    }
+
+    #[test]
+    fn progress_comes_from_done_and_total_and_is_clamped() {
+        let mut s = with_pulse();
+        s.projects[0].pulse.as_mut().unwrap().metrics = Some(BTreeMap::from([
+            ("done".into(), 50),
+            ("total".into(), 10),
+        ]));
+        let v = small(&s);
+        let children = v["small"]["children"].as_array().unwrap();
+        let bar = children.iter().find(|c| c["type"] == "progress").unwrap();
+        assert_eq!(bar["value"], 1.0);
+        assert_eq!(bar["label"], "api");
+    }
+
+    #[test]
+    fn no_progress_bar_without_metrics() {
+        let v = small(&with_pulse());
+        let children = v["small"]["children"].as_array().unwrap();
+        assert!(children.iter().all(|c| c["type"] != "progress"));
     }
 
     #[test]

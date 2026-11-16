@@ -16,6 +16,7 @@
     onReportProblems,
     reportBusy = false,
     reportMessage = "",
+    emptyHint = null as string | null,
   }: {
     open?: boolean;
     width?: number;
@@ -25,6 +26,8 @@
     onReportProblems?: () => void | Promise<void>;
     reportBusy?: boolean;
     reportMessage?: string;
+    /** Почему логов нет, если это известно (например, процесс присоединён извне). */
+    emptyHint?: string | null;
   } = $props();
 
   let dragging = $state(false);
@@ -126,7 +129,9 @@
       {/if}
       <ScrollArea class="min-h-0 flex-1 px-1">
         {#if logs.length === 0}
-          <p class="px-3 py-4 text-sm text-muted-foreground">Нет строк лога. Запустите процесс.</p>
+          <p class="px-3 py-4 text-sm text-muted-foreground">
+            {emptyHint ?? "Нет строк лога. Запустите процесс или выберите его в списке процессов."}
+          </p>
         {:else}
           <pre
             class="px-3 pb-3 font-mono text-[11.5px] leading-[1.7] text-[#b5a888]">{#each logs as line, i (i)}<span class={line.stream === "stderr" ? "text-primary" : ""}>{line.text}

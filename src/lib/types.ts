@@ -25,6 +25,8 @@ export interface ProcessRow {
   /** started — запущен здесь; restored — пережил перезапуск; attached — присоединён по PID. */
   origin?: "started" | "restored" | "attached";
   owned?: boolean;
+  /** Приостановлен (STOP): процесс жив, но не работает. */
+  paused?: boolean;
 }
 
 export interface LogLine {
