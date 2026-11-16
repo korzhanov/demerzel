@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   canStopManagedPort,
   isSystemPort,
+  shortProjectLabel,
   clampPortPollInterval,
   portStatusLabel,
 } from "./ports";
@@ -57,5 +58,14 @@ describe("isSystemPort", () => {
   test("managed or conflicting ports are never system", () => {
     expect(isSystemPort({ command: "rapportd", status: "conflict", managed_id: null })).toBe(false);
     expect(isSystemPort({ command: "rapportd", status: "ok", managed_id: 3 })).toBe(false);
+  });
+});
+
+describe("shortProjectLabel", () => {
+  test("keeps plain names and shortens paths to the last two folders", () => {
+    expect(shortProjectLabel("api")).toBe("api");
+    expect(shortProjectLabel("/Users/oleg/code/korzhanov/bombanoid/www")).toBe("bombanoid/www");
+    expect(shortProjectLabel("/a/b/")).toBe("a/b");
+    expect(shortProjectLabel(null)).toBe("—");
   });
 });

@@ -31,6 +31,9 @@ pub struct Record {
     pub started_at: Option<String>,
     pub out_log: Option<String>,
     pub err_log: Option<String>,
+    /// Приостановлен (STOP). Нужен, чтобы после перезапуска не показать его как работающий.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +78,23 @@ pub fn is_alive(pid: u32) -> bool {
 
 #[cfg(not(unix))]
 pub fn is_alive(_pid: u32) -> bool {
+    false
+}
+
+/// Есть ли в process group хоть один живой процесс. Нужно, когда лидер (sh) уже вышел,
+/// а его дети ещё работают: после перезапуска приложения такая группа остаётся под управлением.
+#[cfg(unix)]
+pub fn group_alive(pgid: u32) -> bool {
+    let Ok(out) = Command::new("ps").args(["-axo", "pgid="]).output() else {
+        return false;
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.trim().parse::<u32>().is_ok_and(|g| g == pgid))
+}
+
+#[cfg(not(unix))]
+pub fn group_alive(_pgid: u32) -> bool {
     false
 }
 
@@ -129,6 +149,7 @@ mod tests {
             started_at: None,
             out_log: Some("/logs/1.out.log".into()),
             err_log: Some("/logs/1.err.log".into()),
+            paused: false,
         }
     }
 

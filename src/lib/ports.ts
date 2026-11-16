@@ -47,3 +47,14 @@ export function isSystemPort(row: Pick<PortRow, "command" | "status" | "managed_
   if (SYSTEM_PROCESS_NAMES.has(row.command)) return true;
   return /\bHelper\b/.test(row.command);
 }
+
+/**
+ * Имя проекта для таблицы портов. Для распознанных по папке проектов бэкенд отдаёт полный путь;
+ * показываем последние две папки (`bombanoid/www`), полный путь остаётся в подсказке.
+ */
+export function shortProjectLabel(project: string | null): string {
+  if (!project) return "—";
+  if (!project.includes("/")) return project;
+  const parts = project.split("/").filter(Boolean);
+  return parts.slice(-2).join("/");
+}

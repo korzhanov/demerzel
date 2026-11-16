@@ -48,6 +48,8 @@ pub struct Row {
     pub owned: bool,
     pub started_at: String,
     pub finished_at: Option<String>,
+    /// Приостановлен (STOP): процесс жив, но не работает.
+    pub paused: bool,
 }
 
 pub struct Registry {
@@ -148,7 +150,9 @@ impl Registry {
             let alive = session::is_alive(rec.pid);
             let same = session::command_line(rec.pid)
                 .is_some_and(|c| session::same_process(&rec.command, &c));
-            if !(alive && same) {
+            // Лидер группы мог выйти, а его дети (dev-сервер) работать: тогда группа ещё наша.
+            let group = rec.owned && session::group_alive(rec.pgid);
+            if !((alive && same) || group) {
                 continue;
             }
             let logs = match (rec.out_log, rec.err_log) {
@@ -156,7 +160,10 @@ impl Registry {
                 _ => None,
             };
             let origin = if rec.attached { Origin::Attached } else { Origin::Restored };
-            let managed = Managed::adopt(rec.pid, rec.pgid, rec.owned, logs);
+            let mut managed = Managed::adopt(rec.pid, rec.pgid, rec.owned, logs);
+            if rec.paused {
+                managed.mark_paused();
+            }
             self.entries.insert(
                 rec.id,
                 Entry {
@@ -236,6 +243,7 @@ impl Registry {
                     started_at: Some(e.started_at.clone()),
                     out_log: e.managed.log_files().map(|f| f.out.to_string_lossy().into_owned()),
                     err_log: e.managed.log_files().map(|f| f.err.to_string_lossy().into_owned()),
+                    paused: e.managed.paused(),
                 })
             })
             .collect();
@@ -243,6 +251,24 @@ impl Registry {
         if let Err(err) = session::save(path, &state) {
             eprintln!("demerzel: не удалось сохранить список процессов: {err}");
         }
+    }
+
+    /// Приостанавливает процесс (STOP): dev-сервер замирает, но не теряется.
+    #[cfg(unix)]
+    pub fn pause(&mut self, id: u64) -> io::Result<()> {
+        let entry = self.entries.get_mut(&id).ok_or_else(|| io::Error::other("процесс не найден"))?;
+        entry.managed.pause()?;
+        self.persist();
+        Ok(())
+    }
+
+    /// Возобновляет приостановленный процесс (CONT).
+    #[cfg(unix)]
+    pub fn resume(&mut self, id: u64) -> io::Result<()> {
+        let entry = self.entries.get_mut(&id).ok_or_else(|| io::Error::other("процесс не найден"))?;
+        entry.managed.resume()?;
+        self.persist();
+        Ok(())
     }
 
     #[cfg(unix)]
@@ -287,6 +313,7 @@ impl Registry {
                 owned: e.managed.owned(),
                 started_at: e.started_at.clone(),
                 finished_at: e.finished_at.clone(),
+                paused: e.managed.paused(),
             });
         }
         let live_after = self.entries.values().filter(|e| is_live(e.managed.status())).count();
@@ -501,6 +528,32 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    fn pause_and_resume_keep_process_alive_and_survive_restart() {
+        let dir = tmp("pause");
+        let state = dir.join("processes.json");
+        let logs = dir.join("logs");
+        let cwd = std::env::current_dir().unwrap();
+        let mut first = Registry::default();
+        first.configure(state.clone(), logs.clone());
+        let id = first.start("api", "sleep 30", &cwd, &BTreeMap::new(), None).unwrap();
+        first.pause(id).unwrap();
+        let row = first.list().unwrap().into_iter().find(|r| r.id == id).unwrap();
+        assert!(row.paused);
+        assert_eq!(row.status, Status::Running);
+        // Приостановленный процесс переживает перезапуск приложения и остаётся на паузе.
+        let mut second = Registry::default();
+        second.configure(state.clone(), logs.clone());
+        second.restore();
+        let row = second.list().unwrap().into_iter().find(|r| r.id == id).unwrap();
+        assert!(row.paused);
+        second.resume(id).unwrap();
+        assert!(!second.list().unwrap().into_iter().find(|r| r.id == id).unwrap().paused);
+        // Остановка снятой с паузы группы работает.
+        assert_eq!(second.stop(id, Duration::from_secs(2)).unwrap(), Some(Status::Stopped));
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn restore_drops_records_whose_process_is_gone() {
         let dir = tmp("gone");
         let state = dir.join("processes.json");
@@ -517,6 +570,7 @@ mod tests {
             started_at: None,
             out_log: None,
             err_log: None,
+            paused: false,
         };
         session::save(&state, &session::State { next_id: 7, records: vec![record] }).unwrap();
         let mut reg = Registry::default();

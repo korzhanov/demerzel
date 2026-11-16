@@ -2,12 +2,20 @@ import { flattenProjects, isCrashedStatus, processForProject } from "./dashboard
 import type { AgentRunRecord, PortRow, ProcessRow, Project, Task } from "./types";
 import { isRunning } from "./types";
 
+/** Пульс проекта (`summary::ProjectPulse` в Rust): текст, ETA, состояние, числовые метрики. */
+export interface WidgetPulse {
+  summary: string;
+  eta_seconds?: number;
+  state?: string;
+  metrics?: Record<string, number>;
+}
+
 /** Статус проекта в формате виджета (`summary::ProjectStatus` в Rust). */
 export interface WidgetProjectStatus {
   name: string;
   running: number;
   failing: number;
-  pulse: null;
+  pulse: WidgetPulse | null;
 }
 
 /** Сводка для виджета (`summary::Summary` в Rust, `SUMMARY_VERSION` = 1). */
@@ -29,6 +37,8 @@ export function buildWidgetSummary(input: {
   ports: readonly PortRow[];
   tasks: readonly Task[];
   agentRuns: readonly AgentRunRecord[];
+  /** Пульсы из `project_pulses`, ключ — путь проекта. */
+  pulses?: Readonly<Record<string, WidgetPulse>>;
   now: Date;
 }): WidgetSummary {
   const projects = flattenProjects(input.projects).map((project) => {
@@ -37,7 +47,7 @@ export function buildWidgetSummary(input: {
       name: project.name,
       running: row && isRunning(row.status) ? 1 : 0,
       failing: row && isCrashedStatus(row.status) ? 1 : 0,
-      pulse: null,
+      pulse: input.pulses?.[project.path] ?? null,
     };
   });
   return {

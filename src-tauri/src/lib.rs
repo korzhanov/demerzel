@@ -144,6 +144,34 @@ pub fn refresh_widget(app: &tauri::AppHandle, summary: &Summary) -> Result<bool,
     Ok(true)
 }
 
+/// Проект, для которого нужен пульс: ключ (путь) и папка с `orchestrator.json`.
+#[derive(serde::Deserialize)]
+struct PulseTarget {
+    key: String,
+    path: String,
+}
+
+/// Опрос пульсов проектов (команда или файл из `orchestrator.json`). Идёт в фоне,
+/// кэш и интервалы — в `PulseStore`. Проекты без `pulse` в ответе отсутствуют.
+#[tauri::command]
+async fn project_pulses(
+    pulses: tauri::State<'_, std::sync::Arc<backend::pulse::PulseStore>>,
+    targets: Vec<PulseTarget>,
+) -> Result<std::collections::BTreeMap<String, backend::summary::ProjectPulse>, String> {
+    let store = pulses.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        targets
+            .into_iter()
+            .filter_map(|t| {
+                backend::pulse::snapshot_for_dir(&store, &t.key, Path::new(&t.path))
+                    .map(|snap| (t.key, snap))
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn refresh_widget_from_summary(app: tauri::AppHandle, summary: Summary) -> Result<bool, String> {
     // iCloud sync best-effort: ошибка не блокирует macOS-виджет (#37).
@@ -965,6 +993,26 @@ fn attach_process(
 }
 
 #[tauri::command]
+fn pause_process(app: tauri::AppHandle, processes: tauri::State<'_, Processes>, id: u64) -> Result<(), String> {
+    let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
+    reg.pause(id).map_err(|e| e.to_string())?;
+    let rows = reg.list().map_err(|e| e.to_string())?;
+    drop(reg);
+    record_process_activities(&app, &rows)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn resume_process(app: tauri::AppHandle, processes: tauri::State<'_, Processes>, id: u64) -> Result<(), String> {
+    let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
+    reg.resume(id).map_err(|e| e.to_string())?;
+    let rows = reg.list().map_err(|e| e.to_string())?;
+    drop(reg);
+    record_process_activities(&app, &rows)?;
+    Ok(())
+}
+
+#[tauri::command]
 fn list_processes(app: tauri::AppHandle, processes: tauri::State<'_, Processes>) -> Result<Vec<Row>, String> {
     let mut reg = processes.0.lock().map_err(|e| e.to_string())?;
     let rows = reg.list().map_err(|e| e.to_string())?;
@@ -1615,6 +1663,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(WidgetState(Mutex::new(Throttle::new(DEFAULT_MIN_INTERVAL_SECS))))
         .manage(Processes(Mutex::new(Registry::default())))
+        .manage(std::sync::Arc::new(backend::pulse::PulseStore::new()))
         .manage(AlertGate(Mutex::new(DeliveryGate::new_default())))
         .manage(AgentRuns(Mutex::new(backend::agents::AgentRunRegistry::new())))
         .manage(AgentLimit(Mutex::new(backend::agents::AgentLimiter::from_defaults())))
@@ -1660,6 +1709,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             refresh_widget_from_summary,
+            project_pulses,
             sync_summary_to_icloud,
             sync_summary_to_widgetkit,
             scan_projects,
@@ -1681,6 +1731,8 @@ pub fn run() {
             resolve_dev_command,
             start_process,
             stop_process,
+            pause_process,
+            resume_process,
             attach_process,
             list_processes,
             process_logs,
